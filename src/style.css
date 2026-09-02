@@ -1,0 +1,101 @@
+:root {
+  font-family: Inter, ui-rounded, "Segoe UI", system-ui, sans-serif;
+  color: #fff6db;
+  background: #0c1d1c;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 50% 15%, rgba(143, 206, 150, 0.18), transparent 32rem),
+    linear-gradient(160deg, #193b35 0%, #0c1d1c 72%);
+}
+
+button,
+canvas {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-shell {
+  display: grid;
+  min-height: 100dvh;
+  place-content: center;
+  justify-items: center;
+  gap: 0.85rem;
+  padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+}
+
+.game-frame {
+  position: relative;
+  width: min(100vw - 24px, calc((100dvh - 78px) * 0.5625), 432px);
+  aspect-ratio: 9 / 16;
+  overflow: hidden;
+  border: 1px solid rgba(255, 246, 219, 0.15);
+  border-radius: clamp(18px, 4vw, 30px);
+  background: #234b42;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.42),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+#game,
+#game canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  touch-action: none;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff6db;
+  background: #183f39;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: opacity 250ms ease;
+  pointer-events: none;
+}
+
+.loading.is-hidden {
+  opacity: 0;
+}
+
+.hint {
+  margin: 0;
+  color: rgba(255, 246, 219, 0.62);
+  font-size: clamp(0.75rem, 2.4vw, 0.9rem);
+  text-align: center;
+}
+
+@media (max-height: 650px) {
+  .hint {
+    display: none;
+  }
+
+  .game-frame {
+    width: min(100vw - 16px, calc((100dvh - 16px) * 0.5625));
+  }
+
+  .app-shell {
+    padding: 8px;
+  }
+}

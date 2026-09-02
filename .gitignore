@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.tools/
+assets/source-art/boss-madam-marionette.png
+assets/source-art/boss-ripper.png
+assets/source-art/hero-elya-action-v2.png
+assets/source-art/hero-elya-cutout.png
+assets/source-art/hero-elya-v1.png
+assets/source-art/hero-elya-v2.png
+assets/source-art/hero-elya.png
+*.log
+*.tsbuildinfo
+.DS_Store
