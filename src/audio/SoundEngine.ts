@@ -622,11 +622,11 @@ export class SoundEngine {
   private getMusicLevel(theme: MusicTheme): number {
     switch (theme) {
       case "menu":
-        return 0.42;
+        return 0.56;
       case "raid":
-        return 0.36;
+        return 0.48;
       case "boss":
-        return 0.44;
+        return 0.58;
     }
   }
 

@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  HIT_FEEDBACK_DURATION_MS,
   VK_APP_ID,
   createPlatformAdapter,
   detectVkLaunchContext,
   type PlatformDocument,
+  type PlatformNavigator,
   type PlatformWindow,
   type VkBridgeLike,
   type VkBridgeListener,
@@ -22,7 +24,16 @@ class FakeDocument extends EventTarget implements PlatformDocument {
 class FakeBridge implements VkBridgeLike {
   private readonly listeners = new Set<VkBridgeListener>();
   public sendResult: unknown = Promise.resolve({ result: true });
-  public readonly send = vi.fn((_method: "VKWebAppInit") => this.sendResult);
+  public tapticSupported = true;
+  public readonly send = vi.fn(
+    (
+      _method: "VKWebAppInit" | "VKWebAppTapticImpactOccurred",
+      _params?: { readonly style: "medium" },
+    ) => this.sendResult,
+  );
+  public readonly supportsAsync = vi.fn(
+    async (_method: "VKWebAppTapticImpactOccurred") => this.tapticSupported,
+  );
   public readonly subscribe = vi.fn((listener: VkBridgeListener) => {
     this.listeners.add(listener);
   });
@@ -39,6 +50,12 @@ class FakeBridge implements VkBridgeLike {
 
 function fakeWindow(search: string): PlatformWindow {
   return { location: { search } };
+}
+
+function fakeNavigator(): PlatformNavigator & {
+  vibrate: ReturnType<typeof vi.fn>;
+} {
+  return { vibrate: vi.fn(() => true) };
 }
 
 function vkSearch(extra = ""): string {
@@ -104,6 +121,103 @@ describe("platform adapter", () => {
     expect(bridge.send).toHaveBeenCalledWith("VKWebAppInit");
 
     adapter.destroy();
+  });
+
+  it("uses VK taptic impact for a confirmed hit when supported", async () => {
+    const bridge = new FakeBridge();
+    const browserNavigator = fakeNavigator();
+    const adapter = createPlatformAdapter({
+      window: fakeWindow(vkSearch()),
+      document: new FakeDocument(),
+      navigator: browserNavigator,
+      bridge,
+    });
+
+    adapter.hitFeedback();
+
+    await vi.waitFor(() => {
+      expect(bridge.send).toHaveBeenCalledWith(
+        "VKWebAppTapticImpactOccurred",
+        { style: "medium" },
+      );
+    });
+    expect(bridge.supportsAsync).toHaveBeenCalledOnce();
+    expect(bridge.supportsAsync).toHaveBeenCalledWith(
+      "VKWebAppTapticImpactOccurred",
+    );
+    expect(browserNavigator.vibrate).not.toHaveBeenCalled();
+
+    adapter.destroy();
+  });
+
+  it("does nothing in VK when taptic impact is unsupported", async () => {
+    const bridge = new FakeBridge();
+    bridge.tapticSupported = false;
+    const browserNavigator = fakeNavigator();
+    const adapter = createPlatformAdapter({
+      window: fakeWindow(vkSearch()),
+      document: new FakeDocument(),
+      navigator: browserNavigator,
+      bridge,
+    });
+
+    adapter.hitFeedback();
+
+    await vi.waitFor(() => {
+      expect(bridge.supportsAsync).toHaveBeenCalledOnce();
+    });
+    expect(bridge.send).not.toHaveBeenCalledWith(
+      "VKWebAppTapticImpactOccurred",
+      { style: "medium" },
+    );
+    expect(browserNavigator.vibrate).not.toHaveBeenCalled();
+
+    adapter.destroy();
+  });
+
+  it("uses a short browser vibration outside VK", () => {
+    const browserNavigator = fakeNavigator();
+    const adapter = createPlatformAdapter({
+      window: fakeWindow(""),
+      document: new FakeDocument(),
+      navigator: browserNavigator,
+      bridge: new FakeBridge(),
+    });
+
+    adapter.hitFeedback();
+
+    expect(browserNavigator.vibrate).toHaveBeenCalledOnce();
+    expect(browserNavigator.vibrate).toHaveBeenCalledWith(
+      HIT_FEEDBACK_DURATION_MS,
+    );
+    adapter.destroy();
+  });
+
+  it("keeps unsupported or failing browser vibration as a safe no-op", () => {
+    const unsupported = createPlatformAdapter({
+      window: fakeWindow(""),
+      document: new FakeDocument(),
+      navigator: {},
+      bridge: new FakeBridge(),
+    });
+    expect(() => unsupported.hitFeedback()).not.toThrow();
+    unsupported.destroy();
+
+    const failingNavigator: PlatformNavigator = {
+      vibrate: vi.fn(() => {
+        throw new Error("vibration unavailable");
+      }),
+    };
+    const failing = createPlatformAdapter({
+      window: fakeWindow(""),
+      document: new FakeDocument(),
+      navigator: failingNavigator,
+      bridge: new FakeBridge(),
+    });
+    expect(() => failing.hitFeedback()).not.toThrow();
+    failing.destroy();
+    expect(() => failing.hitFeedback()).not.toThrow();
+    expect(failingNavigator.vibrate).toHaveBeenCalledOnce();
   });
 
   it("pauses and restores once across overlapping VK and page visibility", async () => {

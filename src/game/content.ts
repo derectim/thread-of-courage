@@ -21,6 +21,7 @@ export interface MonsterDefinition {
   readonly accentColor: number;
   readonly shadowColor: number;
   readonly isBoss?: boolean;
+  readonly isMiniBoss?: boolean;
   readonly textureKeys?: readonly string[];
 }
 
@@ -84,6 +85,24 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     ],
   },
   {
+    id: "spool-spider",
+    name: "Катушечный Паук",
+    epithet: "стягивает путь липкой пряжей",
+    roomId: "attic",
+    pattern: "stitches",
+    baseHits: 10,
+    bodyColor: 0x4b275f,
+    accentColor: 0xe8b44d,
+    shadowColor: 0x241837,
+    isMiniBoss: true,
+    textureKeys: [
+      "miniboss-spool-spider-0",
+      "miniboss-spool-spider-1",
+      "miniboss-spool-spider-2",
+      "miniboss-spool-spider-3",
+    ],
+  },
+  {
     id: "sewing-storm",
     name: "Великая Швейная Буря",
     epithet: "прячет сердце под лоскутами",
@@ -134,6 +153,24 @@ export const MONSTERS: readonly MonsterDefinition[] = [
       "spring-rabbit-1",
       "spring-rabbit-2",
       "spring-rabbit-3",
+    ],
+  },
+  {
+    id: "patchwork-owl",
+    name: "Лоскутный Филин",
+    epithet: "видит каждый неверный стежок",
+    roomId: "theatre",
+    pattern: "pendulum",
+    baseHits: 11,
+    bodyColor: 0x31556a,
+    accentColor: 0xc89345,
+    shadowColor: 0x281c38,
+    isMiniBoss: true,
+    textureKeys: [
+      "miniboss-patchwork-owl-0",
+      "miniboss-patchwork-owl-1",
+      "miniboss-patchwork-owl-2",
+      "miniboss-patchwork-owl-3",
     ],
   },
   {
@@ -189,6 +226,24 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     ],
   },
   {
+    id: "thimble-sentinel",
+    name: "Напёрсточный Страж",
+    epithet: "охраняет сердце древнего механизма",
+    roomId: "machine",
+    pattern: "recoil",
+    baseHits: 12,
+    bodyColor: 0x274b5c,
+    accentColor: 0x39b7a5,
+    shadowColor: 0x171a24,
+    isMiniBoss: true,
+    textureKeys: [
+      "miniboss-thimble-sentinel-0",
+      "miniboss-thimble-sentinel-1",
+      "miniboss-thimble-sentinel-2",
+      "miniboss-thimble-sentinel-3",
+    ],
+  },
+  {
     id: "ripper",
     name: "Распарыватель",
     epithet: "разрывает саму ткань мира",
@@ -222,7 +277,15 @@ const MAX_HITS_BY_PATTERN: Readonly<Record<MovementPattern, number>> = {
   recoil: 24,
 };
 
-const REGULAR_MONSTERS = MONSTERS.filter((monster) => !monster.isBoss);
+const REGULAR_MONSTERS = MONSTERS.filter(
+  (monster) => !monster.isBoss && !monster.isMiniBoss,
+);
+const MINI_BOSS_STAGES = [3, 8, 13, 18] as const;
+const MINI_BOSS_ROTATION = [
+  MONSTERS.find((monster) => monster.id === "spool-spider")!,
+  MONSTERS.find((monster) => monster.id === "patchwork-owl")!,
+  MONSTERS.find((monster) => monster.id === "thimble-sentinel")!,
+] as const;
 const BOSS_ROTATION = [
   MONSTERS.find((monster) => monster.id === "sewing-storm")!,
   MONSTERS.find((monster) => monster.id === "moth-mask")!,
@@ -238,8 +301,19 @@ export function getMonsterForStage(stage: number): MonsterDefinition {
     return BOSS_ROTATION[bossIndex];
   }
 
+  const miniBossIndex = MINI_BOSS_STAGES.indexOf(
+    cycleStage as (typeof MINI_BOSS_STAGES)[number],
+  );
+  if (miniBossIndex >= 0) {
+    return MINI_BOSS_ROTATION[miniBossIndex % MINI_BOSS_ROTATION.length];
+  }
+
   const bossesBeforeStage = Math.floor((cycleStage - 1) / 5);
-  const regularIndex = cycleStage - 1 - bossesBeforeStage;
+  const miniBossesBeforeStage = MINI_BOSS_STAGES.filter(
+    (miniBossStage) => miniBossStage < cycleStage,
+  ).length;
+  const regularIndex =
+    cycleStage - 1 - bossesBeforeStage - miniBossesBeforeStage;
   return REGULAR_MONSTERS[regularIndex % REGULAR_MONSTERS.length];
 }
 

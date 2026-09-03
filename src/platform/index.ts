@@ -1,4 +1,5 @@
 export {
+  HIT_FEEDBACK_DURATION_MS,
   VK_APP_ID,
   VK_APP_URL,
   createPlatformAdapter,
@@ -8,6 +9,7 @@ export {
   type PlatformDocument,
   type PlatformKind,
   type PlatformLifecycleHandlers,
+  type PlatformNavigator,
   type PlatformWindow,
   type VkBridgeEvent,
   type VkBridgeLike,

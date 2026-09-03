@@ -2,6 +2,9 @@ import vkBridge from "@vkontakte/vk-bridge";
 
 export const VK_APP_ID = 54_751_080;
 export const VK_APP_URL = `https://vk.com/app${VK_APP_ID}`;
+export const HIT_FEEDBACK_DURATION_MS = 25;
+
+const VK_TAPTIC_IMPACT_METHOD = "VKWebAppTapticImpactOccurred";
 
 export type PlatformKind = "standalone" | "vk";
 
@@ -25,6 +28,8 @@ export interface PlatformAdapter {
   readonly kind: PlatformKind;
   readonly launchContext: VkLaunchContext | null;
   initialize(): Promise<boolean>;
+  /** Provides one short tactile response for a confirmed successful hit. */
+  hitFeedback(): void;
   subscribeLifecycle(handlers: PlatformLifecycleHandlers): () => void;
   destroy(): void;
 }
@@ -40,7 +45,13 @@ export type VkBridgeListener = (event: VkBridgeEvent) => void;
 
 /** Narrow seam used by tests and compatible VK Bridge implementations. */
 export interface VkBridgeLike {
-  send(method: "VKWebAppInit"): unknown;
+  send(
+    method: "VKWebAppInit" | "VKWebAppTapticImpactOccurred",
+    params?: { readonly style: "medium" },
+  ): unknown;
+  supportsAsync?(
+    method: "VKWebAppTapticImpactOccurred",
+  ): Promise<boolean>;
   subscribe(listener: VkBridgeListener): void;
   unsubscribe(listener: VkBridgeListener): void;
 }
@@ -53,10 +64,16 @@ export interface PlatformDocument extends EventTarget {
   readonly visibilityState: DocumentVisibilityState;
 }
 
+export interface PlatformNavigator {
+  vibrate?(pattern: number | number[]): boolean;
+}
+
 export interface PlatformAdapterOptions {
   readonly appId?: number;
   readonly window?: PlatformWindow;
   readonly document?: PlatformDocument;
+  /** Browser vibration seam. Pass null to explicitly disable it. */
+  readonly navigator?: PlatformNavigator | null;
   /** Test seam or a separately configured VK Bridge instance. */
   readonly bridge?: VkBridgeLike;
 }
@@ -71,11 +88,13 @@ class BrowserPlatformAdapter implements PlatformAdapter {
   private readonly suspensionSources = new Set<SuspensionSource>();
   private readonly bridge: VkBridgeLike | null;
   private initPromise: Promise<boolean> | null = null;
+  private tapticSupportPromise: Promise<boolean> | null = null;
   private listeningToBridge = false;
   private destroyed = false;
 
   public constructor(
     private readonly environmentDocument: PlatformDocument,
+    private readonly environmentNavigator: PlatformNavigator | null,
     search: string,
     appId: number,
     suppliedBridge?: VkBridgeLike,
@@ -127,6 +146,24 @@ class BrowserPlatformAdapter implements PlatformAdapter {
     return this.initPromise;
   }
 
+  public hitFeedback(): void {
+    if (this.destroyed) return;
+
+    if (this.kind === "vk") {
+      void this.sendVkHitFeedback();
+      return;
+    }
+
+    try {
+      this.environmentNavigator?.vibrate?.call(
+        this.environmentNavigator,
+        HIT_FEEDBACK_DURATION_MS,
+      );
+    } catch {
+      // Vibration is optional and must never interrupt gameplay.
+    }
+  }
+
   public subscribeLifecycle(handlers: PlatformLifecycleHandlers): () => void {
     if (this.destroyed) return () => undefined;
 
@@ -171,6 +208,40 @@ class BrowserPlatformAdapter implements PlatformAdapter {
       this.setSuspended("vk", false);
     }
   };
+
+  private async sendVkHitFeedback(): Promise<void> {
+    try {
+      const initialized = await this.initialize();
+      if (!initialized || this.destroyed || !this.bridge) return;
+
+      const supported = await this.getTapticSupport();
+      if (!supported || this.destroyed) return;
+
+      await Promise.resolve(
+        this.bridge.send(VK_TAPTIC_IMPACT_METHOD, { style: "medium" }),
+      );
+    } catch {
+      // Taptic feedback is a best-effort enhancement.
+    }
+  }
+
+  private getTapticSupport(): Promise<boolean> {
+    if (this.tapticSupportPromise) return this.tapticSupportPromise;
+    if (!this.bridge?.supportsAsync) return Promise.resolve(false);
+
+    try {
+      this.tapticSupportPromise = Promise.resolve(
+        this.bridge.supportsAsync(VK_TAPTIC_IMPACT_METHOD),
+      ).then(
+        (supported) => supported === true,
+        () => false,
+      );
+    } catch {
+      this.tapticSupportPromise = Promise.resolve(false);
+    }
+
+    return this.tapticSupportPromise;
+  }
 
   private setSuspended(source: SuspensionSource, suspended: boolean): void {
     if (this.destroyed) return;
@@ -223,9 +294,16 @@ export function createPlatformAdapter(
 ): PlatformAdapter {
   const environmentWindow = options.window ?? window;
   const environmentDocument = options.document ?? document;
+  const environmentNavigator =
+    options.navigator === undefined
+      ? typeof navigator === "undefined"
+        ? null
+        : navigator
+      : options.navigator;
 
   return new BrowserPlatformAdapter(
     environmentDocument,
+    environmentNavigator,
     environmentWindow.location.search,
     options.appId ?? VK_APP_ID,
     options.bridge,

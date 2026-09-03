@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 
-import RaidScene from "./game/RaidScene";
+import RaidScene, { CONFIRMED_HIT_EVENT } from "./game/RaidScene";
 import { createPlatformAdapter } from "./platform";
 import "./style.css";
 
@@ -51,6 +51,8 @@ try {
 }
 
 const platform = createPlatformAdapter();
+const handleConfirmedHit = (): void => platform.hitFeedback();
+game.events.on(CONFIRMED_HIT_EVENT, handleConfirmedHit);
 const unsubscribeLifecycle = platform.subscribeLifecycle({
   onPause: () => {
     const raidScene = game.scene.getScene("raid");
@@ -66,6 +68,7 @@ const unsubscribeLifecycle = platform.subscribeLifecycle({
 void platform.initialize();
 
 window.addEventListener("beforeunload", () => {
+  game.events.off(CONFIRMED_HIT_EVENT, handleConfirmedHit);
   unsubscribeLifecycle();
   platform.destroy();
   game.destroy(true);

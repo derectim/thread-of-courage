@@ -14,7 +14,11 @@ import {
   type ProgressionState,
   type UpgradeId,
 } from "../game/ProgressionStore";
-import { MONSTERS, getMonsterForStage } from "../game/content";
+import {
+  MONSTERS,
+  getMonsterForStage,
+  type MonsterDefinition,
+} from "../game/content";
 import { HERO_CROSSBOW_FRAMES } from "../game/heroAnimation";
 import { NEEDLE_ART_TIP_Y, getNeedleArtSize } from "../game/needleVisual";
 import {
@@ -72,6 +76,14 @@ function firstStageForMonster(monsterId: string): number {
     if (getMonsterForStage(stage).id === monsterId) return stage;
   }
   return 1;
+}
+
+export function getBestiaryThreatLabel(
+  monster: Pick<MonsterDefinition, "isBoss" | "isMiniBoss">,
+): string {
+  if (monster.isBoss) return "БОСС";
+  if (monster.isMiniBoss) return "МИНИ-БОСС";
+  return "";
 }
 
 export default class GameMenu {
@@ -280,7 +292,7 @@ export default class GameMenu {
       <div class="menu-record ${this.notice ? "has-notice" : ""}">
         ${this.notice ? `<span>${this.notice}</span><small>Лучший результат: <strong>${record || "—"}</strong></small>` : `Лучший результат: <strong>${record || "—"}</strong>`}
       </div>
-      <button class="raid-button" data-action="start"><span>В РЕЙД!</span><small>Босс каждые 5 этапов</small></button>
+      <button class="raid-button" data-action="start"><span>В РЕЙД!</span><small>Мини-боссы между главными</small></button>
       ${this.renderNav()}
     `;
   }
@@ -452,11 +464,12 @@ export default class GameMenu {
       const firstStage = firstStageForMonster(monster.id);
       const discovered = this.state.highestStageCleared >= firstStage;
       const imageKey = monster.textureKeys?.[0];
+      const threatLabel = getBestiaryThreatLabel(monster);
       return `
         <article class="meta-card beast-card ${discovered ? "" : "is-locked"}">
           <div class="beast-portrait">${discovered && imageKey ? `<img src="${asset(`${imageKey}.webp`)}" alt="" />` : "?"}</div>
           <div class="item-copy">
-            <h3>${discovered ? monster.name : "Неизвестный кошмар"}${monster.isBoss && discovered ? " · БОСС" : ""}</h3>
+            <h3>${discovered ? monster.name : "Неизвестный кошмар"}${threatLabel && discovered ? ` · ${threatLabel}` : ""}</h3>
             <p>${discovered ? monster.epithet : `Встречается не раньше этапа ${firstStage}`}</p>
           </div>
         </article>`;

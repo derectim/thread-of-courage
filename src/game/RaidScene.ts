@@ -40,6 +40,11 @@ import {
   getNeedleArtSize,
 } from "./needleVisual";
 import {
+  getNextStageTip,
+  resolveVictoryChoice,
+  type VictoryChoice,
+} from "./raidFlow";
+import {
   BACKGROUNDS,
   NEEDLE_SKINS,
   getBackground,
@@ -56,15 +61,20 @@ const WORLD_HIT_ANGLE = Math.PI / 2;
 const BASE_NEEDLE_GAP = 0.085;
 const BASE_PROJECTILE_DURATION = 175;
 
+export const CONFIRMED_HIT_EVENT = "raid:confirmed-hit";
+
 const MONSTER_FALLBACK_SURFACE_RADIUS: Readonly<Record<string, number>> = {
   "grumble-yarn": 93,
   "button-bug": 96,
+  "spool-spider": 112,
   "sewing-storm": 106,
   "moth-mask": 104,
   "spring-rabbit": 98,
+  "patchwork-owl": 108,
   "madam-marionette": 104,
   "thimble-hedgehog": 95,
   "ink-shuttle": 100,
+  "thimble-sentinel": 106,
   ripper: 105,
 };
 
@@ -586,7 +596,11 @@ export class RaidScene extends Phaser.Scene {
     this.currentMonster = getMonsterForStage(this.stage);
     this.currentRoom = getRoomForStage(this.stage);
     if (this.state !== "menu") {
-      this.sfx.setMusicTheme(this.currentMonster.isBoss ? "boss" : "raid");
+      this.sfx.setMusicTheme(
+        this.currentMonster.isBoss || this.currentMonster.isMiniBoss
+          ? "boss"
+          : "raid",
+      );
     }
     this.updateRoomBackground(this.currentRoom);
     this.requiredHits = getRequiredHits(this.currentMonster, this.stage);
@@ -635,15 +649,22 @@ export class RaidScene extends Phaser.Scene {
     this.threadText.setText("✦ " + this.progression.thread + " нитей");
     this.roomText.setText(this.currentRoom.name);
     this.monsterNameText.setText(
-      (this.currentMonster.isBoss ? "★ " : "") + this.currentMonster.name,
+      (this.currentMonster.isBoss
+        ? "★ "
+        : this.currentMonster.isMiniBoss
+          ? "◆ "
+          : "") + this.currentMonster.name,
     );
     this.refreshPatternLabel();
     this.refreshShieldText();
     this.updateHealth();
 
-    if (this.currentMonster.isBoss) {
+    if (this.currentMonster.isBoss || this.currentMonster.isMiniBoss) {
       this.sfx.boss();
-      this.cameras.main.shake(180, 0.003);
+      this.cameras.main.shake(
+        this.currentMonster.isBoss ? 180 : 120,
+        this.currentMonster.isBoss ? 0.003 : 0.002,
+      );
     }
   }
 
@@ -656,11 +677,16 @@ export class RaidScene extends Phaser.Scene {
       this.textures.exists(key),
     );
     if (textureKey) {
+      const artworkScale = monster.isBoss
+        ? 2.82
+        : monster.isMiniBoss
+          ? 2.74
+          : 2.68;
       this.monsterArtwork = this.add
         .image(0, 0, textureKey)
         .setDisplaySize(
-          monster.isBoss ? MONSTER_RADIUS * 2.82 : MONSTER_RADIUS * 2.68,
-          monster.isBoss ? MONSTER_RADIUS * 2.82 : MONSTER_RADIUS * 2.68,
+          MONSTER_RADIUS * artworkScale,
+          MONSTER_RADIUS * artworkScale,
         );
       body.add(this.monsterArtwork);
       return body;
@@ -913,6 +939,7 @@ export class RaidScene extends Phaser.Scene {
     this.hits = Math.min(this.requiredHits, this.hits + stitchPower);
     this.shotInFlight = false;
     this.sfx.hit();
+    this.game.events.emit(CONFIRMED_HIT_EVENT);
     this.cameras.main.shake(isEmpowered ? 100 : 65, isEmpowered ? 0.004 : 0.0025);
 
     if (this.getActivePattern() === "recoil") {
@@ -1010,7 +1037,12 @@ export class RaidScene extends Phaser.Scene {
     const scaledRadius =
       sourceRadius *
       Math.hypot(Math.cos(angle) * scaleX, Math.sin(angle) * scaleY);
-    return Phaser.Math.Clamp(scaledRadius, 28, this.currentMonster.isBoss ? 154 : 146);
+    const maximumRadius = this.currentMonster.isBoss
+      ? 154
+      : this.currentMonster.isMiniBoss
+        ? 150
+        : 146;
+    return Phaser.Math.Clamp(scaledRadius, 28, maximumRadius);
   }
 
   private redrawAttachedNeedles(): void {
@@ -1031,7 +1063,11 @@ export class RaidScene extends Phaser.Scene {
       const tangentY = directionX;
       const surface = this.getMonsterSurfaceRadius(angle);
       const embedded = Math.max(8, surface - 18);
-      const outsideLength = this.currentMonster.isBoss ? 46 : 40;
+      const outsideLength = this.currentMonster.isBoss
+        ? 46
+        : this.currentMonster.isMiniBoss
+          ? 43
+          : 40;
       const needleSize = getNeedleArtSize(outsideLength + 18);
       const needle = this.add
         .image(
@@ -1206,16 +1242,22 @@ export class RaidScene extends Phaser.Scene {
 
     this.cameras.main.flash(240, 232, 180, 77, false);
     this.time.delayedCall(420, () => {
-      this.showResultOverlay(
-        this.currentMonster.isBoss ? "Босс распорот!" : "Кошмар зашит!",
+      this.showVictoryOverlay(
+        this.currentMonster.isBoss
+          ? "Босс распорот!"
+          : this.currentMonster.isMiniBoss
+            ? "Мини-босс зашит!"
+            : "Кошмар зашит!",
         this.currentMonster.name +
           " больше не тревожит комнату.\nНаграда: " +
           reward +
           " нитей",
-        "Продолжить путь",
-        () => this.advanceStage(),
         this.currentRoom.accentColor,
-        this.currentMonster.isBoss ? "КОМНАТА ОЧИЩЕНА" : "ПОБЕДА",
+        this.currentMonster.isBoss
+          ? "КОМНАТА ОЧИЩЕНА"
+          : this.currentMonster.isMiniBoss
+            ? "ПРОМЕЖУТОЧНАЯ УГРОЗА СНЯТА"
+            : "ПОБЕДА",
       );
     });
   }
@@ -1247,42 +1289,39 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private advanceStage(): void {
-    const previousRoom = this.currentRoom.id;
+    const previousRoomId = this.currentRoom.id;
     this.closeOverlay();
     this.state = "transition";
     this.inputCooldownUntil = this.time.now + 240;
     this.stage += 1;
     this.createMonster();
+    this.beginPlaying(
+      getNextStageTip(
+        previousRoomId,
+        this.currentRoom,
+        this.currentMonster,
+      ),
+    );
+  }
 
-    if (this.currentMonster.isBoss) {
-      this.showResultOverlay(
-        "Босс комнаты",
-        this.currentMonster.name +
-          "\n" +
-          this.currentMonster.epithet +
-          ".\nНа половине здоровья он сменит узор.",
-        "В бой",
-        () => this.beginPlaying("Следи за лицом: повреждения меняют босса"),
-        this.currentRoom.accentColor,
-        this.currentRoom.name.toUpperCase(),
-      );
+  private resolveVictory(choice: VictoryChoice): void {
+    const destination = resolveVictoryChoice(choice);
+    if (destination.kind === "next-stage") {
+      this.advanceStage();
       return;
     }
 
-    if (this.currentRoom.id !== previousRoom) {
-      this.showResultOverlay(
-        this.currentRoom.name,
-        this.currentRoom.subtitle +
-          ".\nНовая комната — новые враги и новый ритм.",
-        "Войти",
-        () => this.beginPlaying("Осмотрись и поймай новый ритм"),
-        this.currentRoom.accentColor,
-        "НОВАЯ КОМНАТА",
-      );
-      return;
-    }
-
-    this.beginPlaying("Новый узор — следи за ритмом");
+    if (destination.persistProgress) this.persistProgress();
+    this.closeOverlay();
+    this.state = "menu";
+    this.tipText.setText(`Путь сохранён после этапа ${this.stage}`);
+    this.sfx.ui();
+    this.sfx.setMusicTheme("menu");
+    this.menu.show(
+      this.progression,
+      "home",
+      `Прогресс сохранён · этап ${this.stage} пройден`,
+    );
   }
 
   private beginPlaying(tip: string): void {
@@ -1498,11 +1537,9 @@ export class RaidScene extends Phaser.Scene {
     this.showWorkshop(continueAction, continueLabel);
   }
 
-  private showResultOverlay(
+  private showVictoryOverlay(
     title: string,
     body: string,
-    buttonLabel: string,
-    action: () => void,
     accent: number,
     eyebrow?: string,
   ): void {
@@ -1522,12 +1559,12 @@ export class RaidScene extends Phaser.Scene {
       .setInteractive();
     const card = this.add.graphics();
     card.fillStyle(0x25324a, 0.98);
-    card.fillRoundedRect(38, 198, WIDTH - 76, 344, 26);
+    card.fillRoundedRect(38, 174, WIDTH - 76, 420, 26);
     card.lineStyle(3, accent, 0.58);
-    card.strokeRoundedRect(38, 198, WIDTH - 76, 344, 26);
+    card.strokeRoundedRect(38, 174, WIDTH - 76, 420, 26);
 
     const eyebrowText = this.add
-      .text(WIDTH / 2, 239, eyebrow ?? "РЕЙД ЗАВЕРШЁН", {
+      .text(WIDTH / 2, 215, eyebrow ?? "РЕЙД ЗАВЕРШЁН", {
         fontFamily: "Inter, Segoe UI, sans-serif",
         fontSize: "11px",
         fontStyle: "bold",
@@ -1538,7 +1575,7 @@ export class RaidScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const titleText = this.add
-      .text(WIDTH / 2, 291, title, {
+      .text(WIDTH / 2, 267, title, {
         fontFamily: "Georgia, serif",
         fontSize: "30px",
         fontStyle: "bold",
@@ -1548,7 +1585,7 @@ export class RaidScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const bodyText = this.add
-      .text(WIDTH / 2, 378, body, {
+      .text(WIDTH / 2, 355, body, {
         fontFamily: "Inter, Segoe UI, sans-serif",
         fontSize: "14px",
         color: "#d9ddce",
@@ -1557,22 +1594,46 @@ export class RaidScene extends Phaser.Scene {
         wordWrap: { width: 294 },
       })
       .setOrigin(0.5);
-    const button = this.add
-      .rectangle(WIDTH / 2, 488, 270, 58, accent, 1)
+    const continueButton = this.add
+      .rectangle(WIDTH / 2, 469, 284, 58, accent, 1)
       .setStrokeStyle(2, 0xf2e3c6, 0.3)
       .setInteractive({ useHandCursor: true });
-    const buttonText = this.add
-      .text(WIDTH / 2, 488, buttonLabel, {
+    const continueText = this.add
+      .text(WIDTH / 2, 469, "Продолжить путь", {
         fontFamily: "Inter, Segoe UI, sans-serif",
         fontSize: "16px",
         fontStyle: "bold",
         color: "#182033",
       })
       .setOrigin(0.5);
+    const menuButton = this.add
+      .rectangle(WIDTH / 2, 539, 284, 50, 0x182033, 0.92)
+      .setStrokeStyle(2, accent, 0.72)
+      .setInteractive({ useHandCursor: true });
+    const menuText = this.add
+      .text(WIDTH / 2, 539, "В меню", {
+        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontSize: "15px",
+        fontStyle: "bold",
+        color: "#f2e3c6",
+      })
+      .setOrigin(0.5);
 
-    button.on("pointerover", () => button.setScale(1.02));
-    button.on("pointerout", () => button.setScale(1));
-    button.on(
+    continueButton.on("pointerover", () => continueButton.setScale(1.02));
+    continueButton.on("pointerout", () => continueButton.setScale(1));
+    menuButton.on("pointerover", () => menuButton.setScale(1.02));
+    menuButton.on("pointerout", () => menuButton.setScale(1));
+
+    let choiceResolved = false;
+    const choose = (choice: VictoryChoice): void => {
+      if (choiceResolved) return;
+      choiceResolved = true;
+      continueButton.disableInteractive();
+      menuButton.disableInteractive();
+      this.resolveVictory(choice);
+    };
+
+    continueButton.on(
       "pointerdown",
       (
         _pointer: Phaser.Input.Pointer,
@@ -1581,10 +1642,21 @@ export class RaidScene extends Phaser.Scene {
         event: Phaser.Types.Input.EventData,
       ) => {
         event.stopPropagation();
-        button.disableInteractive();
-        button.setScale(0.98);
-        this.sfx.ui();
-        action();
+        continueButton.setScale(0.98);
+        choose("continue");
+      },
+    );
+    menuButton.on(
+      "pointerdown",
+      (
+        _pointer: Phaser.Input.Pointer,
+        _localX: number,
+        _localY: number,
+        event: Phaser.Types.Input.EventData,
+      ) => {
+        event.stopPropagation();
+        menuButton.setScale(0.98);
+        choose("menu");
       },
     );
 
@@ -1594,8 +1666,10 @@ export class RaidScene extends Phaser.Scene {
       eyebrowText,
       titleText,
       bodyText,
-      button,
-      buttonText,
+      continueButton,
+      continueText,
+      menuButton,
+      menuText,
     ]);
     this.overlay = overlay;
   }
