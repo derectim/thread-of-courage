@@ -23,6 +23,17 @@ describe("getRequiredHits", () => {
     );
   });
 
+  it("softens only the first spool spider encounter", () => {
+    const spoolSpider = MONSTERS.find(
+      (monster) => monster.id === "spool-spider",
+    );
+    expect(spoolSpider).toBeDefined();
+
+    expect(getRequiredHits(spoolSpider!, 3)).toBe(8);
+    expect(getRequiredHits(spoolSpider!, 18)).toBe(11);
+    expect(getRequiredHits(spoolSpider!, 23)).toBe(12);
+  });
+
   it("caps pendulum stages to their reachable firing arc", () => {
     const pendulum = MONSTERS.find((monster) => monster.pattern === "pendulum");
     expect(pendulum).toBeDefined();

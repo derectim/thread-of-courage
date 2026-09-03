@@ -277,6 +277,9 @@ const MAX_HITS_BY_PATTERN: Readonly<Record<MovementPattern, number>> = {
   recoil: 24,
 };
 
+const FIRST_SPOOL_SPIDER_STAGE = 3;
+const FIRST_SPOOL_SPIDER_HIT_RELIEF = 2;
+
 const REGULAR_MONSTERS = MONSTERS.filter(
   (monster) => !monster.isBoss && !monster.isMiniBoss,
 );
@@ -329,5 +332,13 @@ export function getExpeditionNumber(stage: number): number {
 export function getRequiredHits(monster: MonsterDefinition, stage: number): number {
   const normalizedStage = Math.max(1, Math.floor(stage));
   const growth = Math.floor((normalizedStage - 1) / 10);
-  return Math.min(monster.baseHits + growth, MAX_HITS_BY_PATTERN[monster.pattern]);
+  const earlyEncounterRelief =
+    monster.id === "spool-spider" &&
+    normalizedStage === FIRST_SPOOL_SPIDER_STAGE
+      ? FIRST_SPOOL_SPIDER_HIT_RELIEF
+      : 0;
+  return Math.min(
+    monster.baseHits + growth - earlyEncounterRelief,
+    MAX_HITS_BY_PATTERN[monster.pattern],
+  );
 }
