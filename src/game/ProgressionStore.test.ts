@@ -222,14 +222,22 @@ describe("ProgressionStore v3 persistence", () => {
 });
 
 describe("expensive upgrade economy", () => {
-  it("uses the raised first-level prices", () => {
-    expect(getUpgradeCost("speed", 0)).toBe(22);
-    expect(getUpgradeCost("precision", 0)).toBe(26);
-    expect(getUpgradeCost("power", 0)).toBe(30);
-    expect(getUpgradeCost("ward", 0)).toBe(36);
+  it("uses a distinct five-level price curve for every upgrade", () => {
+    expect([0, 1, 2, 3, 4].map((level) =>
+      getUpgradeCost("power", level as 0 | 1 | 2 | 3 | 4),
+    )).toEqual([25, 100, 180, 300, 500]);
+    expect([0, 1, 2, 3, 4].map((level) =>
+      getUpgradeCost("precision", level as 0 | 1 | 2 | 3 | 4),
+    )).toEqual([60, 160, 280, 470, 780]);
+    expect([0, 1, 2, 3, 4].map((level) =>
+      getUpgradeCost("speed", level as 0 | 1 | 2 | 3 | 4),
+    )).toEqual([50, 140, 250, 420, 700]);
+    expect([0, 1, 2, 3, 4].map((level) =>
+      getUpgradeCost("ward", level as 0 | 1 | 2 | 3 | 4),
+    )).toEqual([500, 1000, 1500, 2200, 3000]);
   });
 
-  it.each(UPGRADE_IDS)("grows every %s price through an expensive fifth level", (id) => {
+  it.each(UPGRADE_IDS)("grows every %s price through the fifth level", (id) => {
     const costs = [0, 1, 2, 3, 4].map((level) =>
       getUpgradeCost(id, level as 0 | 1 | 2 | 3 | 4),
     );
@@ -238,8 +246,29 @@ describe("expensive upgrade economy", () => {
     for (let index = 1; index < costs.length; index += 1) {
       expect(costs[index]).toBeGreaterThan(costs[index - 1] ?? 0);
     }
-    expect(costs[4]).toBe((costs[0] ?? 0) * 8);
     expect(getUpgradeCost(id, MAX_UPGRADE_LEVEL)).toBeNull();
+  });
+
+  it("keeps the first double-stitch accessible and later levels at one hundred or more", () => {
+    expect(getUpgradeCost("power", 0)).toBeLessThan(50);
+    for (const level of [1, 2, 3, 4] as const) {
+      expect(getUpgradeCost("power", level)).toBeGreaterThanOrEqual(100);
+    }
+  });
+
+  it("treats every ward as an endgame purchase and precision as dearer than speed", () => {
+    const wardCosts = [0, 1, 2, 3, 4].map((level) =>
+      getUpgradeCost("ward", level as 0 | 1 | 2 | 3 | 4) ?? 0,
+    );
+    expect(wardCosts[0]).toBe(500);
+    for (let index = 1; index < wardCosts.length; index += 1) {
+      expect(wardCosts[index] - wardCosts[index - 1]).toBeGreaterThanOrEqual(500);
+    }
+    for (const level of [0, 1, 2, 3, 4] as const) {
+      expect(getUpgradeCost("precision", level)).toBeGreaterThan(
+        getUpgradeCost("speed", level) ?? 0,
+      );
+    }
   });
 
   it("deducts thread, raises only one upgrade and records the purchase", () => {
@@ -247,7 +276,7 @@ describe("expensive upgrade economy", () => {
     const purchased = purchaseUpgrade(state, "power");
 
     expect(purchased).not.toBe(state);
-    expect(purchased.thread).toBe(70);
+    expect(purchased.thread).toBe(75);
     expect(purchased.upgrades).toEqual({
       power: 1,
       precision: 0,

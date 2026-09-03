@@ -54,17 +54,28 @@ export interface ProgressionStorage {
 
 export interface UpgradeDefinition {
   readonly description: string;
-  readonly baseCost: number;
+  readonly costs: readonly [number, number, number, number, number];
 }
 
 export const UPGRADE_DEFINITIONS: Readonly<Record<UpgradeId, UpgradeDefinition>> = {
-  power: { description: "Шанс нанести двойной стежок", baseCost: 30 },
-  precision: { description: "Прощает более тесные попадания", baseCost: 26 },
-  speed: { description: "Ускоряет полёт иглы", baseCost: 22 },
-  ward: { description: "Добавляет спасительные обереги на рейд", baseCost: 36 },
+  power: {
+    description: "Шанс нанести двойной стежок",
+    costs: [25, 100, 180, 300, 500],
+  },
+  precision: {
+    description: "Прощает более тесные попадания",
+    costs: [60, 160, 280, 470, 780],
+  },
+  speed: {
+    description: "Ускоряет полёт иглы",
+    costs: [50, 140, 250, 420, 700],
+  },
+  ward: {
+    description: "Добавляет спасительные обереги на рейд",
+    costs: [500, 1000, 1500, 2200, 3000],
+  },
 };
 
-const COST_MULTIPLIERS = [1, 2, 3, 5, 8] as const;
 const RANDOM_NEEDLE_UNLOCK_COSTS = [90, 240, 520] as const;
 
 function createUpgradeLevels(): Record<UpgradeId, UpgradeLevel> {
@@ -263,7 +274,7 @@ export function save(state: ProgressionState, storage?: ProgressionStorage | nul
 export function getUpgradeCost(upgrade: UpgradeId, currentLevel: UpgradeLevel): number | null {
   if (currentLevel >= MAX_UPGRADE_LEVEL) return null;
   const purchasableLevel = currentLevel as Exclude<UpgradeLevel, typeof MAX_UPGRADE_LEVEL>;
-  return UPGRADE_DEFINITIONS[upgrade].baseCost * COST_MULTIPLIERS[purchasableLevel];
+  return UPGRADE_DEFINITIONS[upgrade].costs[purchasableLevel];
 }
 
 export function purchaseUpgrade(state: ProgressionState, upgrade: UpgradeId): ProgressionState {
