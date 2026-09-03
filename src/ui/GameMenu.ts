@@ -16,6 +16,7 @@ import {
 } from "../game/ProgressionStore";
 import { MONSTERS, getMonsterForStage } from "../game/content";
 import { HERO_CROSSBOW_FRAMES } from "../game/heroAnimation";
+import { NEEDLE_ART_TIP_Y, getNeedleArtSize } from "../game/needleVisual";
 import {
   BACKGROUNDS,
   NEEDLE_SKINS,
@@ -43,6 +44,14 @@ const UPGRADE_NAMES: Readonly<Record<UpgradeId, { name: string; symbol: string }
   ward: { name: "Оберег лоскутницы", symbol: "◇" },
 };
 
+const QUEST_EMBLEMS: Readonly<Record<QuestId, string>> = {
+  "first-fifty": "✦",
+  "nightmare-hunter": "◉",
+  "boss-breaker": "♜",
+  "tenth-stitch": "Ⅹ",
+  "needle-collector": "⌁",
+};
+
 export const TAB_LABELS: Readonly<Record<Exclude<MenuTab, "home">, { label: string; iconFileName: string }>> = {
   upgrades: { label: "Усиления", iconFileName: "menu-icon-upgrades.webp" },
   quests: { label: "Поручения", iconFileName: "menu-icon-quests.webp" },
@@ -56,10 +65,6 @@ function asset(path: string): string {
     `${import.meta.env.BASE_URL}assets/art/${path}`,
     document.baseURI,
   ).href;
-}
-
-function colorHex(value: number): string {
-  return `#${value.toString(16).padStart(6, "0")}`;
 }
 
 function firstStageForMonster(monsterId: string): number {
@@ -188,6 +193,9 @@ export default class GameMenu {
     const activeButton = this.root.contains(document.activeElement) && document.activeElement instanceof HTMLButtonElement
       ? document.activeElement
       : null;
+    const previousScrollTop = activeButton?.dataset.action && activeButton.dataset.action !== "home"
+      ? this.root.querySelector<HTMLElement>(".panel-scroll")?.scrollTop
+      : undefined;
     const focusKey = activeButton
       ? {
           tab: activeButton.dataset.tab,
@@ -196,6 +204,10 @@ export default class GameMenu {
         }
       : null;
     this.root.innerHTML = this.tab === "home" ? this.renderHome() : this.renderPanel();
+    if (previousScrollTop !== undefined) {
+      const panelScroll = this.root.querySelector<HTMLElement>(".panel-scroll");
+      if (panelScroll) panelScroll.scrollTop = previousScrollTop;
+    }
     if (focusKey) {
       const matchingButton = Array.from(this.root.querySelectorAll<HTMLButtonElement>("button")).find(
         (button) =>
@@ -222,21 +234,19 @@ export default class GameMenu {
       NEEDLE_SKINS.find((candidate) => candidate.id === this.state.equippedNeedle) ??
       NEEDLE_SKINS[0];
     const anchor = HERO_CROSSBOW_FRAMES[frameIndex].needle;
-    const size = 1254;
-    const x = anchor.x * size;
-    const tip = anchor.tipY * size;
-    const tail = anchor.tailY * size;
-    const shaft = colorHex(skin.shaftColor);
-    const head = colorHex(skin.headColor);
-    const fletching = colorHex(skin.tailColor);
+    const needleLength = anchor.tailY - anchor.tipY;
+    const displayHeight = getNeedleArtSize(needleLength).height;
+    const top = anchor.tipY - displayHeight * NEEDLE_ART_TIP_Y;
 
     return `
-      <svg class="menu-hero-needle" viewBox="0 0 ${size} ${size}" aria-hidden="true">
-        <line class="hero-needle-outline" x1="${x}" y1="${tip + 17}" x2="${x}" y2="${tail}" />
-        <line class="hero-needle-shaft" x1="${x}" y1="${tip + 17}" x2="${x}" y2="${tail}" style="stroke:${shaft}" />
-        <path class="hero-needle-tip" d="M ${x} ${tip} L ${x - 10} ${tip + 24} L ${x + 10} ${tip + 24} Z" style="fill:${head}" />
-        <path class="hero-needle-tail" d="M ${x} ${tail - 2} L ${x - 15} ${tail + 18} L ${x} ${tail + 12} L ${x + 15} ${tail + 18} Z" style="fill:${fletching}" />
-      </svg>`;
+      <img
+        class="menu-hero-needle-art"
+        src="${asset(skin.iconFileName)}"
+        style="left:${anchor.x * 100}%;top:${top * 100}%;height:${displayHeight * 100}%"
+        alt=""
+        aria-hidden="true"
+        draggable="false"
+      />`;
   }
 
   private renderAnimatedHero(): string {
@@ -244,7 +254,7 @@ export default class GameMenu {
       <div class="menu-hero" role="img" aria-label="Эля Штопка с пружинным луком и выбранной иглой">
         ${HERO_CROSSBOW_FRAMES.map((frame, index) => `
           <div class="menu-hero-frame frame-${index + 1}">
-            <img src="${asset(frame.fileName)}" alt="" draggable="false" />
+            <img class="menu-hero-character" src="${asset(frame.fileName)}" alt="" draggable="false" />
             ${this.renderHeroNeedle(index)}
           </div>`).join("")}
       </div>`;
@@ -317,18 +327,20 @@ export default class GameMenu {
       const level = this.state.upgrades[id];
       const cost = getUpgradeCost(id, level);
       const affordable = cost !== null && this.state.thread >= cost;
+      const maxed = cost === null;
       return `
-        <article class="meta-card upgrade-card">
-          <div class="item-symbol">${UPGRADE_NAMES[id].symbol}</div>
+        <article class="meta-card upgrade-card ${affordable ? "is-affordable" : ""} ${maxed ? "is-maxed" : ""}">
+          <div class="item-symbol upgrade-emblem" aria-hidden="true"><span>${UPGRADE_NAMES[id].symbol}</span></div>
           <div class="item-copy">
+            <div class="card-kicker"><span>Усиление</span><strong>ур. ${level}/${MAX_UPGRADE_LEVEL}</strong></div>
             <h3>${UPGRADE_NAMES[id].name}</h3>
             <p>${UPGRADE_DEFINITIONS[id].description}</p>
             <div class="level-pips" aria-label="Уровень ${level} из ${MAX_UPGRADE_LEVEL}">
               ${Array.from({ length: MAX_UPGRADE_LEVEL }, (_, index) => `<i class="${index < level ? "filled" : ""}"></i>`).join("")}
             </div>
           </div>
-          <button class="buy-button" data-action="upgrade" data-id="${id}" ${cost === null || !affordable ? "disabled" : ""}>
-            ${cost === null ? "МАКС" : `✦ ${cost}`}
+          <button class="buy-button card-action" data-action="upgrade" data-id="${id}" ${maxed || !affordable ? "disabled" : ""} aria-label="${maxed ? `${UPGRADE_NAMES[id].name}: максимальный уровень` : `Улучшить ${UPGRADE_NAMES[id].name} за ${cost} нитей`}">
+            <span>${maxed ? "МАКС" : `✦ ${cost}`}</span><small>${maxed ? "ГОТОВО" : "УСИЛИТЬ"}</small>
           </button>
         </article>`;
     }).join("");
@@ -337,66 +349,102 @@ export default class GameMenu {
       const unlocked = this.state.unlockedSkills.includes(skill.id);
       const equipped = this.state.equippedSkill === skill.id;
       return `
-        <article class="meta-card skill-card ${equipped ? "is-equipped" : ""}">
-          <div class="item-symbol">${skill.symbol}</div>
-          <div class="item-copy"><h3>${skill.name}</h3><p>${skill.description}</p></div>
-          <button class="select-button" data-action="skill" data-id="${skill.id}" ${!unlocked || equipped ? "disabled" : ""}>
-            ${equipped ? "ВЫБРАНО" : unlocked ? "ВЫБРАТЬ" : `ЭТАП ${skill.unlockStage}`}
+        <article class="meta-card skill-card ${equipped ? "is-equipped" : ""} ${unlocked ? "" : "is-locked"}">
+          <div class="item-symbol skill-emblem" aria-hidden="true"><span>${skill.symbol}</span></div>
+          <div class="item-copy">
+            <div class="card-kicker"><span>Боевой навык</span><strong>${equipped ? "активен" : unlocked ? "открыт" : `этап ${skill.unlockStage}`}</strong></div>
+            <h3>${skill.name}</h3><p>${skill.description}</p>
+          </div>
+          <button class="select-button card-action" data-action="skill" data-id="${skill.id}" aria-pressed="${equipped}" ${!unlocked || equipped ? "disabled" : ""}>
+            <span>${equipped ? "ВЫБРАН" : unlocked ? "ВЫБРАТЬ" : `ЭТАП ${skill.unlockStage}`}</span><small>${equipped ? "АКТИВЕН" : unlocked ? "НАВЫК" : "ЗАКРЫТО"}</small>
           </button>
         </article>`;
     }).join("");
 
-    return `<p class="section-lead">Цены выросли: каждое решение теперь важно.</p>${upgrades}<h3 class="section-title">Боевые навыки</h3>${skills}`;
+    return `
+      <div class="panel-intro panel-intro-upgrades">
+        <span class="panel-intro-emblem" aria-hidden="true">✦</span>
+        <div><strong>Мастерская усилений</strong><p>Вкладывай нити в постоянную силу. Чем выше уровень, тем дороже следующий стежок.</p></div>
+      </div>
+      <div class="card-stack upgrade-stack">${upgrades}</div>
+      <div class="section-divider"><span>Боевые навыки</span><small>Одновременно действует один навык</small></div>
+      <div class="card-stack skill-stack">${skills}</div>`;
   }
 
   private renderQuests(): string {
-    return QUESTS.map((quest) => {
+    const claimedCount = QUESTS.filter((quest) => this.state.claimedQuestIds.includes(quest.id)).length;
+    const quests = QUESTS.map((quest) => {
       const progress = Math.min(getQuestProgress(this.state, quest.id), quest.target);
       const claimed = this.state.claimedQuestIds.includes(quest.id);
       const complete = progress >= quest.target;
+      const status = claimed ? "Награда получена" : complete ? "Можно забрать" : "В работе";
       const reward = [
         quest.rewardThread ? `✦ ${quest.rewardThread}` : "",
         quest.rewardPremium ? `◆ ${quest.rewardPremium}` : "",
       ].filter(Boolean).join(" · ");
       return `
-        <article class="meta-card quest-card ${complete ? "is-complete" : ""}">
+        <article class="meta-card quest-card ${complete ? "is-complete" : ""} ${claimed ? "is-claimed" : ""}">
+          <div class="quest-emblem" aria-hidden="true"><span>${QUEST_EMBLEMS[quest.id]}</span></div>
           <div class="item-copy">
+            <div class="card-kicker"><span>${status}</span><strong>${progress}/${quest.target}</strong></div>
             <h3>${quest.name}</h3>
             <p>${quest.description}</p>
-            <div class="quest-progress"><span style="width:${(progress / quest.target) * 100}%"></span></div>
-            <small>${progress}/${quest.target} · награда ${reward}</small>
+            <div class="quest-progress" role="progressbar" aria-label="Прогресс поручения ${quest.name}" aria-valuemin="0" aria-valuemax="${quest.target}" aria-valuenow="${progress}"><span style="width:${(progress / quest.target) * 100}%"></span></div>
+            <div class="quest-reward"><span>Награда</span><strong>${reward}</strong></div>
           </div>
-          <button class="buy-button" data-action="quest" data-id="${quest.id}" ${!complete || claimed ? "disabled" : ""}>
-            ${claimed ? "ГОТОВО" : complete ? "ЗАБРАТЬ" : "В ПУТИ"}
+          <button class="buy-button card-action" data-action="quest" data-id="${quest.id}" ${!complete || claimed ? "disabled" : ""} aria-label="${claimed ? `${quest.name}: награда получена` : complete ? `Забрать награду за поручение ${quest.name}` : `${quest.name}: выполнено ${progress} из ${quest.target}`}">
+            <span>${claimed ? "ГОТОВО" : complete ? "ЗАБРАТЬ" : "В ПУТИ"}</span><small>${claimed ? "ПОЛУЧЕНО" : complete ? reward : `${progress}/${quest.target}`}</small>
           </button>
         </article>`;
     }).join("");
+
+    return `
+      <div class="panel-intro panel-intro-quests">
+        <span class="panel-intro-emblem" aria-hidden="true">✓</span>
+        <div><strong>Книга поручений</strong><p>Выполняй цели в рейдах и забирай редкие нити и пуговицы.</p></div>
+        <b>${claimedCount}/${QUESTS.length}</b>
+      </div>
+      <div class="card-stack quest-stack">${quests}</div>`;
   }
 
   private renderNeedles(): string {
     const unlockCost = getRandomNeedleUnlockCost(this.state);
     const canUnlock = unlockCost !== null && this.state.thread >= unlockCost;
+    const ownedCount = this.state.ownedNeedles.length;
     const draw = `
       <article class="needle-draw">
-        <div class="draw-emblem">✦</div>
-        <div><h3>${unlockCost === null ? "Коллекция собрана" : "Случайная новая игла"}</h3><p>${unlockCost === null ? "Все иглы уже открыты." : "Какая именно выпадет — станет известно после открытия."}</p></div>
-        <button class="buy-button" data-action="random-needle" ${!canUnlock ? "disabled" : ""}>
-          ${unlockCost === null ? "ГОТОВО" : `ОТКРЫТЬ · ✦ ${unlockCost}`}
+        <div class="draw-emblem" aria-hidden="true"><span>?</span></div>
+        <div class="draw-copy"><span>Тайный футляр</span><h3>${unlockCost === null ? "Коллекция собрана" : "Случайная новая игла"}</h3><p>${unlockCost === null ? "Все иглы уже открыты." : "Какая именно выпадет — станет известно после открытия."}</p></div>
+        <button class="buy-button card-action" data-action="random-needle" ${!canUnlock ? "disabled" : ""} aria-label="${unlockCost === null ? "Все иглы уже открыты" : `Открыть случайную иглу за ${unlockCost} нитей`}">
+          <span>${unlockCost === null ? "ГОТОВО" : "ОТКРЫТЬ"}</span><small>${unlockCost === null ? "СОБРАНО" : `✦ ${unlockCost}`}</small>
         </button>
       </article>`;
 
-    return `<p class="section-lead">Иглы открываются случайно. Повторов не бывает.</p>${draw}${NEEDLE_SKINS.map((skin) => {
+    return `
+      <div class="panel-intro panel-intro-needles">
+        <span class="panel-intro-emblem" aria-hidden="true">➶</span>
+        <div><strong>Коллекция игл</strong><p>Каждый облик меняет не только цвет, но и стиль следующего рейда.</p></div>
+        <b>${ownedCount}/${NEEDLE_SKINS.length}</b>
+      </div>
+      ${draw}
+      <div class="card-stack needle-stack">${NEEDLE_SKINS.map((skin) => {
       const owned = this.state.ownedNeedles.includes(skin.id);
       const equipped = this.state.equippedNeedle === skin.id;
       return `
         <article class="meta-card needle-card ${equipped ? "is-equipped" : ""} ${owned ? "" : "is-locked"}">
-          <div class="needle-preview" style="--shaft:#${skin.shaftColor.toString(16).padStart(6, "0")};--tip:#${skin.headColor.toString(16).padStart(6, "0")};--tail:#${skin.tailColor.toString(16).padStart(6, "0")}"><i></i></div>
-          <div class="item-copy"><h3>${owned ? skin.name : "Неизвестная игла"}</h3><strong>${owned ? skin.subtitle : "Скрыта в футляре"}</strong><p>${owned ? skin.description : "Облик и свойство откроются случайно."}</p></div>
-          <button class="select-button" data-action="needle" data-id="${skin.id}" ${!owned || equipped ? "disabled" : ""}>
-            ${equipped ? "В КОЛЧАНЕ" : owned ? "ВЫБРАТЬ" : "???"}
+          <div class="needle-showcase has-art">
+            <img class="needle-art" src="${asset(skin.iconFileName)}" alt="" aria-hidden="true" draggable="false" />
+            ${owned ? "" : `<span class="needle-lock" aria-hidden="true">?</span>`}
+          </div>
+          <div class="item-copy">
+            <div class="card-kicker"><span>${equipped ? "В колчане" : owned ? "Открыта" : "Неизвестна"}</span><strong>${owned ? `✦ ${skin.threadCost}` : "???"}</strong></div>
+            <h3>${owned ? skin.name : "Неизвестная игла"}</h3><strong>${owned ? skin.subtitle : "Скрыта в футляре"}</strong><p>${owned ? skin.description : "Облик и свойство откроются случайно."}</p>
+          </div>
+          <button class="select-button card-action" data-action="needle" data-id="${skin.id}" aria-pressed="${equipped}" ${!owned || equipped ? "disabled" : ""}>
+            <span>${equipped ? "В КОЛЧАНЕ" : owned ? "ВЫБРАТЬ" : "???"}</span><small>${equipped ? "АКТИВНА" : owned ? "СМЕНИТЬ" : "ЗАКРЫТО"}</small>
           </button>
         </article>`;
-    }).join("")}`;
+      }).join("")}</div>`;
   }
 
   private renderBestiary(): string {

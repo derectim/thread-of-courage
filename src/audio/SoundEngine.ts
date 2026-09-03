@@ -28,9 +28,11 @@ export class SoundEngine {
   private activeMusicTheme: MusicTheme | null = null;
   private readonly musicBuffers = new Map<MusicTheme, AudioBuffer>();
   private unlockPromise: Promise<boolean> | null = null;
+  private needsAudioPrime = true;
   private muted = false;
   private readonly volume: number;
   private listeningForGesture = false;
+  private gestureCompletionConfirmed = false;
   private listeningForVisibility = false;
   private destroyed = false;
 
@@ -42,24 +44,48 @@ export class SoundEngine {
 
   /** Attempts to create/resume audio. Safe to call repeatedly. */
   public unlock(): Promise<boolean> {
+    return this.unlockInternal(false);
+  }
+
+  private unlockInternal(fromTrustedGesture: boolean): Promise<boolean> {
     if (this.destroyed || !this.isDocumentVisible()) {
       this.listenForFirstGesture();
       return Promise.resolve(false);
     }
 
-    if (this.context?.state === "running") {
-      this.stopListeningForGesture();
+    const context = this.getOrCreateAudioContext();
+    if (!context) {
+      this.listenForFirstGesture();
+      return Promise.resolve(false);
+    }
+
+    if (fromTrustedGesture || this.needsAudioPrime) {
+      this.primeAudioOutput(context);
+    }
+
+    if (context.state === "running") {
+      this.needsAudioPrime = false;
+      this.stopListeningAfterConfirmedGesture();
       this.ensureRequestedMusic();
       return Promise.resolve(true);
     }
 
-    if (!this.unlockPromise) {
-      this.unlockPromise = this.doUnlock().finally(() => {
-        this.unlockPromise = null;
-      });
+    let resumeAttempt: Promise<void>;
+    try {
+      // Calling resume() in this synchronous stack is important on WebKit:
+      // awaiting anything before it can consume the transient user activation.
+      resumeAttempt = Promise.resolve(context.resume());
+    } catch {
+      this.listenForFirstGesture();
+      return Promise.resolve(false);
     }
 
-    return this.unlockPromise;
+    if (!fromTrustedGesture && this.unlockPromise) {
+      void resumeAttempt.catch(() => undefined);
+      return this.unlockPromise;
+    }
+
+    return this.trackUnlock(this.finishUnlock(context, resumeAttempt));
   }
 
   public play(sound: SoundName): void {
@@ -169,9 +195,14 @@ export class SoundEngine {
     gain.setTargetAtTime(muted ? 0 : this.volume, now, 0.015);
 
     if (muted) {
+      this.needsAudioPrime = true;
       this.stopMusicSource();
-    } else if (this.context.state === "running" && this.isDocumentVisible()) {
-      this.ensureRequestedMusic();
+      this.listenForFirstGesture();
+    } else if (this.isDocumentVisible()) {
+      // setMuted(false) is normally called by the sound button. Going through
+      // unlock() keeps that click in the same synchronous WebKit activation.
+      this.needsAudioPrime = true;
+      void this.unlock();
     } else {
       this.listenForFirstGesture();
     }
@@ -190,6 +221,7 @@ export class SoundEngine {
     this.musicBuffers.clear();
 
     const context = this.context;
+    if (context) context.onstatechange = null;
     this.context = null;
     this.masterGain = null;
     this.musicBus = null;
@@ -199,17 +231,21 @@ export class SoundEngine {
     }
   }
 
-  private async doUnlock(): Promise<boolean> {
+  private getOrCreateAudioContext(): AudioContext | null {
     try {
-      if (this.destroyed || !this.isDocumentVisible()) return false;
-
       if (!this.context || this.context.state === "closed") {
         const Context = this.getAudioContextConstructor();
-        if (!Context) return false;
+        if (!Context) return null;
 
         // Construction happens synchronously while unlock() is called from the
         // gesture, which is required by stricter mobile browsers.
-        const context = new Context({ latencyHint: "interactive" });
+        let context: AudioContext;
+        try {
+          context = new Context({ latencyHint: "interactive" });
+        } catch {
+          // Older webkitAudioContext constructors reject the options object.
+          context = new Context();
+        }
         const masterGain = context.createGain();
         masterGain.gain.value = this.muted ? 0 : this.volume;
         masterGain.connect(context.destination);
@@ -220,29 +256,94 @@ export class SoundEngine {
         this.context = context;
         this.masterGain = masterGain;
         this.musicBus = musicBus;
+        this.musicBuffers.clear();
+        this.needsAudioPrime = true;
+        context.onstatechange = this.handleAudioContextStateChange;
       }
 
-      const context = this.context;
-      if (context.state !== "running") {
-        await context.resume();
-      }
+      return this.context;
+    } catch {
+      return null;
+    }
+  }
 
-      if (this.destroyed) return false;
+  private trackUnlock(attempt: Promise<boolean>): Promise<boolean> {
+    let tracked: Promise<boolean>;
+    tracked = attempt.finally(() => {
+      if (this.unlockPromise === tracked) this.unlockPromise = null;
+    });
+    this.unlockPromise = tracked;
+    return tracked;
+  }
+
+  private async finishUnlock(
+    context: AudioContext,
+    resumeAttempt: Promise<void>,
+  ): Promise<boolean> {
+    try {
+      // Some WebKit builds can leave resume() pending after returning from the
+      // background. A bounded wait keeps a later trusted gesture able to retry.
+      await this.waitForResumeAttempt(resumeAttempt);
+
+      if (this.destroyed || context !== this.context) return false;
       if (!this.isDocumentVisible()) {
-        if (context.state === "running") {
-          await context.suspend().catch(() => undefined);
-        }
+        this.needsAudioPrime = true;
+        this.listenForFirstGesture();
         return false;
       }
 
       const ready = (context.state as AudioContextState) === "running";
       if (ready) {
-        this.stopListeningForGesture();
+        this.needsAudioPrime = false;
+        this.stopListeningAfterConfirmedGesture();
         this.ensureRequestedMusic();
+      } else {
+        this.needsAudioPrime = true;
+        this.listenForFirstGesture();
       }
       return ready;
     } catch {
+      this.needsAudioPrime = true;
+      this.listenForFirstGesture();
       return false;
+    }
+  }
+
+  private waitForResumeAttempt(attempt: Promise<void>): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        globalThis.clearTimeout(timeoutId);
+        resolve();
+      };
+      const timeoutId = globalThis.setTimeout(finish, 450);
+      void attempt.then(finish, finish);
+    });
+  }
+
+  /**
+   * Starts one silent sample while the browser still sees the trusted event.
+   * iOS Safari and WKWebView have historically needed this in addition to
+   * AudioContext.resume() before later buffer sources become audible.
+   */
+  private primeAudioOutput(context: AudioContext): void {
+    try {
+      const buffer = context.createBuffer(1, 1, context.sampleRate);
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      source.onended = () => {
+        try {
+          source.disconnect();
+        } catch {
+          // The context may have been replaced while the sample was queued.
+        }
+      };
+      source.start(0);
+    } catch {
+      // A failed prime is retried on the next trusted gesture.
     }
   }
 
@@ -268,9 +369,22 @@ export class SoundEngine {
       capture: true,
       passive: true,
     });
+    document.addEventListener("touchend", this.handleFirstGesture, {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener("mousedown", this.handleFirstGesture, {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener("click", this.handleFirstGesture, {
+      capture: true,
+      passive: true,
+    });
     document.addEventListener("keydown", this.handleFirstGesture, {
       capture: true,
     });
+    this.gestureCompletionConfirmed = false;
     this.listeningForGesture = true;
   }
 
@@ -278,12 +392,50 @@ export class SoundEngine {
     if (typeof document === "undefined" || !this.listeningForGesture) return;
 
     document.removeEventListener("pointerdown", this.handleFirstGesture, true);
+    document.removeEventListener("touchend", this.handleFirstGesture, true);
+    document.removeEventListener("mousedown", this.handleFirstGesture, true);
+    document.removeEventListener("click", this.handleFirstGesture, true);
     document.removeEventListener("keydown", this.handleFirstGesture, true);
     this.listeningForGesture = false;
   }
 
-  private readonly handleFirstGesture = (): void => {
-    void this.unlock();
+  private stopListeningAfterConfirmedGesture(): void {
+    if (this.gestureCompletionConfirmed) this.stopListeningForGesture();
+  }
+
+  private readonly handleFirstGesture = (event: Event): void => {
+    // Keep the touchend/click fallbacks alive after pointerdown. Some WebKit
+    // versions report a running context for pointerdown but do not produce
+    // audible output until the completed tap is delivered.
+    if (
+      event.type === "touchend" ||
+      event.type === "mousedown" ||
+      event.type === "click" ||
+      event.type === "keydown"
+    ) {
+      this.gestureCompletionConfirmed = true;
+    }
+    void this.unlockInternal(true);
+  };
+
+  private readonly handleAudioContextStateChange = (): void => {
+    const context = this.context;
+    if (this.destroyed || !context) return;
+
+    if (context.state === "running") {
+      if (!this.needsAudioPrime && this.isDocumentVisible()) {
+        this.stopListeningAfterConfirmedGesture();
+        this.ensureRequestedMusic();
+      }
+      return;
+    }
+
+    // Safari may use a non-standard "interrupted" state for calls, route
+    // changes, and backgrounding. Treat every non-running state as requiring
+    // another trusted gesture and rebuild the looping source afterwards.
+    this.needsAudioPrime = true;
+    this.stopMusicSource(true);
+    this.listenForFirstGesture();
   };
 
   private listenForVisibilityChanges(): void {
@@ -306,18 +458,16 @@ export class SoundEngine {
   }
 
   private readonly handleVisibilityChange = (): void => {
+    this.needsAudioPrime = true;
     if (!this.isDocumentVisible()) {
       this.stopMusicSource(true);
-      const context = this.context;
-      if (context?.state === "running") {
-        void context.suspend().catch(() => undefined);
-      }
       this.listenForFirstGesture();
       return;
     }
 
-    // Mobile WebViews commonly require another gesture after returning from
-    // the background, so merely becoming visible never resumes audio here.
+    // Do not manually suspend/resume on visibility transitions. WebKit can
+    // race a late suspend() against the first foreground tap and end up silent
+    // while still reporting a healthy context. The next gesture re-primes it.
     this.listenForFirstGesture();
   };
 
@@ -334,6 +484,7 @@ export class SoundEngine {
     if (
       this.destroyed ||
       this.muted ||
+      this.needsAudioPrime ||
       !theme ||
       !context ||
       !musicBus ||

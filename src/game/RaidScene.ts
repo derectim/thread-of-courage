@@ -35,7 +35,13 @@ import {
 } from "./heroAnimation";
 import { getAlphaSurfaceRadius, type AlphaMask } from "./silhouette";
 import {
+  NEEDLE_ART_TIP_Y,
+  getAttachedNeedleRotation,
+  getNeedleArtSize,
+} from "./needleVisual";
+import {
   BACKGROUNDS,
+  NEEDLE_SKINS,
   getBackground,
   getNeedleSkin,
   getSkill,
@@ -105,12 +111,12 @@ export class RaidScene extends Phaser.Scene {
   private monsterBody!: Phaser.GameObjects.Container;
   private monsterArtwork: Phaser.GameObjects.Image | null = null;
   private monsterDamageOverlay!: Phaser.GameObjects.Graphics;
-  private attachedNeedleBackLayer!: Phaser.GameObjects.Graphics;
+  private attachedNeedleBackLayer!: Phaser.GameObjects.Container;
   private attachedNeedleFrontLayer!: Phaser.GameObjects.Graphics;
   private monsterShadow!: Phaser.GameObjects.Ellipse;
   private hero!: Phaser.GameObjects.Container;
   private heroArtwork!: Phaser.GameObjects.Image;
-  private heroLoadedNeedle!: Phaser.GameObjects.Graphics;
+  private heroLoadedNeedle!: Phaser.GameObjects.Image;
   private heroFrameTimers: Phaser.Time.TimerEvent[] = [];
   private healthBar!: Phaser.GameObjects.Rectangle;
   private healthText!: Phaser.GameObjects.Text;
@@ -158,6 +164,10 @@ export class RaidScene extends Phaser.Scene {
       if (background.textureKey && background.fileName) {
         this.load.image(background.textureKey, art + background.fileName);
       }
+    }
+
+    for (const needle of NEEDLE_SKINS) {
+      this.load.image(needle.textureKey, art + needle.iconFileName);
     }
   }
 
@@ -499,7 +509,10 @@ export class RaidScene extends Phaser.Scene {
     this.heroArtwork = this.add
       .image(0, 0, HERO_CROSSBOW_FRAMES[0].textureKey)
       .setDisplaySize(278, 278);
-    this.heroLoadedNeedle = this.add.graphics();
+    const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
+    this.heroLoadedNeedle = this.add
+      .image(0, 0, needleSkin.textureKey)
+      .setOrigin(0.5, NEEDLE_ART_TIP_Y);
     this.hero.add([shadow, this.heroArtwork, this.heroLoadedNeedle]);
     this.drawLoadedHeroNeedle(0, true);
 
@@ -515,7 +528,7 @@ export class RaidScene extends Phaser.Scene {
 
   private drawLoadedHeroNeedle(frameIndex: number, visible: boolean): void {
     if (!this.heroLoadedNeedle?.active) return;
-    this.heroLoadedNeedle.clear();
+    this.heroLoadedNeedle.setVisible(visible);
     if (!visible) return;
 
     const skin = getNeedleSkin(this.progression.equippedNeedle);
@@ -524,48 +537,13 @@ export class RaidScene extends Phaser.Scene {
       this.heroArtwork.displayWidth,
       this.heroArtwork.displayHeight,
     );
-    const direction = Math.sign(anchor.tailY - anchor.tipY) || 1;
-    const tipBaseY = anchor.tipY + direction * 8;
-
-    this.heroLoadedNeedle.lineStyle(6, 0x111827, 0.72);
-    this.heroLoadedNeedle.lineBetween(anchor.x, tipBaseY, anchor.x, anchor.tailY);
-    this.heroLoadedNeedle.lineStyle(3, skin.shaftColor, 1);
-    this.heroLoadedNeedle.lineBetween(anchor.x, tipBaseY, anchor.x, anchor.tailY);
-    this.heroLoadedNeedle.fillStyle(0x111827, 0.78);
-    this.heroLoadedNeedle.fillTriangle(
-      anchor.x,
-      anchor.tipY - 2,
-      anchor.x - 6,
-      anchor.tipY + 10,
-      anchor.x + 6,
-      anchor.tipY + 10,
-    );
-    this.heroLoadedNeedle.fillStyle(skin.headColor, 1);
-    this.heroLoadedNeedle.fillTriangle(
-      anchor.x,
-      anchor.tipY,
-      anchor.x - 4,
-      anchor.tipY + 9,
-      anchor.x + 4,
-      anchor.tipY + 9,
-    );
-    this.heroLoadedNeedle.fillStyle(skin.tailColor, 1);
-    this.heroLoadedNeedle.fillTriangle(
-      anchor.x,
-      anchor.tailY - 1,
-      anchor.x - 6,
-      anchor.tailY + 8,
-      anchor.x,
-      anchor.tailY + 5,
-    );
-    this.heroLoadedNeedle.fillTriangle(
-      anchor.x,
-      anchor.tailY - 1,
-      anchor.x + 6,
-      anchor.tailY + 8,
-      anchor.x,
-      anchor.tailY + 5,
-    );
+    const visibleLength = Math.max(52, Math.abs(anchor.tailY - anchor.tipY));
+    const needleSize = getNeedleArtSize(visibleLength);
+    this.heroLoadedNeedle
+      .setTexture(skin.textureKey)
+      .setPosition(anchor.x, anchor.tipY)
+      .setDisplaySize(needleSize.width, needleSize.height)
+      .setRotation(0);
   }
 
   private setHeroFrame(frameIndex: number, loaded: boolean): void {
@@ -628,7 +606,7 @@ export class RaidScene extends Phaser.Scene {
       .ellipse(MONSTER_X, MONSTER_Y + 90, 112, 15, 0x08151a, 0.16)
       .setDepth(3);
     this.monster = this.add.container(MONSTER_X, MONSTER_Y).setDepth(6);
-    this.attachedNeedleBackLayer = this.add.graphics();
+    this.attachedNeedleBackLayer = this.add.container(0, 0);
     this.monsterBody = this.buildMonsterBody(this.currentMonster, this.stage);
     this.monsterDamageOverlay = this.add.graphics();
     this.attachedNeedleFrontLayer = this.add.graphics();
@@ -838,22 +816,14 @@ export class RaidScene extends Phaser.Scene {
       this.heroArtwork.displayHeight,
     );
     const projectile = this.add
-      .container(this.hero.x + releaseAnchor.x, this.hero.y + releaseAnchor.tipY + 10)
+      .container(this.hero.x + releaseAnchor.x, this.hero.y + releaseAnchor.tipY)
       .setDepth(7);
-    const glow = this.add.rectangle(0, 17, 10, 62, needleSkin.headColor, 0.24);
-    const needle = this.add.graphics();
-    needle.lineStyle(6, 0x111827, 0.68);
-    needle.lineBetween(0, 48, 0, -4);
-    needle.lineStyle(3, needleSkin.shaftColor, 1);
-    needle.lineBetween(0, 48, 0, -4);
-    needle.fillStyle(0x111827, 0.76);
-    needle.fillTriangle(-6, 3, 6, 3, 0, -12);
-    needle.fillStyle(needleSkin.headColor, 1);
-    needle.fillTriangle(-4, 1, 4, 1, 0, -10);
-    needle.fillStyle(0x111827, 0.76);
-    needle.fillCircle(0, 49, 7);
-    needle.fillStyle(needleSkin.tailColor, 1);
-    needle.fillCircle(0, 49, 5);
+    const projectileSize = getNeedleArtSize(62);
+    const glow = this.add.rectangle(0, 31, 10, 62, needleSkin.headColor, 0.24);
+    const needle = this.add
+      .image(0, 0, needleSkin.textureKey)
+      .setOrigin(0.5, NEEDLE_ART_TIP_Y)
+      .setDisplaySize(projectileSize.width, projectileSize.height);
     projectile.add([glow, needle]);
 
     const startX = projectile.x;
@@ -877,7 +847,7 @@ export class RaidScene extends Phaser.Scene {
         projectile.x = Phaser.Math.Linear(startX, MONSTER_X, flight.progress);
         projectile.y = Phaser.Math.Linear(
           startY,
-          MONSTER_Y + liveSurface + 10,
+          MONSTER_Y + liveSurface + 1,
           flight.progress,
         );
       },
@@ -1043,7 +1013,7 @@ export class RaidScene extends Phaser.Scene {
     const back = this.attachedNeedleBackLayer;
     const front = this.attachedNeedleFrontLayer;
     const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
-    back.clear();
+    back.removeAll(true);
     front.clear();
 
     for (const angle of this.hitAngles) {
@@ -1054,27 +1024,17 @@ export class RaidScene extends Phaser.Scene {
       const surface = this.getMonsterSurfaceRadius(angle);
       const embedded = Math.max(8, surface - 18);
       const outsideLength = this.currentMonster.isBoss ? 46 : 40;
-      const outer = surface + outsideLength;
-      const handle = outer + 4;
-
-      back.lineStyle(7, 0x111827, 0.72);
-      back.lineBetween(
-        directionX * embedded,
-        directionY * embedded,
-        directionX * outer,
-        directionY * outer,
-      );
-      back.lineStyle(3, needleSkin.shaftColor, 1);
-      back.lineBetween(
-        directionX * embedded,
-        directionY * embedded,
-        directionX * outer,
-        directionY * outer,
-      );
-      back.fillStyle(0x111827, 0.78);
-      back.fillCircle(directionX * handle, directionY * handle, 7);
-      back.fillStyle(needleSkin.tailColor, 1);
-      back.fillCircle(directionX * handle, directionY * handle, 5);
+      const needleSize = getNeedleArtSize(outsideLength + 18);
+      const needle = this.add
+        .image(
+          directionX * embedded,
+          directionY * embedded,
+          needleSkin.textureKey,
+        )
+        .setOrigin(0.5, NEEDLE_ART_TIP_Y)
+        .setDisplaySize(needleSize.width, needleSize.height)
+        .setRotation(getAttachedNeedleRotation(angle));
+      back.add(needle);
 
       const entry = Math.max(12, surface - 4);
       const entryX = directionX * entry;

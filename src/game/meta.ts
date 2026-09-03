@@ -17,6 +17,8 @@ export interface NeedleSkinDefinition {
   readonly name: string;
   readonly subtitle: string;
   readonly description: string;
+  readonly textureKey: string;
+  readonly iconFileName: string;
   readonly threadCost: number;
   readonly shaftColor: number;
   readonly headColor: number;
@@ -30,6 +32,8 @@ export const NEEDLE_SKINS: readonly NeedleSkinDefinition[] = [
     name: "Серебряная игла",
     subtitle: "Надёжный первый стежок",
     description: "Ровная, быстрая и без скрытых условий.",
+    textureKey: "needle-silver-v2",
+    iconFileName: "needle-silver-v2.webp",
     threadCost: 0,
     shaftColor: 0xf2e3c6,
     headColor: 0xdde8e5,
@@ -41,6 +45,8 @@ export const NEEDLE_SKINS: readonly NeedleSkinDefinition[] = [
     name: "Костяной шип",
     subtitle: "Риск ради силы",
     description: "+8% к двойному стежку, но нужен чуть более чистый зазор.",
+    textureKey: "needle-bone-v2",
+    iconFileName: "needle-bone-v2.webp",
     threadCost: 90,
     shaftColor: 0xf0dfba,
     headColor: 0xfff4d5,
@@ -52,6 +58,8 @@ export const NEEDLE_SKINS: readonly NeedleSkinDefinition[] = [
     name: "Грозовой челнок",
     subtitle: "Каждый пятый удар сильнее",
     description: "Каждый пятый точный стежок наносит ещё одно повреждение.",
+    textureKey: "needle-storm-v2",
+    iconFileName: "needle-storm-v2.webp",
     threadCost: 240,
     shaftColor: 0x9edfd7,
     headColor: 0x39b7a5,
@@ -63,6 +71,8 @@ export const NEEDLE_SKINS: readonly NeedleSkinDefinition[] = [
     name: "Игла рассвета",
     subtitle: "Первый луч пробивает тьму",
     description: "Первое попадание на каждом этапе считается двойным.",
+    textureKey: "needle-sunrise-v2",
+    iconFileName: "needle-sunrise-v2.webp",
     threadCost: 520,
     shaftColor: 0xffe7a0,
     headColor: 0xe8b44d,
