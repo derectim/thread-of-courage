@@ -571,28 +571,26 @@ export class RaidScene extends Phaser.Scene {
     stage: number,
   ): Phaser.GameObjects.Container {
     const body = this.add.container(0, 0);
+    const textureKey = monster.textureKeys?.find((key) =>
+      this.textures.exists(key),
+    );
+    if (textureKey) {
+      this.monsterArtwork = this.add
+        .image(0, 0, textureKey)
+        .setDisplaySize(
+          monster.isBoss ? MONSTER_RADIUS * 2.82 : MONSTER_RADIUS * 2.68,
+          monster.isBoss ? MONSTER_RADIUS * 2.82 : MONSTER_RADIUS * 2.68,
+        );
+      body.add(this.monsterArtwork);
+      return body;
+    }
+
     const aura = this.add.graphics();
     aura.fillStyle(monster.accentColor, monster.isBoss ? 0.13 : 0.08);
     aura.fillCircle(0, 0, MONSTER_RADIUS + 15);
     aura.lineStyle(monster.isBoss ? 3 : 2, monster.accentColor, 0.3);
     aura.strokeCircle(0, 0, MONSTER_RADIUS + 8);
     body.add(aura);
-
-    const textureKey = monster.textureKeys?.find((key) =>
-      this.textures.exists(key),
-    );
-    if (textureKey) {
-      const core = this.add
-        .circle(0, 0, MONSTER_RADIUS - 11, monster.bodyColor, 0.98);
-      this.monsterArtwork = this.add
-        .image(0, 0, textureKey)
-        .setDisplaySize(
-          monster.isBoss ? MONSTER_RADIUS * 2.32 : MONSTER_RADIUS * 2.12,
-          monster.isBoss ? MONSTER_RADIUS * 2.32 : MONSTER_RADIUS * 2.12,
-        );
-      body.add([core, this.monsterArtwork]);
-      return body;
-    }
 
     const shape = this.add.graphics();
     shape.fillStyle(monster.shadowColor, 1);
@@ -996,8 +994,8 @@ export class RaidScene extends Phaser.Scene {
           " больше не тревожит комнату.\nНаграда: " +
           reward +
           " нитей",
-        "В мастерскую",
-        () => this.showWorkshop(() => this.advanceStage(), "Продолжить путь"),
+        "Продолжить путь",
+        () => this.advanceStage(),
         this.currentRoom.accentColor,
         this.currentMonster.isBoss ? "КОМНАТА ОЧИЩЕНА" : "ПОБЕДА",
       );
@@ -1023,8 +1021,8 @@ export class RaidScene extends Phaser.Scene {
       this.state = "menu";
       this.menu.show(
         this.progression,
-        "upgrades",
-        `Нить оборвалась на этапе ${this.stage}. Усиль Элю перед новым рейдом.`,
+        "home",
+        `Рейд окончен: этап ${this.stage}`,
       );
     });
   }

@@ -65,6 +65,7 @@ export const UPGRADE_DEFINITIONS: Readonly<Record<UpgradeId, UpgradeDefinition>>
 };
 
 const COST_MULTIPLIERS = [1, 2, 3, 5, 8] as const;
+const RANDOM_NEEDLE_UNLOCK_COSTS = [90, 240, 520] as const;
 
 function createUpgradeLevels(): Record<UpgradeId, UpgradeLevel> {
   return { power: 0, precision: 0, speed: 0, ward: 0 };
@@ -286,6 +287,37 @@ export function buyNeedle(state: ProgressionState, id: NeedleSkinId): Progressio
     thread: state.thread - cost,
     ownedNeedles: [...state.ownedNeedles, id],
     equippedNeedle: id,
+  };
+}
+
+export function equipNeedle(state: ProgressionState, id: NeedleSkinId): ProgressionState {
+  if (!state.ownedNeedles.includes(id) || state.equippedNeedle === id) return state;
+  return { ...state, equippedNeedle: id };
+}
+
+export function getRandomNeedleUnlockCost(state: ProgressionState): number | null {
+  const unlockedBeyondStarter = Math.max(0, state.ownedNeedles.length - 1);
+  return RANDOM_NEEDLE_UNLOCK_COSTS[unlockedBeyondStarter] ?? null;
+}
+
+export function unlockRandomNeedle(
+  state: ProgressionState,
+  randomValue = Math.random(),
+): ProgressionState {
+  const locked = NEEDLE_SKIN_IDS.filter((id) => !state.ownedNeedles.includes(id));
+  const cost = getRandomNeedleUnlockCost(state);
+  if (locked.length === 0 || cost === null || state.thread < cost) return state;
+
+  const normalizedRandom = Number.isFinite(randomValue)
+    ? Math.min(0.999999, Math.max(0, randomValue))
+    : 0;
+  const unlockedId = locked[Math.floor(normalizedRandom * locked.length)] ?? locked[0];
+  if (!unlockedId) return state;
+  return {
+    ...state,
+    thread: state.thread - cost,
+    ownedNeedles: [...state.ownedNeedles, unlockedId],
+    equippedNeedle: unlockedId,
   };
 }
 

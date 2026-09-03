@@ -2,12 +2,14 @@ import {
   MAX_UPGRADE_LEVEL,
   UPGRADE_DEFINITIONS,
   UPGRADE_IDS,
-  buyNeedle,
   claimQuest,
+  equipNeedle,
   equipSkill,
   getQuestProgress,
+  getRandomNeedleUnlockCost,
   getUpgradeCost,
   purchaseUpgrade,
+  unlockRandomNeedle,
   unlockBackground,
   type ProgressionState,
   type UpgradeId,
@@ -18,7 +20,6 @@ import {
   NEEDLE_SKINS,
   QUESTS,
   SKILLS,
-  getBackground,
   type BackgroundId,
   type NeedleSkinId,
   type QuestId,
@@ -64,6 +65,7 @@ export default class GameMenu {
   private state: ProgressionState;
   private tab: MenuTab = "home";
   private notice = "";
+  private readonly frame: HTMLElement | null;
 
   public constructor(
     private readonly root: HTMLElement,
@@ -71,6 +73,7 @@ export default class GameMenu {
     private readonly callbacks: GameMenuCallbacks,
   ) {
     this.state = initialState;
+    this.frame = this.root.closest<HTMLElement>(".game-frame");
     this.root.addEventListener("click", this.handleClick);
   }
 
@@ -78,15 +81,18 @@ export default class GameMenu {
     this.state = state;
     this.tab = tab;
     this.notice = notice;
+    this.frame?.classList.add("menu-active");
     this.root.classList.remove("is-hidden");
     this.render();
   }
 
   public hide(): void {
+    this.frame?.classList.remove("menu-active");
     this.root.classList.add("is-hidden");
   }
 
   public destroy(): void {
+    this.frame?.classList.remove("menu-active");
     this.root.removeEventListener("click", this.handleClick);
     this.root.replaceChildren();
   }
@@ -131,7 +137,15 @@ export default class GameMenu {
     }
     if (action === "needle") {
       const id = target.dataset.id as NeedleSkinId;
-      this.commit(buyNeedle(this.state, id));
+      this.commit(equipNeedle(this.state, id));
+      return;
+    }
+    if (action === "random-needle") {
+      const previousIds = new Set(this.state.ownedNeedles);
+      const next = unlockRandomNeedle(this.state);
+      const unlockedId = next.ownedNeedles.find((id) => !previousIds.has(id));
+      const unlocked = NEEDLE_SKINS.find((skin) => skin.id === unlockedId);
+      this.commit(next, unlocked ? `Открыто: ${unlocked.name}` : "Сохранено");
       return;
     }
     if (action === "skill") {
@@ -151,21 +165,26 @@ export default class GameMenu {
     }
   };
 
-  private commit(next: ProgressionState): void {
+  private commit(next: ProgressionState, successNotice = "Сохранено"): void {
     if (next === this.state) {
       this.notice = "Пока не хватает ресурсов или условий";
     } else {
       this.state = next;
-      this.notice = "Сохранено";
+      this.notice = successNotice;
       this.callbacks.onStateChange(next);
     }
     this.render();
   }
 
   private render(): void {
-    const selectedBackground = getBackground(this.state.equippedBackground);
-    const backdrop = selectedBackground.fileName ?? "attic-workshop.webp";
-    this.root.style.setProperty("--menu-background", `url("${asset(backdrop)}")`);
+    this.root.style.setProperty(
+      "--menu-background-portrait",
+      `url("${asset("menu-hub-portrait.webp")}")`,
+    );
+    this.root.style.setProperty(
+      "--menu-background-landscape",
+      `url("${asset("menu-hub-landscape.webp")}")`,
+    );
     this.root.innerHTML = this.tab === "home" ? this.renderHome() : this.renderPanel();
   }
 
@@ -186,8 +205,9 @@ export default class GameMenu {
         <p>Зашивай кошмары и не дай иглам столкнуться.</p>
       </section>
       <img class="menu-hero" src="${asset("hero-menu-v2.webp")}" alt="Эля Штопка с пружинным луком" />
-      <div class="menu-record">Лучший результат: <strong>${record || "—"}</strong></div>
-      ${this.notice ? `<div class="menu-toast">${this.notice}</div>` : ""}
+      <div class="menu-record ${this.notice ? "has-notice" : ""}">
+        ${this.notice ? `<span>${this.notice}</span><small>Лучший результат: <strong>${record || "—"}</strong></small>` : `Лучший результат: <strong>${record || "—"}</strong>`}
+      </div>
       <button class="raid-button" data-action="start"><span>В РЕЙД!</span><small>Босс каждые 5 этапов</small></button>
       ${this.renderNav()}
     `;
@@ -292,15 +312,26 @@ export default class GameMenu {
   }
 
   private renderNeedles(): string {
-    return `<p class="section-lead">Это не просто облики: у каждой иглы свой характер.</p>${NEEDLE_SKINS.map((skin) => {
+    const unlockCost = getRandomNeedleUnlockCost(this.state);
+    const canUnlock = unlockCost !== null && this.state.thread >= unlockCost;
+    const draw = `
+      <article class="needle-draw">
+        <div class="draw-emblem">✦</div>
+        <div><h3>${unlockCost === null ? "Коллекция собрана" : "Случайная новая игла"}</h3><p>${unlockCost === null ? "Все иглы уже открыты." : "Какая именно выпадет — станет известно после открытия."}</p></div>
+        <button class="buy-button" data-action="random-needle" ${!canUnlock ? "disabled" : ""}>
+          ${unlockCost === null ? "ГОТОВО" : `ОТКРЫТЬ · ✦ ${unlockCost}`}
+        </button>
+      </article>`;
+
+    return `<p class="section-lead">Иглы открываются случайно. Повторов не бывает.</p>${draw}${NEEDLE_SKINS.map((skin) => {
       const owned = this.state.ownedNeedles.includes(skin.id);
       const equipped = this.state.equippedNeedle === skin.id;
       return `
-        <article class="meta-card needle-card ${equipped ? "is-equipped" : ""}">
+        <article class="meta-card needle-card ${equipped ? "is-equipped" : ""} ${owned ? "" : "is-locked"}">
           <div class="needle-preview" style="--shaft:#${skin.shaftColor.toString(16).padStart(6, "0")};--tip:#${skin.headColor.toString(16).padStart(6, "0")};--tail:#${skin.tailColor.toString(16).padStart(6, "0")}"><i></i></div>
-          <div class="item-copy"><h3>${skin.name}</h3><strong>${skin.subtitle}</strong><p>${skin.description}</p></div>
-          <button class="select-button" data-action="needle" data-id="${skin.id}" ${equipped || (!owned && this.state.thread < skin.threadCost) ? "disabled" : ""}>
-            ${equipped ? "В КОЛЧАНЕ" : owned ? "ВЫБРАТЬ" : `✦ ${skin.threadCost}`}
+          <div class="item-copy"><h3>${owned ? skin.name : "Неизвестная игла"}</h3><strong>${owned ? skin.subtitle : "Скрыта в футляре"}</strong><p>${owned ? skin.description : "Облик и свойство откроются случайно."}</p></div>
+          <button class="select-button" data-action="needle" data-id="${skin.id}" ${!owned || equipped ? "disabled" : ""}>
+            ${equipped ? "В КОЛЧАНЕ" : owned ? "ВЫБРАТЬ" : "???"}
           </button>
         </article>`;
     }).join("")}`;

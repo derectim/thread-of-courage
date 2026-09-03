@@ -118,3 +118,33 @@ Lighting/mood: awe-inspiring and nearly unattainable; deep indigo darkness, silv
 Color palette: midnight navy, black plum, silver cream, electric turquoise, muted coral and antique gold
 Constraints: empty environment only; no people, no characters, no monsters, no silhouettes, no text, no letters, no numbers, no UI, no icons, no logos, no watermark, no framing border
 ~~~
+
+## Главное меню — Лоскутная Долина, портрет
+
+~~~text
+Use case: stylized-concept
+Asset type: production-ready dedicated main-menu background for a portrait mobile game, strict 9:16
+Input images: Image 1 is a material, palette and handcrafted rendering reference only; do not reuse its attic room layout or any gameplay elements
+Primary request: create the original menu hub «Лоскутная Долина», a magical storybook world-map landscape made from fabric and thread, clearly distinct from every combat room
+Scene/backdrop: an elevated view over a cozy stitched valley with winding embroidered paths, tiny felt-roof workshops, thread bridges, button lanterns, distant quilted hills and a calm moonlit sky; this is a navigation hub, not an arena or enclosed gameplay room
+Style/medium: premium handcrafted felt, yarn, embroidery, cut paper, carved wood and subtle watercolor grain; tactile cozy dark fantasy matching the polish of Image 1
+Composition/framing: strict portrait 9:16; darker quiet upper 24% for title and currency UI; visually calm central column for a separate transparent heroine overlay; decorative village detail stays mostly at the side edges and in the distance; lower 18% dark and uncluttered for a large start button and navigation bar; strong depth but no central target
+Lighting/mood: welcoming twilight, soft moonlight, warm button-lantern glows, elegant rather than busy
+Color palette: midnight navy, deep plum, dusty teal, fabric cream, muted coral and antique gold
+Constraints: background environment only; no people; no heroine; no characters; no monsters; no circular target; no arrows; no needles stuck into objects; no gameplay HUD; no health bars; no interface; no text; no letters; no numbers; no logos; no watermark; no framing border; fully opaque background
+~~~
+
+## Главное меню — Лоскутная Долина, широкий экран
+
+~~~text
+Use case: stylized-concept
+Asset type: production-ready dedicated main-menu background for a desktop and landscape tablet game, strict 16:9
+Input images: Image 1 is a material, palette and handcrafted rendering reference only; do not reuse its attic room layout or any gameplay elements
+Primary request: create the original menu hub «Лоскутная Долина», a magical panoramic world-map landscape made from fabric and thread, clearly distinct from every combat room
+Scene/backdrop: a wide elevated view over a cozy stitched valley with winding embroidered paths, small felt-roof workshops, thread bridges, button lanterns, distant quilted hills and a calm moonlit sky; this is a welcoming navigation hub, not a combat arena
+Style/medium: premium handcrafted felt, yarn, embroidery, cut paper, carved wood and subtle watercolor grain; tactile cozy dark fantasy matching the polish of Image 1
+Composition/framing: strict 16:9; calm darker negative space on the left for title and start button; open middle-right area for a separate transparent heroine overlay; village details frame the outer edges and distant horizon; bottom strip dark and simple for navigation; no central target
+Lighting/mood: welcoming twilight, soft moonlight, warm button-lantern glows, elegant and readable
+Color palette: midnight navy, deep plum, dusty teal, fabric cream, muted coral and antique gold
+Constraints: background environment only; no people; no heroine; no characters; no monsters; no circular target; no arrows; no needles stuck into objects; no gameplay HUD; no health bars; no interface; no text; no letters; no numbers; no logos; no watermark; no framing border; fully opaque background
+~~~

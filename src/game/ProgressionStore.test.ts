@@ -10,14 +10,17 @@ import {
   buyNeedle,
   claimQuest,
   createDefaultState,
+  equipNeedle,
   equipSkill,
   getQuestProgress,
+  getRandomNeedleUnlockCost,
   getUpgradeCost,
   load,
   purchaseUpgrade,
   recordShot,
   recordVictory,
   save,
+  unlockRandomNeedle,
   unlockBackground,
   type ProgressionState,
   type ProgressionStorage,
@@ -268,6 +271,34 @@ describe("expensive upgrade economy", () => {
 });
 
 describe("needles, skills and backgrounds", () => {
+  it("unlocks a random needle without repeats and uses escalating prices", () => {
+    const firstState = createState({ thread: 1_000 });
+    expect(getRandomNeedleUnlockCost(firstState)).toBe(90);
+
+    const first = unlockRandomNeedle(firstState, 0);
+    expect(first.thread).toBe(910);
+    expect(first.ownedNeedles).toEqual(["silver", "bone"]);
+    expect(first.equippedNeedle).toBe("bone");
+    expect(getRandomNeedleUnlockCost(first)).toBe(240);
+
+    const second = unlockRandomNeedle(first, 0);
+    expect(second.thread).toBe(670);
+    expect(second.ownedNeedles).toEqual(["silver", "bone", "storm"]);
+    expect(getRandomNeedleUnlockCost(second)).toBe(520);
+  });
+
+  it("does not open a random needle without enough thread or after the collection is complete", () => {
+    const poor = createState({ thread: 89 });
+    expect(unlockRandomNeedle(poor, 0.5)).toBe(poor);
+
+    const complete = createState({
+      thread: 10_000,
+      ownedNeedles: ["silver", "bone", "storm", "sunrise"],
+    });
+    expect(getRandomNeedleUnlockCost(complete)).toBeNull();
+    expect(unlockRandomNeedle(complete, 0.5)).toBe(complete);
+  });
+
   it("buys and immediately equips a needle while charging its thread cost", () => {
     const state = createState({ thread: 100 });
     const purchased = buyNeedle(state, "bone");
@@ -278,18 +309,18 @@ describe("needles, skills and backgrounds", () => {
     expect(state.ownedNeedles).toEqual(["silver"]);
   });
 
-  it("equips an owned needle for free and refuses an unaffordable one", () => {
+  it("equips an owned needle for free and refuses a locked one", () => {
     const owned = createState({
       thread: 10,
       ownedNeedles: ["silver", "bone"],
       equippedNeedle: "bone",
     });
-    const equipped = buyNeedle(owned, "silver");
+    const equipped = equipNeedle(owned, "silver");
 
     expect(equipped.thread).toBe(10);
     expect(equipped.equippedNeedle).toBe("silver");
-    const poor = createState({ thread: 239 });
-    expect(buyNeedle(poor, "storm")).toBe(poor);
+    const locked = createState({ thread: 1_000 });
+    expect(equipNeedle(locked, "storm")).toBe(locked);
   });
 
   it("equips only skills that have been unlocked", () => {
