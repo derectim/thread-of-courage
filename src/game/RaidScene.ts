@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 
 import SoundEngine from "../audio/SoundEngine";
+import GameMenu from "../ui/GameMenu";
 import { getStageReward } from "./Economy";
 import {
   MAX_UPGRADE_LEVEL,
@@ -9,12 +10,15 @@ import {
   getUpgradeCost,
   load as loadProgression,
   purchaseUpgrade,
+  recordShot,
+  recordVictory,
   save as saveProgression,
   type ProgressionState,
   type UpgradeId,
   type UpgradeLevel,
 } from "./ProgressionStore";
 import {
+  MONSTERS,
   PATTERN_NAMES,
   getExpeditionNumber,
   getMonsterForStage,
@@ -25,6 +29,12 @@ import {
   type RoomDefinition,
 } from "./content";
 import { isAngleBlocked, normalizeAngle } from "./geometry";
+import {
+  BACKGROUNDS,
+  getBackground,
+  getNeedleSkin,
+  getSkill,
+} from "./meta";
 
 const WIDTH = 432;
 const HEIGHT = 768;
@@ -36,6 +46,7 @@ const BASE_NEEDLE_GAP = 0.085;
 const BASE_PROJECTILE_DURATION = 175;
 
 type RaidState =
+  | "menu"
   | "ready"
   | "playing"
   | "won"
@@ -71,12 +82,16 @@ export class RaidScene extends Phaser.Scene {
   private currentMonster!: MonsterDefinition;
   private currentRoom!: RoomDefinition;
   private backgroundImage: Phaser.GameObjects.Image | null = null;
+  private backgroundFallback!: Phaser.GameObjects.Rectangle;
   private backgroundShade!: Phaser.GameObjects.Rectangle;
   private monster!: Phaser.GameObjects.Container;
   private monsterBody!: Phaser.GameObjects.Container;
   private monsterArtwork: Phaser.GameObjects.Image | null = null;
   private monsterDamageOverlay!: Phaser.GameObjects.Graphics;
   private monsterShadow!: Phaser.GameObjects.Ellipse;
+  private hero!: Phaser.GameObjects.Container;
+  private heroArtwork!: Phaser.GameObjects.Image;
+  private heroFrameTimers: Phaser.Time.TimerEvent[] = [];
   private healthBar!: Phaser.GameObjects.Rectangle;
   private healthText!: Phaser.GameObjects.Text;
   private stageText!: Phaser.GameObjects.Text;
@@ -95,6 +110,7 @@ export class RaidScene extends Phaser.Scene {
   private inputCooldownUntil = 0;
   private currentDamageStage = 0;
   private upgradePurchaseLockedUntil = 0;
+  private menu!: GameMenu;
   private readonly sfx = new SoundEngine();
 
   public constructor() {
@@ -107,30 +123,26 @@ export class RaidScene extends Phaser.Scene {
     this.load.image("room-attic", art + "attic-workshop.webp");
     this.load.image("room-theatre", art + "room-puppet-theatre.webp");
     this.load.image("room-machine", art + "room-sewing-machine-heart.webp");
-    this.load.image("hero-elya", art + "hero-elya.webp");
-    for (let damage = 0; damage < 4; damage += 1) {
-      this.load.image(
-        "grumble-yarn-" + damage,
-        art + "grumble-yarn-" + damage + ".webp",
-      );
+    this.load.image("hero-menu-v2", art + "hero-menu-v2.webp");
+    for (let frame = 1; frame <= 5; frame += 1) {
+      this.load.image(`hero-shot-${frame}`, `${art}hero-shot-${frame}.webp`);
     }
 
-    for (const boss of [
-      "boss-sewing-storm",
-      "boss-madam-marionette",
-      "boss-ripper",
-    ]) {
-      for (let damage = 0; damage < 4; damage += 1) {
-        this.load.image(
-          boss + "-" + damage,
-          art + boss + "-" + damage + ".webp",
-        );
+    for (const monster of MONSTERS) {
+      for (const textureKey of monster.textureKeys ?? []) {
+        this.load.image(textureKey, `${art}${textureKey}.webp`);
+      }
+    }
+
+    for (const background of BACKGROUNDS) {
+      if (background.textureKey && background.fileName) {
+        this.load.image(background.textureKey, art + background.fileName);
       }
     }
   }
 
   public create(): void {
-    this.state = "ready";
+    this.state = "menu";
     this.stage = 1;
     this.hits = 0;
     this.shotInFlight = false;
@@ -139,7 +151,7 @@ export class RaidScene extends Phaser.Scene {
     this.inputCooldownUntil = 0;
     this.upgradePurchaseLockedUntil = 0;
     this.progression = loadProgression();
-    this.shieldCharges = getWardCharges(this.progression.upgrades.ward);
+    this.shieldCharges = this.getStartingWardCharges();
     this.sfx.setMuted(this.progression.muted);
 
     this.currentRoom = getRoomForStage(this.stage);
@@ -147,11 +159,31 @@ export class RaidScene extends Phaser.Scene {
     this.createHud();
     this.createHero();
     this.createMonster();
-    this.createIntroOverlay();
+
+    const menuRoot = document.querySelector<HTMLElement>("#game-menu");
+    if (!menuRoot) throw new Error("Не найден контейнер главного меню");
+    this.menu = new GameMenu(menuRoot, this.progression, {
+      onStart: () => this.startRaidFromMenu(),
+      onStateChange: (state) => this.applyMenuProgress(state),
+      onToggleSound: (muted) => {
+        this.sfx.setMuted(muted);
+        this.soundButton.setText(muted ? "○" : "♪");
+        this.sfx.ui();
+      },
+      onFullscreen: () => this.requestFullscreen(),
+    });
+    this.menu.show(this.progression);
 
     this.input.on("pointerdown", this.handlePointerDown, this);
     this.input.keyboard?.on("keydown-SPACE", this.handleKeyboardShot, this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.sfx.destroy());
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.layoutExpandedViewport, this);
+    this.layoutExpandedViewport();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutExpandedViewport, this);
+      this.heroFrameTimers.forEach((timer) => timer.remove(false));
+      this.menu.destroy();
+      this.sfx.destroy();
+    });
 
     document.querySelector("#loading")?.classList.add("is-hidden");
   }
@@ -159,6 +191,7 @@ export class RaidScene extends Phaser.Scene {
   public update(_time: number, delta: number): void {
     if (!this.monster) return;
     if (
+      this.state === "menu" ||
       this.state === "won" ||
       this.state === "failed" ||
       this.state === "workshop" ||
@@ -172,23 +205,94 @@ export class RaidScene extends Phaser.Scene {
     this.updatePattern(this.getActivePattern(), deltaSeconds);
   }
 
+  private startRaidFromMenu(): void {
+    this.menu.hide();
+    this.closeOverlay();
+    this.state = "transition";
+    this.stage = 1;
+    this.shieldCharges = this.getStartingWardCharges();
+    this.inputCooldownUntil = this.time.now + 260;
+    this.createMonster();
+    this.beginPlaying("Не дай иглам столкнуться");
+  }
+
+  private applyMenuProgress(state: ProgressionState): void {
+    this.progression = state;
+    this.persistProgress();
+    this.threadText?.setText("✦ " + this.progression.thread + " нитей");
+    if (this.currentRoom) this.updateRoomBackground(this.currentRoom);
+  }
+
+  private getStartingWardCharges(): number {
+    const skillBonus = getSkill(this.progression.equippedSkill).modifiers.startingWardBonus ?? 0;
+    return getWardCharges(this.progression.upgrades.ward) + skillBonus;
+  }
+
+  private requestFullscreen(): void {
+    void this.sfx.unlock();
+    if (this.scale.isFullscreen) {
+      this.scale.stopFullscreen();
+      return;
+    }
+
+    if (document.fullscreenEnabled) {
+      this.scale.startFullscreen({ navigationUI: "hide" });
+    } else {
+      this.scale.refresh();
+    }
+  }
+
+  private layoutExpandedViewport(): void {
+    if (!this.cameras?.main) return;
+    const viewportWidth = this.scale.gameSize.width;
+    const viewportHeight = this.scale.gameSize.height;
+    const scrollX = (WIDTH - viewportWidth) / 2;
+    const scrollY = (HEIGHT - viewportHeight) / 2;
+    this.cameras.main.setSize(viewportWidth, viewportHeight).setScroll(scrollX, scrollY);
+
+    this.backgroundFallback
+      ?.setPosition(WIDTH / 2, HEIGHT / 2)
+      .setSize(viewportWidth, viewportHeight);
+    this.backgroundShade
+      ?.setPosition(WIDTH / 2, HEIGHT / 2)
+      .setSize(viewportWidth, viewportHeight);
+
+    if (this.backgroundImage?.active) {
+      const frame = this.backgroundImage.frame;
+      const scale = Math.max(viewportWidth / frame.realWidth, viewportHeight / frame.realHeight);
+      this.backgroundImage
+        .setPosition(WIDTH / 2, HEIGHT / 2)
+        .setDisplaySize(frame.realWidth * scale, frame.realHeight * scale);
+    }
+
+    const overlayShade = this.overlay?.getByName(
+      "viewport-shade",
+    ) as Phaser.GameObjects.Rectangle | null;
+    overlayShade
+      ?.setPosition(WIDTH / 2, HEIGHT / 2)
+      .setSize(viewportWidth, viewportHeight);
+  }
+
   private createBackground(): void {
-    if (this.textures.exists(this.currentRoom.backgroundKey)) {
+    this.backgroundFallback = this.add
+      .rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x080d17)
+      .setDepth(-1);
+
+    const selectedBackground = getBackground(this.progression.equippedBackground);
+    const initialTexture =
+      selectedBackground.textureKey && this.textures.exists(selectedBackground.textureKey)
+        ? selectedBackground.textureKey
+        : this.currentRoom.backgroundKey;
+
+    if (this.textures.exists(initialTexture)) {
       this.backgroundImage = this.add
-        .image(WIDTH / 2, HEIGHT / 2, this.currentRoom.backgroundKey)
-        .setDisplaySize(WIDTH, HEIGHT)
+        .image(WIDTH / 2, HEIGHT / 2, initialTexture)
         .setDepth(0)
         .setAlpha(0.9);
-    } else {
-      this.add
-        .rectangle(0, 0, WIDTH, HEIGHT, 0x25324a)
-        .setOrigin(0)
-        .setDepth(0);
     }
 
     this.backgroundShade = this.add
-      .rectangle(0, 0, WIDTH, HEIGHT, 0x101a28, 0.28)
-      .setOrigin(0)
+      .rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x101a28, 0.28)
       .setDepth(0);
 
     this.add
@@ -206,11 +310,20 @@ export class RaidScene extends Phaser.Scene {
         blendMode: Phaser.BlendModes.ADD,
       })
       .setDepth(1);
+
+    this.layoutExpandedViewport();
   }
 
   private updateRoomBackground(room: RoomDefinition): void {
-    if (this.backgroundImage && this.textures.exists(room.backgroundKey)) {
-      this.backgroundImage.setTexture(room.backgroundKey).setAlpha(0.2);
+    const selected = getBackground(this.progression.equippedBackground);
+    const textureKey =
+      selected.textureKey && this.textures.exists(selected.textureKey)
+        ? selected.textureKey
+        : room.backgroundKey;
+
+    if (this.backgroundImage && this.textures.exists(textureKey)) {
+      this.backgroundImage.setTexture(textureKey).setAlpha(0.2);
+      this.layoutExpandedViewport();
       this.tweens.add({
         targets: this.backgroundImage,
         alpha: 0.9,
@@ -358,35 +471,42 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private createHero(): void {
-    const hero = this.add.container(WIDTH / 2, 638).setDepth(8);
-    const shadow = this.add.ellipse(0, 111, 118, 18, 0x091316, 0.2);
-
-    if (this.textures.exists("hero-elya")) {
-      const artwork = this.add
-        .image(0, 0, "hero-elya")
-        .setDisplaySize(191, 256);
-      hero.add([shadow, artwork]);
-    } else {
-      const fallback = this.add.graphics();
-      fallback.fillStyle(0x5b8c85, 1);
-      fallback.fillTriangle(-42, 15, 36, 8, 26, 82);
-      fallback.fillStyle(0xe56b6f, 1);
-      fallback.fillRoundedRect(-26, -5, 52, 69, 16);
-      fallback.fillStyle(0xf2e3c6, 1);
-      fallback.fillCircle(0, -23, 21);
-      fallback.fillStyle(0x6b4a6f, 1);
-      fallback.fillCircle(0, -31, 22);
-      hero.add([shadow, fallback]);
-    }
+    this.hero = this.add.container(WIDTH / 2, 627).setDepth(8);
+    const shadow = this.add.ellipse(0, 116, 142, 19, 0x091316, 0.18);
+    this.heroArtwork = this.add
+      .image(0, 0, "hero-shot-1")
+      .setDisplaySize(278, 278);
+    this.hero.add([shadow, this.heroArtwork]);
 
     this.tweens.add({
-      targets: hero,
-      y: hero.y - 4,
-      duration: 1450,
+      targets: this.hero,
+      y: this.hero.y - 3,
+      duration: 1650,
       yoyo: true,
       repeat: -1,
       ease: "Sine.InOut",
     });
+  }
+
+  private playHeroShotAnimation(): void {
+    this.heroFrameTimers.forEach((timer) => timer.remove(false));
+    this.heroFrameTimers = [];
+    const sequence = [
+      { frame: 2, delay: 0 },
+      { frame: 3, delay: 34 },
+      { frame: 4, delay: 68 },
+      { frame: 5, delay: 104 },
+      { frame: 4, delay: 145 },
+      { frame: 3, delay: 184 },
+      { frame: 2, delay: 220 },
+      { frame: 1, delay: 258 },
+    ];
+
+    this.heroFrameTimers = sequence.map(({ frame, delay }) =>
+      this.time.delayedCall(delay, () => {
+        if (this.heroArtwork?.active) this.heroArtwork.setTexture(`hero-shot-${frame}`);
+      }),
+    );
   }
 
   private createMonster(): void {
@@ -402,7 +522,17 @@ export class RaidScene extends Phaser.Scene {
     this.shotInFlight = false;
     this.patternElapsed = 0;
     this.patternDirection = Math.random() > 0.5 ? 1 : -1;
-    this.rotationSpeed = Math.min(1.58, 0.76 + this.stage * 0.065);
+    const skillSpeed = getSkill(
+      this.progression.equippedSkill,
+    ).modifiers.rotationSpeedMultiplier ?? 1;
+    const mothPressure = this.currentMonster.id === "moth-mask" ? 1.16 : 1;
+    this.rotationSpeed =
+      Math.min(
+        2.35,
+        0.72 + Math.log2(this.stage + 1) * 0.22 + Math.floor(this.stage / 5) * 0.025,
+      ) *
+      skillSpeed *
+      mothPressure;
     this.baseRotation = 0;
     this.currentDamageStage = 0;
     this.monsterArtwork = null;
@@ -519,6 +649,8 @@ export class RaidScene extends Phaser.Scene {
         return "carousel";
       case "madam-marionette":
         return "stitches";
+      case "moth-mask":
+        return "recoil";
       case "ripper":
         return "stitches";
       default:
@@ -542,11 +674,20 @@ export class RaidScene extends Phaser.Scene {
         this.monster.rotation +=
           this.patternDirection * this.rotationSpeed * deltaSeconds;
         break;
-      case "pendulum":
+      case "pendulum": {
+        const pendulumSpeed =
+          getSkill(this.progression.equippedSkill).modifiers
+            .rotationSpeedMultiplier ?? 1;
         this.monster.rotation =
           this.baseRotation +
-          Math.sin(this.patternElapsed * (1.25 + this.stage * 0.025)) * 1.55;
+          Math.sin(
+            this.patternElapsed *
+              (1.25 + this.stage * 0.025) *
+              pendulumSpeed,
+          ) *
+            1.55;
         break;
+      }
       case "stitches": {
         const cycle = this.patternElapsed % 1.7;
         const cycleIndex = Math.floor(this.patternElapsed / 1.7);
@@ -570,7 +711,7 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
-    if (pointer.y < 115) return;
+    if (pointer.worldY < 115) return;
     this.fireNeedle();
   }
 
@@ -584,43 +725,61 @@ export class RaidScene extends Phaser.Scene {
     if (this.time.now < this.inputCooldownUntil) return;
 
     this.shotInFlight = true;
+    this.playHeroShotAnimation();
+    this.progression = recordShot(this.progression);
+    this.persistProgress();
     void this.sfx.unlock();
-    this.sfx.shoot();
+    this.time.delayedCall(104, () => {
+      if (this.state !== "playing") {
+        this.shotInFlight = false;
+        return;
+      }
 
-    const projectile = this.add.container(WIDTH / 2, 585).setDepth(7);
-    const glow = this.add.rectangle(0, 17, 8, 59, 0xe8b44d, 0.2);
-    const needle = this.add.graphics();
-    needle.lineStyle(3, 0xf2e3c6, 1);
-    needle.lineBetween(0, 46, 0, -5);
-    needle.fillStyle(0xe8b44d, 1);
-    needle.fillTriangle(-4, 2, 4, 2, 0, -10);
-    needle.fillStyle(0xe56b6f, 1);
-    needle.fillCircle(0, 48, 5);
-    projectile.add([glow, needle]);
+      this.sfx.shoot();
+      const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
+      const projectile = this.add.container(WIDTH / 2, 585).setDepth(7);
+      const glow = this.add.rectangle(0, 17, 8, 59, needleSkin.headColor, 0.2);
+      const needle = this.add.graphics();
+      needle.lineStyle(3, needleSkin.shaftColor, 1);
+      needle.lineBetween(0, 46, 0, -5);
+      needle.fillStyle(needleSkin.headColor, 1);
+      needle.fillTriangle(-4, 2, 4, 2, 0, -10);
+      needle.fillStyle(needleSkin.tailColor, 1);
+      needle.fillCircle(0, 48, 5);
+      projectile.add([glow, needle]);
 
-    const speedLevel = this.progression.upgrades.speed;
-    const duration = Math.max(
-      105,
-      BASE_PROJECTILE_DURATION - speedLevel * 12,
-    );
-    this.tweens.add({
-      targets: projectile,
-      y: MONSTER_Y + MONSTER_RADIUS - 2,
-      duration,
-      ease: "Quad.In",
-      onComplete: () => {
-        projectile.destroy(true);
-        this.resolveHit();
-      },
+      const speedLevel = this.progression.upgrades.speed;
+      const skinSpeed = needleSkin.modifiers.projectileSpeedMultiplier ?? 1;
+      const duration = Math.max(
+        105,
+        (BASE_PROJECTILE_DURATION - speedLevel * 12) / skinSpeed,
+      );
+      this.tweens.add({
+        targets: projectile,
+        y: MONSTER_Y + MONSTER_RADIUS - 2,
+        duration,
+        ease: "Quad.In",
+        onComplete: () => {
+          projectile.destroy(true);
+          this.resolveHit();
+        },
+      });
     });
   }
 
   private resolveHit(): void {
     const localAngle = normalizeAngle(WORLD_HIT_ANGLE - this.monster.rotation);
     const precisionLevel = this.progression.upgrades.precision;
+    const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
+    const needleModifiers = needleSkin.modifiers;
+    const skillModifiers = getSkill(this.progression.equippedSkill).modifiers;
     const needleGap = Math.max(
-      0.06,
-      BASE_NEEDLE_GAP - precisionLevel * 0.005,
+      0.045,
+      BASE_NEEDLE_GAP -
+        precisionLevel * 0.005 -
+        (needleModifiers.needleGapReduction ?? 0) -
+        (skillModifiers.needleGapReduction ?? 0) +
+        (needleModifiers.needleGapPenalty ?? 0),
     );
 
     if (isAngleBlocked(localAngle, this.hitAngles, needleGap)) {
@@ -633,25 +792,37 @@ export class RaidScene extends Phaser.Scene {
       return;
     }
 
-    const doubleChance = this.progression.upgrades.power * 0.1;
-    const isDouble =
-      this.progression.upgrades.power > 0 && Math.random() < doubleChance;
-    const stitchPower = isDouble ? 2 : 1;
+    const doubleChance = Math.min(
+      0.75,
+      this.progression.upgrades.power * 0.1 +
+        (needleModifiers.doubleChanceBonus ?? 0) +
+        (skillModifiers.doubleChanceBonus ?? 0),
+    );
+    const isDouble = doubleChance > 0 && Math.random() < doubleChance;
+    const accurateHitNumber = this.hitAngles.length + 1;
+    const rhythmBonus =
+      needleModifiers.extraHitEvery &&
+      accurateHitNumber % needleModifiers.extraHitEvery === 0
+        ? 1
+        : 0;
+    const openingBonus = this.hits === 0 ? (needleModifiers.firstHitBonus ?? 0) : 0;
+    const stitchPower = 1 + (isDouble ? 1 : 0) + rhythmBonus + openingBonus;
+    const isEmpowered = stitchPower > 1;
 
     this.hitAngles.push(localAngle);
     this.attachNeedle(localAngle);
     this.hits = Math.min(this.requiredHits, this.hits + stitchPower);
     this.shotInFlight = false;
     this.sfx.hit();
-    this.cameras.main.shake(isDouble ? 100 : 65, isDouble ? 0.004 : 0.0025);
+    this.cameras.main.shake(isEmpowered ? 100 : 65, isEmpowered ? 0.004 : 0.0025);
 
     if (this.getActivePattern() === "recoil") {
       this.patternDirection *= -1;
-      this.rotationSpeed = Math.min(1.85, this.rotationSpeed + 0.08);
+      this.rotationSpeed = Math.min(2.65, this.rotationSpeed + 0.08);
     }
 
-    this.flashMonster(isDouble ? 0xe8b44d : 0xf2e3c6);
-    this.spawnHitText(isDouble);
+    this.flashMonster(isEmpowered ? needleSkin.headColor : 0xf2e3c6);
+    this.spawnHitText(isEmpowered, stitchPower);
     this.updateMonsterDamageVisual();
     this.updateHealth();
 
@@ -679,18 +850,19 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private attachNeedle(angle: number): void {
+    const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
     const attached = this.add.graphics();
     const inner = MONSTER_RADIUS - 24;
     const outer = MONSTER_RADIUS + 43;
     const handle = MONSTER_RADIUS + 46;
-    attached.lineStyle(3, 0xf2e3c6, 1);
+    attached.lineStyle(3, needleSkin.shaftColor, 1);
     attached.lineBetween(
       Math.cos(angle) * inner,
       Math.sin(angle) * inner,
       Math.cos(angle) * outer,
       Math.sin(angle) * outer,
     );
-    attached.fillStyle(0xe56b6f, 1);
+    attached.fillStyle(needleSkin.tailColor, 1);
     attached.fillCircle(Math.cos(angle) * handle, Math.sin(angle) * handle, 5);
     this.monster.add(attached);
     this.monster.sendToBack(attached);
@@ -762,17 +934,17 @@ export class RaidScene extends Phaser.Scene {
     });
   }
 
-  private spawnHitText(isDouble: boolean): void {
+  private spawnHitText(isEmpowered: boolean, stitchPower: number): void {
     const text = this.add
       .text(
         MONSTER_X + Phaser.Math.Between(-35, 35),
         MONSTER_Y - 15,
-        isDouble ? "★ ДВОЙНОЙ СТЕЖОК" : "+СТЕЖОК",
+        isEmpowered ? `★ СТЕЖОК ×${stitchPower}` : "+СТЕЖОК",
         {
           fontFamily: "Inter, Segoe UI, sans-serif",
-          fontSize: isDouble ? "14px" : "13px",
+          fontSize: isEmpowered ? "14px" : "13px",
           fontStyle: "bold",
-          color: isDouble ? "#e8b44d" : "#f2e3c6",
+          color: isEmpowered ? "#e8b44d" : "#f2e3c6",
           stroke: "#25324a",
           strokeThickness: 4,
         },
@@ -806,11 +978,12 @@ export class RaidScene extends Phaser.Scene {
 
     this.state = "won";
     const reward = getStageReward(this.stage);
-    this.progression = {
-      ...this.progression,
-      thread: this.progression.thread + reward,
-      bestStage: Math.max(this.progression.bestStage, this.stage + 1),
-    };
+    this.progression = recordVictory(
+      this.progression,
+      this.stage,
+      this.currentMonster.isBoss === true,
+      reward,
+    );
     this.threadText.setText("✦ " + this.progression.thread + " нитей");
     this.persistProgress();
     this.sfx.win();
@@ -844,12 +1017,14 @@ export class RaidScene extends Phaser.Scene {
         "Нить оборвалась на " +
           this.stage +
           "-м стежке · рекорд " +
-          this.progression.bestStage,
+          this.progression.highestStageCleared,
       );
-      this.showWorkshop(
-        () => this.restartRun(),
-        "Новый рейд",
-        "Нить оборвалась",
+      this.closeOverlay();
+      this.state = "menu";
+      this.menu.show(
+        this.progression,
+        "upgrades",
+        `Нить оборвалась на этапе ${this.stage}. Усиль Элю перед новым рейдом.`,
       );
     });
   }
@@ -893,33 +1068,12 @@ export class RaidScene extends Phaser.Scene {
     this.beginPlaying("Новый узор — следи за ритмом");
   }
 
-  private restartRun(): void {
-    this.closeOverlay();
-    this.state = "transition";
-    this.inputCooldownUntil = this.time.now + 240;
-    this.stage = 1;
-    this.shieldCharges = getWardCharges(this.progression.upgrades.ward);
-    this.createMonster();
-    this.beginPlaying("Обереги восстановлены. Начинаем заново");
-  }
-
   private beginPlaying(tip: string): void {
     this.closeOverlay();
     this.inputCooldownUntil = this.time.now + 240;
     this.state = "playing";
     this.tipText.setText(tip);
     this.sfx.ui();
-  }
-
-  private createIntroOverlay(): void {
-    this.showResultOverlay(
-      "Нитка храбрости",
-      "Эля Штопка идёт через три комнаты.\nЗашивай кошмары, побеждай боссов и улучшай оружие между боями.",
-      "Начать рейд",
-      () => this.beginPlaying("Не дай иглам столкнуться"),
-      0xe8b44d,
-      "3 КОМНАТЫ · 9 ВРАГОВ · 4 УЛУЧШЕНИЯ",
-    );
   }
 
   private showWorkshop(
@@ -932,8 +1086,15 @@ export class RaidScene extends Phaser.Scene {
 
     const overlay = this.add.container(0, 0).setDepth(100);
     const shade = this.add
-      .rectangle(0, 0, WIDTH, HEIGHT, 0x091316, 0.82)
-      .setOrigin(0)
+      .rectangle(
+        WIDTH / 2,
+        HEIGHT / 2,
+        this.scale.gameSize.width,
+        this.scale.gameSize.height,
+        0x091316,
+        0.82,
+      )
+      .setName("viewport-shade")
       .setInteractive();
     const card = this.add.graphics();
     card.fillStyle(0x1e3042, 0.99);
@@ -1132,8 +1293,15 @@ export class RaidScene extends Phaser.Scene {
 
     const overlay = this.add.container(0, 0).setDepth(100);
     const shade = this.add
-      .rectangle(0, 0, WIDTH, HEIGHT, 0x091316, 0.68)
-      .setOrigin(0)
+      .rectangle(
+        WIDTH / 2,
+        HEIGHT / 2,
+        this.scale.gameSize.width,
+        this.scale.gameSize.height,
+        0x091316,
+        0.68,
+      )
+      .setName("viewport-shade")
       .setInteractive();
     const card = this.add.graphics();
     card.fillStyle(0x25324a, 0.98);

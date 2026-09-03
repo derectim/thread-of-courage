@@ -16,8 +16,9 @@ describe("getRequiredHits", () => {
     }
   });
 
-  it("grows once per full monster cycle", () => {
-    expect(getRequiredHits(MONSTERS[0], MONSTERS.length + 1)).toBe(
+  it("grows once per ten completed stages", () => {
+    expect(getRequiredHits(MONSTERS[0], 10)).toBe(MONSTERS[0].baseHits);
+    expect(getRequiredHits(MONSTERS[0], 11)).toBe(
       MONSTERS[0].baseHits + 1,
     );
   });
@@ -25,40 +26,59 @@ describe("getRequiredHits", () => {
   it("caps pendulum stages to their reachable firing arc", () => {
     const pendulum = MONSTERS.find((monster) => monster.pattern === "pendulum");
     expect(pendulum).toBeDefined();
-    expect(getRequiredHits(pendulum!, 10_000)).toBe(10);
+    expect(getRequiredHits(pendulum!, 10_000)).toBe(20);
   });
 
   it("caps full-circle patterns below their angular capacity", () => {
     const carousel = MONSTERS.find((monster) => monster.pattern === "carousel");
     expect(carousel).toBeDefined();
-    expect(getRequiredHits(carousel!, 10_000)).toBe(18);
+    expect(getRequiredHits(carousel!, 10_000)).toBe(22);
   });
 });
 
 describe("expedition content", () => {
-  it("contains three rooms with two enemies and one boss each", () => {
+  it("contains three rooms, five ordinary enemies, and four bosses", () => {
     expect(ROOMS).toHaveLength(3);
     expect(MONSTERS).toHaveLength(9);
+    expect(MONSTERS.filter((monster) => !monster.isBoss)).toHaveLength(5);
+    expect(MONSTERS.filter((monster) => monster.isBoss)).toHaveLength(4);
 
-    for (const room of ROOMS) {
-      const residents = MONSTERS.filter((monster) => monster.roomId === room.id);
-      expect(residents).toHaveLength(3);
-      expect(residents.filter((monster) => monster.isBoss)).toHaveLength(1);
+    for (const monster of MONSTERS) {
+      expect(ROOMS.some((room) => room.id === monster.roomId)).toBe(true);
     }
   });
 
-  it("places a boss at every third stage", () => {
-    for (let stage = 1; stage <= MONSTERS.length; stage += 1) {
-      expect(Boolean(getMonsterForStage(stage).isBoss)).toBe(stage % 3 === 0);
+  it("places bosses strictly at stages 5, 10, 15, and 20", () => {
+    const bossByStage = new Map([
+      [5, "sewing-storm"],
+      [10, "moth-mask"],
+      [15, "madam-marionette"],
+      [20, "ripper"],
+    ]);
+
+    for (let stage = 1; stage <= 20; stage += 1) {
+      const monster = getMonsterForStage(stage);
+      const expectedBossId = bossByStage.get(stage);
+
+      expect(Boolean(monster.isBoss)).toBe(expectedBossId !== undefined);
+      if (expectedBossId) expect(monster.id).toBe(expectedBossId);
     }
   });
 
-  it("cycles rooms and increments the expedition number", () => {
-    expect(getRoomForStage(1).id).toBe("attic");
-    expect(getRoomForStage(4).id).toBe("theatre");
-    expect(getRoomForStage(7).id).toBe("machine");
-    expect(getRoomForStage(10).id).toBe("attic");
-    expect(getExpeditionNumber(9)).toBe(1);
-    expect(getExpeditionNumber(10)).toBe(2);
+  it("repeats the roster every 20 stages and increments the expedition number", () => {
+    for (let stage = 1; stage <= 20; stage += 1) {
+      expect(getMonsterForStage(stage + 20).id).toBe(
+        getMonsterForStage(stage).id,
+      );
+      expect(getRoomForStage(stage).id).toBe(
+        getMonsterForStage(stage).roomId,
+      );
+    }
+
+    expect(getExpeditionNumber(1)).toBe(1);
+    expect(getExpeditionNumber(20)).toBe(1);
+    expect(getExpeditionNumber(21)).toBe(2);
+    expect(getExpeditionNumber(40)).toBe(2);
+    expect(getExpeditionNumber(41)).toBe(3);
   });
 });

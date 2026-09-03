@@ -30,8 +30,11 @@ try {
     pixelArt: false,
     scene: [RaidScene],
     scale: {
-      mode: Phaser.Scale.FIT,
+      mode: Phaser.Scale.EXPAND,
       autoCenter: Phaser.Scale.CENTER_BOTH,
+      autoRound: true,
+      resizeInterval: 100,
+      fullscreenTarget: "game-frame",
     },
     input: {
       activePointers: 3,

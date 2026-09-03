@@ -9,11 +9,11 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="game-frame" aria-label="Игра Нитка храбрости">
+      <section id="game-frame" class="game-frame" aria-label="Игра Нитка храбрости">
         <div id="game" aria-label="Игровое поле"></div>
+        <div id="game-menu" class="game-menu is-hidden" aria-live="polite"></div>
         <div class="loading" id="loading">Мастерская просыпается…</div>
       </section>
-      <p class="hint">Кликните или коснитесь экрана, чтобы выпустить иглу</p>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

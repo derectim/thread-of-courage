@@ -76,6 +76,12 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     bodyColor: 0x5b8c85,
     accentColor: 0xf2e3c6,
     shadowColor: 0x315f5b,
+    textureKeys: [
+      "button-bug-0",
+      "button-bug-1",
+      "button-bug-2",
+      "button-bug-3",
+    ],
   },
   {
     id: "sewing-storm",
@@ -83,7 +89,7 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     epithet: "прячет сердце под лоскутами",
     roomId: "attic",
     pattern: "recoil",
-    baseHits: 10,
+    baseHits: 12,
     bodyColor: 0x6b4a6f,
     accentColor: 0xe8b44d,
     shadowColor: 0x3f304b,
@@ -101,10 +107,17 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     epithet: "боится ярких нитей",
     roomId: "theatre",
     pattern: "stitches",
-    baseHits: 8,
+    baseHits: 14,
     bodyColor: 0xd59a8a,
     accentColor: 0xf2e3c6,
     shadowColor: 0x6b4a6f,
+    isBoss: true,
+    textureKeys: [
+      "boss-moth-mask-0",
+      "boss-moth-mask-1",
+      "boss-moth-mask-2",
+      "boss-moth-mask-3",
+    ],
   },
   {
     id: "spring-rabbit",
@@ -116,6 +129,12 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     bodyColor: 0x8a5578,
     accentColor: 0xe56b6f,
     shadowColor: 0x44344f,
+    textureKeys: [
+      "spring-rabbit-0",
+      "spring-rabbit-1",
+      "spring-rabbit-2",
+      "spring-rabbit-3",
+    ],
   },
   {
     id: "madam-marionette",
@@ -123,7 +142,7 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     epithet: "дёргает за забытые нити",
     roomId: "theatre",
     pattern: "pendulum",
-    baseHits: 10,
+    baseHits: 15,
     bodyColor: 0x8a5578,
     accentColor: 0xf2e3c6,
     shadowColor: 0x3f304b,
@@ -145,6 +164,12 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     bodyColor: 0x9f7655,
     accentColor: 0xe8b44d,
     shadowColor: 0x4d3b37,
+    textureKeys: [
+      "thimble-hedgehog-0",
+      "thimble-hedgehog-1",
+      "thimble-hedgehog-2",
+      "thimble-hedgehog-3",
+    ],
   },
   {
     id: "ink-shuttle",
@@ -156,6 +181,12 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     bodyColor: 0x25324a,
     accentColor: 0x39b7a5,
     shadowColor: 0x101923,
+    textureKeys: [
+      "ink-shuttle-0",
+      "ink-shuttle-1",
+      "ink-shuttle-2",
+      "ink-shuttle-3",
+    ],
   },
   {
     id: "ripper",
@@ -163,7 +194,7 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     epithet: "разрывает саму ткань мира",
     roomId: "machine",
     pattern: "recoil",
-    baseHits: 12,
+    baseHits: 17,
     bodyColor: 0x705134,
     accentColor: 0x39b7a5,
     shadowColor: 0x171a24,
@@ -185,15 +216,31 @@ export const PATTERN_NAMES: Readonly<Record<MovementPattern, string>> = {
 };
 
 const MAX_HITS_BY_PATTERN: Readonly<Record<MovementPattern, number>> = {
-  carousel: 18,
-  pendulum: 10,
-  stitches: 18,
-  recoil: 18,
+  carousel: 22,
+  pendulum: 20,
+  stitches: 24,
+  recoil: 24,
 };
+
+const REGULAR_MONSTERS = MONSTERS.filter((monster) => !monster.isBoss);
+const BOSS_ROTATION = [
+  MONSTERS.find((monster) => monster.id === "sewing-storm")!,
+  MONSTERS.find((monster) => monster.id === "moth-mask")!,
+  MONSTERS.find((monster) => monster.id === "madam-marionette")!,
+  MONSTERS.find((monster) => monster.id === "ripper")!,
+] as const;
 
 export function getMonsterForStage(stage: number): MonsterDefinition {
   const normalizedStage = Math.max(1, Math.floor(stage));
-  return MONSTERS[(normalizedStage - 1) % MONSTERS.length];
+  const cycleStage = ((normalizedStage - 1) % 20) + 1;
+  if (cycleStage % 5 === 0) {
+    const bossIndex = cycleStage / 5 - 1;
+    return BOSS_ROTATION[bossIndex];
+  }
+
+  const bossesBeforeStage = Math.floor((cycleStage - 1) / 5);
+  const regularIndex = cycleStage - 1 - bossesBeforeStage;
+  return REGULAR_MONSTERS[regularIndex % REGULAR_MONSTERS.length];
 }
 
 export function getRoomForStage(stage: number): RoomDefinition {
@@ -202,11 +249,11 @@ export function getRoomForStage(stage: number): RoomDefinition {
 
 export function getExpeditionNumber(stage: number): number {
   const normalizedStage = Math.max(1, Math.floor(stage));
-  return Math.floor((normalizedStage - 1) / MONSTERS.length) + 1;
+  return Math.floor((normalizedStage - 1) / 20) + 1;
 }
 
 export function getRequiredHits(monster: MonsterDefinition, stage: number): number {
   const normalizedStage = Math.max(1, Math.floor(stage));
-  const growth = Math.floor((normalizedStage - 1) / MONSTERS.length);
+  const growth = Math.floor((normalizedStage - 1) / 10);
   return Math.min(monster.baseHits + growth, MAX_HITS_BY_PATTERN[monster.pattern]);
 }
