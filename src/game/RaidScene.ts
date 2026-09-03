@@ -30,6 +30,11 @@ import {
 } from "./content";
 import { isAngleBlocked, normalizeAngle } from "./geometry";
 import {
+  HERO_CROSSBOW_FRAMES,
+  getHeroNeedleLayout,
+} from "./heroAnimation";
+import { getAlphaSurfaceRadius, type AlphaMask } from "./silhouette";
+import {
   BACKGROUNDS,
   getBackground,
   getNeedleSkin,
@@ -44,6 +49,18 @@ const MONSTER_RADIUS = 78;
 const WORLD_HIT_ANGLE = Math.PI / 2;
 const BASE_NEEDLE_GAP = 0.085;
 const BASE_PROJECTILE_DURATION = 175;
+
+const MONSTER_FALLBACK_SURFACE_RADIUS: Readonly<Record<string, number>> = {
+  "grumble-yarn": 93,
+  "button-bug": 96,
+  "sewing-storm": 106,
+  "moth-mask": 104,
+  "spring-rabbit": 98,
+  "madam-marionette": 104,
+  "thimble-hedgehog": 95,
+  "ink-shuttle": 100,
+  ripper: 105,
+};
 
 type RaidState =
   | "menu"
@@ -88,9 +105,12 @@ export class RaidScene extends Phaser.Scene {
   private monsterBody!: Phaser.GameObjects.Container;
   private monsterArtwork: Phaser.GameObjects.Image | null = null;
   private monsterDamageOverlay!: Phaser.GameObjects.Graphics;
+  private attachedNeedleBackLayer!: Phaser.GameObjects.Graphics;
+  private attachedNeedleFrontLayer!: Phaser.GameObjects.Graphics;
   private monsterShadow!: Phaser.GameObjects.Ellipse;
   private hero!: Phaser.GameObjects.Container;
   private heroArtwork!: Phaser.GameObjects.Image;
+  private heroLoadedNeedle!: Phaser.GameObjects.Graphics;
   private heroFrameTimers: Phaser.Time.TimerEvent[] = [];
   private healthBar!: Phaser.GameObjects.Rectangle;
   private healthText!: Phaser.GameObjects.Text;
@@ -112,6 +132,7 @@ export class RaidScene extends Phaser.Scene {
   private upgradePurchaseLockedUntil = 0;
   private menu!: GameMenu;
   private readonly sfx = new SoundEngine();
+  private readonly silhouetteMasks = new Map<string, AlphaMask | null>();
 
   public constructor() {
     super("raid");
@@ -123,9 +144,8 @@ export class RaidScene extends Phaser.Scene {
     this.load.image("room-attic", art + "attic-workshop.webp");
     this.load.image("room-theatre", art + "room-puppet-theatre.webp");
     this.load.image("room-machine", art + "room-sewing-machine-heart.webp");
-    this.load.image("hero-menu-v2", art + "hero-menu-v2.webp");
-    for (let frame = 1; frame <= 5; frame += 1) {
-      this.load.image(`hero-shot-${frame}`, `${art}hero-shot-${frame}.webp`);
+    for (const frame of HERO_CROSSBOW_FRAMES) {
+      this.load.image(frame.textureKey, `${art}${frame.fileName}`);
     }
 
     for (const monster of MONSTERS) {
@@ -153,6 +173,7 @@ export class RaidScene extends Phaser.Scene {
     this.progression = loadProgression();
     this.shieldCharges = this.getStartingWardCharges();
     this.sfx.setMuted(this.progression.muted);
+    this.sfx.setMusicTheme("menu");
 
     this.currentRoom = getRoomForStage(this.stage);
     this.createBackground();
@@ -167,7 +188,7 @@ export class RaidScene extends Phaser.Scene {
       onStateChange: (state) => this.applyMenuProgress(state),
       onToggleSound: (muted) => {
         this.sfx.setMuted(muted);
-        this.soundButton.setText(muted ? "○" : "♪");
+        this.soundButton.setText(muted ? "🔇" : "♪");
         this.sfx.ui();
       },
       onFullscreen: () => this.requestFullscreen(),
@@ -206,6 +227,7 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private startRaidFromMenu(): void {
+    this.sfx.setMusicTheme("raid");
     this.menu.hide();
     this.closeOverlay();
     this.state = "transition";
@@ -220,6 +242,7 @@ export class RaidScene extends Phaser.Scene {
     this.progression = state;
     this.persistProgress();
     this.threadText?.setText("✦ " + this.progression.thread + " нитей");
+    this.drawLoadedHeroNeedle(0, true);
     if (this.currentRoom) this.updateRoomBackground(this.currentRoom);
   }
 
@@ -383,7 +406,7 @@ export class RaidScene extends Phaser.Scene {
       .setDepth(21);
 
     this.soundButton = this.add
-      .text(372, 57, this.sfx.isMuted() ? "○" : "♪", {
+      .text(372, 57, this.sfx.isMuted() ? "🔇" : "♪", {
         fontFamily: "Inter, Segoe UI, sans-serif",
         fontSize: "24px",
         fontStyle: "bold",
@@ -405,7 +428,7 @@ export class RaidScene extends Phaser.Scene {
       ) => {
         event.stopPropagation();
         this.sfx.setMuted(!this.sfx.isMuted());
-        this.soundButton.setText(this.sfx.isMuted() ? "○" : "♪");
+        this.soundButton.setText(this.sfx.isMuted() ? "🔇" : "♪");
         this.sfx.ui();
         this.progression = {
           ...this.progression,
@@ -474,9 +497,11 @@ export class RaidScene extends Phaser.Scene {
     this.hero = this.add.container(WIDTH / 2, 627).setDepth(8);
     const shadow = this.add.ellipse(0, 116, 142, 19, 0x091316, 0.18);
     this.heroArtwork = this.add
-      .image(0, 0, "hero-shot-1")
+      .image(0, 0, HERO_CROSSBOW_FRAMES[0].textureKey)
       .setDisplaySize(278, 278);
-    this.hero.add([shadow, this.heroArtwork]);
+    this.heroLoadedNeedle = this.add.graphics();
+    this.hero.add([shadow, this.heroArtwork, this.heroLoadedNeedle]);
+    this.drawLoadedHeroNeedle(0, true);
 
     this.tweens.add({
       targets: this.hero,
@@ -488,23 +513,82 @@ export class RaidScene extends Phaser.Scene {
     });
   }
 
-  private playHeroShotAnimation(): void {
+  private drawLoadedHeroNeedle(frameIndex: number, visible: boolean): void {
+    if (!this.heroLoadedNeedle?.active) return;
+    this.heroLoadedNeedle.clear();
+    if (!visible) return;
+
+    const skin = getNeedleSkin(this.progression.equippedNeedle);
+    const anchor = getHeroNeedleLayout(
+      frameIndex,
+      this.heroArtwork.displayWidth,
+      this.heroArtwork.displayHeight,
+    );
+    const direction = Math.sign(anchor.tailY - anchor.tipY) || 1;
+    const tipBaseY = anchor.tipY + direction * 8;
+
+    this.heroLoadedNeedle.lineStyle(6, 0x111827, 0.72);
+    this.heroLoadedNeedle.lineBetween(anchor.x, tipBaseY, anchor.x, anchor.tailY);
+    this.heroLoadedNeedle.lineStyle(3, skin.shaftColor, 1);
+    this.heroLoadedNeedle.lineBetween(anchor.x, tipBaseY, anchor.x, anchor.tailY);
+    this.heroLoadedNeedle.fillStyle(0x111827, 0.78);
+    this.heroLoadedNeedle.fillTriangle(
+      anchor.x,
+      anchor.tipY - 2,
+      anchor.x - 6,
+      anchor.tipY + 10,
+      anchor.x + 6,
+      anchor.tipY + 10,
+    );
+    this.heroLoadedNeedle.fillStyle(skin.headColor, 1);
+    this.heroLoadedNeedle.fillTriangle(
+      anchor.x,
+      anchor.tipY,
+      anchor.x - 4,
+      anchor.tipY + 9,
+      anchor.x + 4,
+      anchor.tipY + 9,
+    );
+    this.heroLoadedNeedle.fillStyle(skin.tailColor, 1);
+    this.heroLoadedNeedle.fillTriangle(
+      anchor.x,
+      anchor.tailY - 1,
+      anchor.x - 6,
+      anchor.tailY + 8,
+      anchor.x,
+      anchor.tailY + 5,
+    );
+    this.heroLoadedNeedle.fillTriangle(
+      anchor.x,
+      anchor.tailY - 1,
+      anchor.x + 6,
+      anchor.tailY + 8,
+      anchor.x,
+      anchor.tailY + 5,
+    );
+  }
+
+  private setHeroFrame(frameIndex: number, loaded: boolean): void {
+    const frame = HERO_CROSSBOW_FRAMES[frameIndex] ?? HERO_CROSSBOW_FRAMES[0];
+    if (this.heroArtwork?.active) this.heroArtwork.setTexture(frame.textureKey);
+    this.drawLoadedHeroNeedle(frameIndex, loaded);
+  }
+
+  private playHeroShotAnimation(onRelease: () => void): void {
     this.heroFrameTimers.forEach((timer) => timer.remove(false));
     this.heroFrameTimers = [];
     const sequence = [
-      { frame: 2, delay: 0 },
-      { frame: 3, delay: 34 },
-      { frame: 4, delay: 68 },
-      { frame: 5, delay: 104 },
-      { frame: 4, delay: 145 },
-      { frame: 3, delay: 184 },
-      { frame: 2, delay: 220 },
-      { frame: 1, delay: 258 },
+      { frame: 1, delay: 0, loaded: true, release: false },
+      { frame: 2, delay: 85, loaded: false, release: true },
+      { frame: 1, delay: 155, loaded: false, release: false },
+      { frame: 0, delay: 225, loaded: false, release: false },
+      { frame: 0, delay: 275, loaded: true, release: false },
     ];
 
-    this.heroFrameTimers = sequence.map(({ frame, delay }) =>
+    this.heroFrameTimers = sequence.map(({ frame, delay, loaded, release }) =>
       this.time.delayedCall(delay, () => {
-        if (this.heroArtwork?.active) this.heroArtwork.setTexture(`hero-shot-${frame}`);
+        this.setHeroFrame(frame, loaded);
+        if (release) onRelease();
       }),
     );
   }
@@ -515,6 +599,9 @@ export class RaidScene extends Phaser.Scene {
 
     this.currentMonster = getMonsterForStage(this.stage);
     this.currentRoom = getRoomForStage(this.stage);
+    if (this.state !== "menu") {
+      this.sfx.setMusicTheme(this.currentMonster.isBoss ? "boss" : "raid");
+    }
     this.updateRoomBackground(this.currentRoom);
     this.requiredHits = getRequiredHits(this.currentMonster, this.stage);
     this.hits = 0;
@@ -541,9 +628,17 @@ export class RaidScene extends Phaser.Scene {
       .ellipse(MONSTER_X, MONSTER_Y + 90, 112, 15, 0x08151a, 0.16)
       .setDepth(3);
     this.monster = this.add.container(MONSTER_X, MONSTER_Y).setDepth(6);
+    this.attachedNeedleBackLayer = this.add.graphics();
     this.monsterBody = this.buildMonsterBody(this.currentMonster, this.stage);
     this.monsterDamageOverlay = this.add.graphics();
-    this.monster.add([this.monsterBody, this.monsterDamageOverlay]);
+    this.attachedNeedleFrontLayer = this.add.graphics();
+    this.monster.add([
+      this.attachedNeedleBackLayer,
+      this.monsterBody,
+      this.monsterDamageOverlay,
+      this.attachedNeedleFrontLayer,
+    ]);
+    this.warmMonsterSilhouetteMasks();
 
     this.stageText.setText(
       "СТЕЖОК " +
@@ -723,45 +818,73 @@ export class RaidScene extends Phaser.Scene {
     if (this.time.now < this.inputCooldownUntil) return;
 
     this.shotInFlight = true;
-    this.playHeroShotAnimation();
     this.progression = recordShot(this.progression);
     this.persistProgress();
     void this.sfx.unlock();
-    this.time.delayedCall(104, () => {
-      if (this.state !== "playing") {
-        this.shotInFlight = false;
-        return;
-      }
+    this.playHeroShotAnimation(() => this.launchNeedleProjectile());
+  }
 
-      this.sfx.shoot();
-      const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
-      const projectile = this.add.container(WIDTH / 2, 585).setDepth(7);
-      const glow = this.add.rectangle(0, 17, 8, 59, needleSkin.headColor, 0.2);
-      const needle = this.add.graphics();
-      needle.lineStyle(3, needleSkin.shaftColor, 1);
-      needle.lineBetween(0, 46, 0, -5);
-      needle.fillStyle(needleSkin.headColor, 1);
-      needle.fillTriangle(-4, 2, 4, 2, 0, -10);
-      needle.fillStyle(needleSkin.tailColor, 1);
-      needle.fillCircle(0, 48, 5);
-      projectile.add([glow, needle]);
+  private launchNeedleProjectile(): void {
+    if (this.state !== "playing") {
+      this.shotInFlight = false;
+      return;
+    }
 
-      const speedLevel = this.progression.upgrades.speed;
-      const skinSpeed = needleSkin.modifiers.projectileSpeedMultiplier ?? 1;
-      const duration = Math.max(
-        105,
-        (BASE_PROJECTILE_DURATION - speedLevel * 12) / skinSpeed,
-      );
-      this.tweens.add({
-        targets: projectile,
-        y: MONSTER_Y + MONSTER_RADIUS - 2,
-        duration,
-        ease: "Quad.In",
-        onComplete: () => {
-          projectile.destroy(true);
-          this.resolveHit();
-        },
-      });
+    this.sfx.shoot();
+    const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
+    const releaseAnchor = getHeroNeedleLayout(
+      2,
+      this.heroArtwork.displayWidth,
+      this.heroArtwork.displayHeight,
+    );
+    const projectile = this.add
+      .container(this.hero.x + releaseAnchor.x, this.hero.y + releaseAnchor.tipY + 10)
+      .setDepth(7);
+    const glow = this.add.rectangle(0, 17, 10, 62, needleSkin.headColor, 0.24);
+    const needle = this.add.graphics();
+    needle.lineStyle(6, 0x111827, 0.68);
+    needle.lineBetween(0, 48, 0, -4);
+    needle.lineStyle(3, needleSkin.shaftColor, 1);
+    needle.lineBetween(0, 48, 0, -4);
+    needle.fillStyle(0x111827, 0.76);
+    needle.fillTriangle(-6, 3, 6, 3, 0, -12);
+    needle.fillStyle(needleSkin.headColor, 1);
+    needle.fillTriangle(-4, 1, 4, 1, 0, -10);
+    needle.fillStyle(0x111827, 0.76);
+    needle.fillCircle(0, 49, 7);
+    needle.fillStyle(needleSkin.tailColor, 1);
+    needle.fillCircle(0, 49, 5);
+    projectile.add([glow, needle]);
+
+    const startX = projectile.x;
+    const startY = projectile.y;
+    const flight = { progress: 0 };
+    const speedLevel = this.progression.upgrades.speed;
+    const skinSpeed = needleSkin.modifiers.projectileSpeedMultiplier ?? 1;
+    const duration = Math.max(
+      105,
+      (BASE_PROJECTILE_DURATION - speedLevel * 12) / skinSpeed,
+    );
+    this.tweens.add({
+      targets: flight,
+      progress: 1,
+      duration,
+      ease: "Quad.In",
+      onUpdate: () => {
+        if (!projectile.active || !this.monster?.active) return;
+        const liveAngle = normalizeAngle(WORLD_HIT_ANGLE - this.monster.rotation);
+        const liveSurface = this.getMonsterSurfaceRadius(liveAngle);
+        projectile.x = Phaser.Math.Linear(startX, MONSTER_X, flight.progress);
+        projectile.y = Phaser.Math.Linear(
+          startY,
+          MONSTER_Y + liveSurface + 10,
+          flight.progress,
+        );
+      },
+      onComplete: () => {
+        projectile.destroy(true);
+        this.resolveHit();
+      },
     });
   }
 
@@ -847,23 +970,143 @@ export class RaidScene extends Phaser.Scene {
     });
   }
 
-  private attachNeedle(angle: number): void {
+  private attachNeedle(_angle: number): void {
+    this.redrawAttachedNeedles();
+  }
+
+  private getSilhouetteMask(textureKey: string): AlphaMask | null {
+    if (this.silhouetteMasks.has(textureKey)) {
+      return this.silhouetteMasks.get(textureKey) ?? null;
+    }
+
+    try {
+      const texture = this.textures.get(textureKey);
+      const source = texture.getSourceImage() as CanvasImageSource & {
+        readonly width?: number;
+        readonly height?: number;
+        readonly naturalWidth?: number;
+        readonly naturalHeight?: number;
+      };
+      const width = Math.floor(Number(source.naturalWidth || source.width || 0));
+      const height = Math.floor(Number(source.naturalHeight || source.height || 0));
+      if (width < 1 || height < 1) throw new Error("empty texture source");
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) throw new Error("canvas 2d is unavailable");
+      context.clearRect(0, 0, width, height);
+      context.drawImage(source, 0, 0, width, height);
+      const image = context.getImageData(0, 0, width, height);
+      const mask: AlphaMask = { width, height, data: image.data };
+      this.silhouetteMasks.set(textureKey, mask);
+      return mask;
+    } catch {
+      this.silhouetteMasks.set(textureKey, null);
+      return null;
+    }
+  }
+
+  private warmMonsterSilhouetteMasks(): void {
+    for (const [index, textureKey] of (this.currentMonster.textureKeys ?? []).entries()) {
+      this.time.delayedCall(index * 16, () => {
+        if (this.textures.exists(textureKey)) this.getSilhouetteMask(textureKey);
+      });
+    }
+  }
+
+  private getMonsterSurfaceRadius(angle: number): number {
+    const artwork = this.monsterArtwork;
+    const fallback =
+      MONSTER_FALLBACK_SURFACE_RADIUS[this.currentMonster.id] ?? MONSTER_RADIUS;
+    if (!artwork?.active) return MONSTER_RADIUS;
+
+    const mask = this.getSilhouetteMask(artwork.texture.key);
+    if (!mask) return fallback;
+    const sourceRadius = getAlphaSurfaceRadius(mask, angle);
+    if (sourceRadius === null) return fallback;
+
+    const scaleX = artwork.displayWidth / mask.width;
+    const scaleY = artwork.displayHeight / mask.height;
+    const scaledRadius =
+      sourceRadius *
+      Math.hypot(Math.cos(angle) * scaleX, Math.sin(angle) * scaleY);
+    return Phaser.Math.Clamp(scaledRadius, 28, this.currentMonster.isBoss ? 154 : 146);
+  }
+
+  private redrawAttachedNeedles(): void {
+    if (!this.attachedNeedleBackLayer?.active || !this.attachedNeedleFrontLayer?.active) {
+      return;
+    }
+
+    const back = this.attachedNeedleBackLayer;
+    const front = this.attachedNeedleFrontLayer;
     const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
-    const attached = this.add.graphics();
-    const inner = MONSTER_RADIUS - 24;
-    const outer = MONSTER_RADIUS + 43;
-    const handle = MONSTER_RADIUS + 46;
-    attached.lineStyle(3, needleSkin.shaftColor, 1);
-    attached.lineBetween(
-      Math.cos(angle) * inner,
-      Math.sin(angle) * inner,
-      Math.cos(angle) * outer,
-      Math.sin(angle) * outer,
-    );
-    attached.fillStyle(needleSkin.tailColor, 1);
-    attached.fillCircle(Math.cos(angle) * handle, Math.sin(angle) * handle, 5);
-    this.monster.add(attached);
-    this.monster.sendToBack(attached);
+    back.clear();
+    front.clear();
+
+    for (const angle of this.hitAngles) {
+      const directionX = Math.cos(angle);
+      const directionY = Math.sin(angle);
+      const tangentX = -directionY;
+      const tangentY = directionX;
+      const surface = this.getMonsterSurfaceRadius(angle);
+      const embedded = Math.max(8, surface - 18);
+      const outsideLength = this.currentMonster.isBoss ? 46 : 40;
+      const outer = surface + outsideLength;
+      const handle = outer + 4;
+
+      back.lineStyle(7, 0x111827, 0.72);
+      back.lineBetween(
+        directionX * embedded,
+        directionY * embedded,
+        directionX * outer,
+        directionY * outer,
+      );
+      back.lineStyle(3, needleSkin.shaftColor, 1);
+      back.lineBetween(
+        directionX * embedded,
+        directionY * embedded,
+        directionX * outer,
+        directionY * outer,
+      );
+      back.fillStyle(0x111827, 0.78);
+      back.fillCircle(directionX * handle, directionY * handle, 7);
+      back.fillStyle(needleSkin.tailColor, 1);
+      back.fillCircle(directionX * handle, directionY * handle, 5);
+
+      const entry = Math.max(12, surface - 4);
+      const entryX = directionX * entry;
+      const entryY = directionY * entry;
+      const visibleInner = Math.max(10, surface - 11);
+      const visibleOuter = surface + 8;
+      front.lineStyle(6, 0x111827, 0.82);
+      front.lineBetween(
+        directionX * visibleInner,
+        directionY * visibleInner,
+        directionX * visibleOuter,
+        directionY * visibleOuter,
+      );
+      front.lineStyle(2.5, needleSkin.shaftColor, 1);
+      front.lineBetween(
+        directionX * visibleInner,
+        directionY * visibleInner,
+        directionX * visibleOuter,
+        directionY * visibleOuter,
+      );
+      front.fillStyle(0x111827, 0.9);
+      front.fillCircle(entryX, entryY, 6);
+      front.fillStyle(needleSkin.headColor, 1);
+      front.fillCircle(entryX, entryY, 3.5);
+      front.lineStyle(2, needleSkin.tailColor, 1);
+      front.lineBetween(
+        entryX - tangentX * 4,
+        entryY - tangentY * 4,
+        entryX + tangentX * 4,
+        entryY + tangentY * 4,
+      );
+    }
   }
 
   private updateMonsterDamageVisual(): void {
@@ -877,6 +1120,7 @@ export class RaidScene extends Phaser.Scene {
     const textureKey = this.currentMonster.textureKeys?.[damageStage];
     if (textureKey && this.textures.exists(textureKey) && this.monsterArtwork) {
       this.monsterArtwork.setTexture(textureKey);
+      this.redrawAttachedNeedles();
     } else {
       this.drawProceduralDamage(damageStage);
     }
@@ -1019,6 +1263,7 @@ export class RaidScene extends Phaser.Scene {
       );
       this.closeOverlay();
       this.state = "menu";
+      this.sfx.setMusicTheme("menu");
       this.menu.show(
         this.progression,
         "home",

@@ -15,6 +15,7 @@ import {
   type UpgradeId,
 } from "../game/ProgressionStore";
 import { MONSTERS, getMonsterForStage } from "../game/content";
+import { HERO_CROSSBOW_FRAMES } from "../game/heroAnimation";
 import {
   BACKGROUNDS,
   NEEDLE_SKINS,
@@ -51,7 +52,14 @@ const TAB_LABELS: Readonly<Record<Exclude<MenuTab, "home">, { label: string; sym
 };
 
 function asset(path: string): string {
-  return `${import.meta.env.BASE_URL}assets/art/${path}`;
+  return new URL(
+    `${import.meta.env.BASE_URL}assets/art/${path}`,
+    document.baseURI,
+  ).href;
+}
+
+function colorHex(value: number): string {
+  return `#${value.toString(16).padStart(6, "0")}`;
 }
 
 function firstStageForMonster(monsterId: string): number {
@@ -177,34 +185,88 @@ export default class GameMenu {
   }
 
   private render(): void {
-    this.root.style.setProperty(
-      "--menu-background-portrait",
-      `url("${asset("menu-hub-portrait.webp")}")`,
-    );
-    this.root.style.setProperty(
-      "--menu-background-landscape",
-      `url("${asset("menu-hub-landscape.webp")}")`,
-    );
+    const activeButton = this.root.contains(document.activeElement) && document.activeElement instanceof HTMLButtonElement
+      ? document.activeElement
+      : null;
+    const focusKey = activeButton
+      ? {
+          tab: activeButton.dataset.tab,
+          action: activeButton.dataset.action,
+          id: activeButton.dataset.id,
+        }
+      : null;
     this.root.innerHTML = this.tab === "home" ? this.renderHome() : this.renderPanel();
+    if (focusKey) {
+      const matchingButton = Array.from(this.root.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) =>
+          button.dataset.tab === focusKey.tab &&
+          button.dataset.action === focusKey.action &&
+          button.dataset.id === focusKey.id,
+      );
+      matchingButton?.focus({ preventScroll: true });
+    }
+  }
+
+  private renderWorld(blurred = false): string {
+    return `
+      <div class="menu-world ${blurred ? "is-blurred" : ""}" aria-hidden="true">
+        <picture>
+          <source media="(orientation: portrait)" srcset="${asset("menu-hub-portrait.webp")}" />
+          <img src="${asset("menu-hub-landscape.webp")}" alt="" fetchpriority="high" />
+        </picture>
+      </div>`;
+  }
+
+  private renderHeroNeedle(frameIndex: number): string {
+    const skin =
+      NEEDLE_SKINS.find((candidate) => candidate.id === this.state.equippedNeedle) ??
+      NEEDLE_SKINS[0];
+    const anchor = HERO_CROSSBOW_FRAMES[frameIndex].needle;
+    const size = 1254;
+    const x = anchor.x * size;
+    const tip = anchor.tipY * size;
+    const tail = anchor.tailY * size;
+    const shaft = colorHex(skin.shaftColor);
+    const head = colorHex(skin.headColor);
+    const fletching = colorHex(skin.tailColor);
+
+    return `
+      <svg class="menu-hero-needle" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+        <line class="hero-needle-outline" x1="${x}" y1="${tip + 17}" x2="${x}" y2="${tail}" />
+        <line class="hero-needle-shaft" x1="${x}" y1="${tip + 17}" x2="${x}" y2="${tail}" style="stroke:${shaft}" />
+        <path class="hero-needle-tip" d="M ${x} ${tip} L ${x - 10} ${tip + 24} L ${x + 10} ${tip + 24} Z" style="fill:${head}" />
+        <path class="hero-needle-tail" d="M ${x} ${tail - 2} L ${x - 15} ${tail + 18} L ${x} ${tail + 12} L ${x + 15} ${tail + 18} Z" style="fill:${fletching}" />
+      </svg>`;
+  }
+
+  private renderAnimatedHero(): string {
+    return `
+      <div class="menu-hero" role="img" aria-label="Эля Штопка с пружинным луком и выбранной иглой">
+        ${HERO_CROSSBOW_FRAMES.map((frame, index) => `
+          <div class="menu-hero-frame frame-${index + 1}">
+            <img src="${asset(frame.fileName)}" alt="" draggable="false" />
+            ${this.renderHeroNeedle(index)}
+          </div>`).join("")}
+      </div>`;
   }
 
   private renderHome(): string {
     const record = this.state.highestStageCleared;
     return `
-      <div class="menu-world" aria-hidden="true"></div>
+      ${this.renderWorld()}
       <div class="menu-vignette" aria-hidden="true"></div>
       <header class="menu-topbar">
         <button class="round-tool" data-action="fullscreen" aria-label="На весь экран">⛶</button>
         <div class="currency-chip"><span>✦</span><strong>${this.state.thread}</strong><small>нити</small></div>
         <div class="currency-chip premium"><span>◆</span><strong>${this.state.premium}</strong><small>пуговицы</small></div>
-        <button class="round-tool" data-action="sound" aria-label="Звук">${this.state.muted ? "○" : "♪"}</button>
+        <button class="round-tool" data-action="sound" aria-label="${this.state.muted ? "Включить звук и музыку" : "Выключить звук и музыку"}">${this.state.muted ? "🔇" : "♪"}</button>
       </header>
       <section class="menu-hero-copy">
         <span class="menu-kicker">ТКАНЕВЫЙ РЕЙД</span>
         <h1>Нитка<br />храбрости</h1>
         <p>Зашивай кошмары и не дай иглам столкнуться.</p>
       </section>
-      <img class="menu-hero" src="${asset("hero-menu-v2.webp")}" alt="Эля Штопка с пружинным луком" />
+      ${this.renderAnimatedHero()}
       <div class="menu-record ${this.notice ? "has-notice" : ""}">
         ${this.notice ? `<span>${this.notice}</span><small>Лучший результат: <strong>${record || "—"}</strong></small>` : `Лучший результат: <strong>${record || "—"}</strong>`}
       </div>
@@ -216,7 +278,7 @@ export default class GameMenu {
   private renderPanel(): string {
     const tab = this.tab as Exclude<MenuTab, "home">;
     return `
-      <div class="menu-world is-blurred" aria-hidden="true"></div>
+      ${this.renderWorld(true)}
       <div class="menu-vignette is-heavy" aria-hidden="true"></div>
       <header class="menu-topbar panel-wallet">
         <div class="currency-chip"><span>✦</span><strong>${this.state.thread}</strong><small>нити</small></div>
@@ -228,7 +290,7 @@ export default class GameMenu {
           <h2>${TAB_LABELS[tab].label}</h2>
           <button data-action="home" aria-label="Закрыть">×</button>
         </header>
-        ${this.notice ? `<div class="panel-notice">${this.notice}</div>` : ""}
+      ${this.notice ? `<div class="panel-notice" role="status" aria-live="polite">${this.notice}</div>` : ""}
         <div class="panel-scroll">${this.renderTabContent(tab)}</div>
       </section>
       ${this.renderNav()}
@@ -379,7 +441,7 @@ export default class GameMenu {
 
   private renderNav(): string {
     return `<nav class="menu-nav" aria-label="Разделы">${Object.entries(TAB_LABELS).map(([id, item]) => `
-      <button data-tab="${id}" class="${this.tab === id ? "is-active" : ""}"><span>${item.symbol}</span><small>${item.label}</small></button>
+      <button data-tab="${id}" class="${this.tab === id ? "is-active" : ""}" ${this.tab === id ? 'aria-current="page"' : ""}><span>${item.symbol}</span><small>${item.label}</small></button>
     `).join("")}</nav>`;
   }
 }

@@ -128,19 +128,33 @@ button {
 
 .menu-world {
   z-index: 0;
-  background-image: var(--menu-background-landscape);
-  background-position: center 42%;
-  background-size: cover;
+  overflow: hidden;
   transform: scale(1.025);
+}
+
+.menu-world picture,
+.menu-world img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.menu-world img {
+  object-fit: cover;
+  object-position: center 42%;
+  filter: brightness(1.09) saturate(1.08);
 }
 
 .menu-world::after {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 1;
   background:
-    linear-gradient(90deg, rgba(5, 8, 15, 0.78) 0%, rgba(8, 13, 23, 0.1) 55%, rgba(5, 8, 15, 0.42) 100%),
-    linear-gradient(0deg, rgba(5, 8, 15, 0.94) 0%, transparent 38%, rgba(5, 8, 15, 0.45) 100%);
+    linear-gradient(90deg, rgba(5, 8, 15, 0.65) 0%, rgba(8, 13, 23, 0.04) 55%, rgba(5, 8, 15, 0.3) 100%),
+    linear-gradient(0deg, rgba(5, 8, 15, 0.78) 0%, transparent 38%, rgba(5, 8, 15, 0.34) 100%);
 }
 
 .menu-world.is-blurred {
@@ -150,7 +164,7 @@ button {
 
 .menu-vignette {
   z-index: 1;
-  background: radial-gradient(circle at 58% 46%, transparent 18%, rgba(4, 7, 13, 0.2) 55%, rgba(4, 7, 13, 0.82) 100%);
+  background: radial-gradient(circle at 58% 46%, transparent 18%, rgba(4, 7, 13, 0.12) 58%, rgba(4, 7, 13, 0.62) 100%);
 }
 
 .menu-vignette.is-heavy {
@@ -261,13 +275,84 @@ button {
   z-index: 2;
   right: clamp(0px, 5vw, 120px);
   bottom: 70px;
-  width: min(64vw, 850px);
-  max-height: 91vh;
-  object-fit: contain;
-  object-position: bottom right;
+  width: min(58vw, 780px);
+  aspect-ratio: 1;
   filter: drop-shadow(0 28px 25px rgba(0, 0, 0, 0.44));
   pointer-events: none;
   user-select: none;
+}
+
+.menu-hero-frame,
+.menu-hero-frame img,
+.menu-hero-needle {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.menu-hero-frame {
+  opacity: 0;
+  animation: menu-hero-frame 3.6s steps(1, end) infinite;
+}
+
+.menu-hero-frame.frame-1 {
+  opacity: 1;
+  animation-name: menu-hero-frame-1;
+}
+
+.menu-hero-frame.frame-2 {
+  animation-name: menu-hero-frame-2;
+}
+
+.menu-hero-frame.frame-3 {
+  animation-name: menu-hero-frame-3;
+}
+
+.menu-hero-frame img {
+  z-index: 1;
+  display: block;
+  object-fit: contain;
+}
+
+.menu-hero-needle {
+  z-index: 2;
+  overflow: visible;
+  filter: drop-shadow(0 0 7px rgba(232, 180, 77, 0.5));
+}
+
+.hero-needle-outline {
+  stroke: #111827;
+  stroke-width: 11;
+  stroke-linecap: round;
+  opacity: 0.72;
+}
+
+.hero-needle-shaft {
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+.hero-needle-tip,
+.hero-needle-tail {
+  stroke: #111827;
+  stroke-width: 5;
+  stroke-linejoin: round;
+}
+
+@keyframes menu-hero-frame-1 {
+  0%, 59%, 92%, 100% { opacity: 1; }
+  60%, 91% { opacity: 0; }
+}
+
+@keyframes menu-hero-frame-2 {
+  0%, 59%, 70%, 81%, 92%, 100% { opacity: 0; }
+  60%, 69%, 82%, 91% { opacity: 1; }
+}
+
+@keyframes menu-hero-frame-3 {
+  0%, 69%, 82%, 100% { opacity: 0; }
+  70%, 81% { opacity: 1; }
 }
 
 .menu-record {
@@ -786,15 +871,14 @@ button {
 }
 
 @media (orientation: portrait), (max-width: 780px) {
-  .menu-world {
-    background-image: var(--menu-background-portrait);
-    background-position: center;
+  .menu-world img {
+    object-position: center;
   }
 
   .menu-world::after {
     background:
-      linear-gradient(0deg, rgba(5, 8, 15, 0.97) 0%, rgba(8, 13, 23, 0.05) 55%, rgba(5, 8, 15, 0.78) 100%),
-      linear-gradient(90deg, rgba(5, 8, 15, 0.3), transparent, rgba(5, 8, 15, 0.3));
+      linear-gradient(0deg, rgba(5, 8, 15, 0.78) 0%, rgba(8, 13, 23, 0.03) 55%, rgba(5, 8, 15, 0.58) 100%),
+      linear-gradient(90deg, rgba(5, 8, 15, 0.18), transparent, rgba(5, 8, 15, 0.18));
   }
 
   .menu-topbar {
@@ -853,13 +937,10 @@ button {
   }
 
   .menu-hero {
-    top: max(178px, calc(var(--safe-top) + 170px));
+    top: max(137px, calc(var(--safe-top) + 129px));
     right: 50%;
     bottom: auto;
-    width: min(88vw, 460px);
-    height: min(42dvh, 360px);
-    max-height: calc(100dvh - 418px);
-    object-position: center top;
+    width: min(104vw, 410px);
     transform: translateX(50%);
   }
 
@@ -997,24 +1078,57 @@ button {
   }
 
   .menu-hero {
-    top: max(170px, calc(var(--safe-top) + 162px));
-    width: 82vw;
-    height: auto;
-    max-height: calc(100dvh - 405px);
+    top: max(126px, calc(var(--safe-top) + 118px));
+    width: min(98vw, 365px);
   }
 }
 
 @media (max-height: 650px) and (orientation: landscape) {
   .menu-hero-copy {
-    top: 17%;
+    top: max(62px, calc(var(--safe-top) + 54px));
+    left: max(clamp(24px, 8vw, 96px), calc(var(--safe-left) + 14px));
+    width: min(46vw, 430px);
+    text-align: left;
+  }
+
+  .menu-hero-copy h1 {
+    margin: 4px 0 6px;
+    font-size: clamp(38px, 6vw, 52px);
+    line-height: 0.84;
+  }
+
+  .menu-hero-copy p {
+    display: none;
+  }
+
+  .menu-hero {
+    top: auto;
+    right: max(clamp(14px, 4vw, 52px), calc(var(--safe-right) + 10px));
+    bottom: max(78px, calc(var(--safe-bottom) + 68px));
+    left: auto;
+    width: min(43vw, 74vh, 330px);
+    transform: none;
   }
 
   .menu-record {
-    bottom: 164px;
+    right: auto;
+    bottom: max(164px, calc(var(--safe-bottom) + 152px));
+    left: max(clamp(24px, 8vw, 96px), calc(var(--safe-left) + 14px));
+    transform: none;
   }
 
   .raid-button {
-    bottom: 88px;
+    right: auto;
+    bottom: max(88px, calc(var(--safe-bottom) + 76px));
+    left: max(clamp(24px, 8vw, 96px), calc(var(--safe-left) + 14px));
+    width: min(310px, 42vw);
+    min-width: 0;
+    min-height: 58px;
+    transform: none;
+  }
+
+  .raid-button:active {
+    transform: translateY(4px);
   }
 
   .menu-nav {
@@ -1034,5 +1148,19 @@ button {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+
+  .menu-hero-frame {
+    opacity: 0;
+    animation: none !important;
+  }
+
+  .menu-hero-frame.frame-1 {
+    display: block;
+    opacity: 1;
+  }
+
+  .menu-hero-frame:not(.frame-1) {
+    display: none;
   }
 }

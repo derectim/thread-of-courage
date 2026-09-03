@@ -7,6 +7,8 @@ export type SoundName =
   | "upgrade"
   | "boss";
 
+export type MusicTheme = "menu" | "raid" | "boss";
+
 type AudioContextConstructor = new (options?: AudioContextOptions) => AudioContext;
 
 /**
@@ -19,20 +21,35 @@ type AudioContextConstructor = new (options?: AudioContextOptions) => AudioConte
 export class SoundEngine {
   private context: AudioContext | null = null;
   private masterGain: GainNode | null = null;
+  private musicBus: GainNode | null = null;
+  private musicSource: AudioBufferSourceNode | null = null;
+  private musicVoiceGain: GainNode | null = null;
+  private requestedMusicTheme: MusicTheme | null = null;
+  private activeMusicTheme: MusicTheme | null = null;
+  private readonly musicBuffers = new Map<MusicTheme, AudioBuffer>();
   private unlockPromise: Promise<boolean> | null = null;
   private muted = false;
   private readonly volume: number;
   private listeningForGesture = false;
+  private listeningForVisibility = false;
+  private destroyed = false;
 
   public constructor(volume = 0.22) {
     this.volume = Math.max(0, Math.min(1, volume));
     this.listenForFirstGesture();
+    this.listenForVisibilityChanges();
   }
 
   /** Attempts to create/resume audio. Safe to call repeatedly. */
   public unlock(): Promise<boolean> {
+    if (this.destroyed || !this.isDocumentVisible()) {
+      this.listenForFirstGesture();
+      return Promise.resolve(false);
+    }
+
     if (this.context?.state === "running") {
       this.stopListeningForGesture();
+      this.ensureRequestedMusic();
       return Promise.resolve(true);
     }
 
@@ -46,7 +63,7 @@ export class SoundEngine {
   }
 
   public play(sound: SoundName): void {
-    if (this.muted) return;
+    if (this.destroyed || this.muted || !this.isDocumentVisible()) return;
 
     void this.unlock().then((ready) => {
       if (!ready || this.muted || !this.context || !this.masterGain) return;
@@ -115,15 +132,49 @@ export class SoundEngine {
     this.setMuted(true);
   }
 
+  /**
+   * Selects an asset-free background loop. Calling this before the first user
+   * gesture only records the desired theme; AudioContext creation remains
+   * deferred until unlock().
+   */
+  public setMusicTheme(theme: MusicTheme): void {
+    if (this.destroyed) return;
+
+    this.requestedMusicTheme = theme;
+    if (this.muted || !this.isDocumentVisible()) return;
+
+    if (this.context?.state === "running") {
+      this.ensureRequestedMusic();
+    } else {
+      this.listenForFirstGesture();
+    }
+  }
+
+  public stopMusic(): void {
+    this.requestedMusicTheme = null;
+    this.stopMusicSource();
+  }
+
   public setMuted(muted: boolean): void {
     this.muted = muted;
 
-    if (!this.context || !this.masterGain) return;
+    if (!this.context || !this.masterGain) {
+      if (!muted) this.listenForFirstGesture();
+      return;
+    }
 
     const gain = this.masterGain.gain;
     const now = this.context.currentTime;
     gain.cancelScheduledValues(now);
     gain.setTargetAtTime(muted ? 0 : this.volume, now, 0.015);
+
+    if (muted) {
+      this.stopMusicSource();
+    } else if (this.context.state === "running" && this.isDocumentVisible()) {
+      this.ensureRequestedMusic();
+    } else {
+      this.listenForFirstGesture();
+    }
   }
 
   public isMuted(): boolean {
@@ -131,11 +182,17 @@ export class SoundEngine {
   }
 
   public destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
     this.stopListeningForGesture();
+    this.stopListeningForVisibilityChanges();
+    this.stopMusicSource(true);
+    this.musicBuffers.clear();
 
     const context = this.context;
     this.context = null;
     this.masterGain = null;
+    this.musicBus = null;
 
     if (context && context.state !== "closed") {
       void context.close().catch(() => undefined);
@@ -144,6 +201,8 @@ export class SoundEngine {
 
   private async doUnlock(): Promise<boolean> {
     try {
+      if (this.destroyed || !this.isDocumentVisible()) return false;
+
       if (!this.context || this.context.state === "closed") {
         const Context = this.getAudioContextConstructor();
         if (!Context) return false;
@@ -154,9 +213,13 @@ export class SoundEngine {
         const masterGain = context.createGain();
         masterGain.gain.value = this.muted ? 0 : this.volume;
         masterGain.connect(context.destination);
+        const musicBus = context.createGain();
+        musicBus.gain.value = 1;
+        musicBus.connect(masterGain);
 
         this.context = context;
         this.masterGain = masterGain;
+        this.musicBus = musicBus;
       }
 
       const context = this.context;
@@ -164,8 +227,19 @@ export class SoundEngine {
         await context.resume();
       }
 
+      if (this.destroyed) return false;
+      if (!this.isDocumentVisible()) {
+        if (context.state === "running") {
+          await context.suspend().catch(() => undefined);
+        }
+        return false;
+      }
+
       const ready = (context.state as AudioContextState) === "running";
-      if (ready) this.stopListeningForGesture();
+      if (ready) {
+        this.stopListeningForGesture();
+        this.ensureRequestedMusic();
+      }
       return ready;
     } catch {
       return false;
@@ -182,7 +256,13 @@ export class SoundEngine {
   }
 
   private listenForFirstGesture(): void {
-    if (typeof document === "undefined" || this.listeningForGesture) return;
+    if (
+      this.destroyed ||
+      typeof document === "undefined" ||
+      this.listeningForGesture
+    ) {
+      return;
+    }
 
     document.addEventListener("pointerdown", this.handleFirstGesture, {
       capture: true,
@@ -205,6 +285,300 @@ export class SoundEngine {
   private readonly handleFirstGesture = (): void => {
     void this.unlock();
   };
+
+  private listenForVisibilityChanges(): void {
+    if (
+      typeof document === "undefined" ||
+      this.listeningForVisibility
+    ) {
+      return;
+    }
+
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
+    this.listeningForVisibility = true;
+  }
+
+  private stopListeningForVisibilityChanges(): void {
+    if (typeof document === "undefined" || !this.listeningForVisibility) return;
+
+    document.removeEventListener("visibilitychange", this.handleVisibilityChange);
+    this.listeningForVisibility = false;
+  }
+
+  private readonly handleVisibilityChange = (): void => {
+    if (!this.isDocumentVisible()) {
+      this.stopMusicSource(true);
+      const context = this.context;
+      if (context?.state === "running") {
+        void context.suspend().catch(() => undefined);
+      }
+      this.listenForFirstGesture();
+      return;
+    }
+
+    // Mobile WebViews commonly require another gesture after returning from
+    // the background, so merely becoming visible never resumes audio here.
+    this.listenForFirstGesture();
+  };
+
+  private isDocumentVisible(): boolean {
+    return (
+      typeof document === "undefined" || document.visibilityState !== "hidden"
+    );
+  }
+
+  private ensureRequestedMusic(): void {
+    const theme = this.requestedMusicTheme;
+    const context = this.context;
+    const musicBus = this.musicBus;
+    if (
+      this.destroyed ||
+      this.muted ||
+      !theme ||
+      !context ||
+      !musicBus ||
+      context.state !== "running" ||
+      !this.isDocumentVisible() ||
+      this.activeMusicTheme === theme
+    ) {
+      return;
+    }
+
+    const buffer = this.getMusicBuffer(context, theme);
+    this.stopMusicSource();
+
+    const source = context.createBufferSource();
+    const voiceGain = context.createGain();
+    const now = context.currentTime;
+    const level = this.getMusicLevel(theme);
+
+    source.buffer = buffer;
+    source.loop = true;
+    source.loopStart = 0;
+    source.loopEnd = buffer.duration;
+    voiceGain.gain.setValueAtTime(0.0001, now);
+    voiceGain.gain.exponentialRampToValueAtTime(level, now + 0.16);
+    source.connect(voiceGain);
+    voiceGain.connect(musicBus);
+
+    source.onended = () => {
+      try {
+        source.disconnect();
+        voiceGain.disconnect();
+      } catch {
+        // Nodes may already be disconnected while tearing down the context.
+      }
+    };
+
+    this.musicSource = source;
+    this.musicVoiceGain = voiceGain;
+    this.activeMusicTheme = theme;
+    source.start(now + 0.015);
+  }
+
+  private stopMusicSource(immediate = false): void {
+    const source = this.musicSource;
+    const voiceGain = this.musicVoiceGain;
+    const context = this.context;
+
+    this.musicSource = null;
+    this.musicVoiceGain = null;
+    this.activeMusicTheme = null;
+    if (!source) return;
+
+    try {
+      if (!immediate && context && voiceGain && context.state !== "closed") {
+        const now = context.currentTime;
+        voiceGain.gain.cancelScheduledValues(now);
+        voiceGain.gain.setTargetAtTime(0.0001, now, 0.012);
+        source.stop(now + 0.06);
+      } else {
+        source.stop();
+      }
+    } catch {
+      // Stopping an already-ended source is harmless for this tiny engine.
+    }
+  }
+
+  private getMusicLevel(theme: MusicTheme): number {
+    switch (theme) {
+      case "menu":
+        return 0.42;
+      case "raid":
+        return 0.36;
+      case "boss":
+        return 0.44;
+    }
+  }
+
+  private getMusicBuffer(context: AudioContext, theme: MusicTheme): AudioBuffer {
+    const cached = this.musicBuffers.get(theme);
+    if (cached) return cached;
+
+    const bpm = theme === "menu" ? 72 : theme === "raid" ? 84 : 78;
+    const beatDuration = 60 / bpm;
+    const beatCount = 16;
+    const duration = beatDuration * beatCount;
+    const sampleRate = context.sampleRate;
+    const frameCount = Math.max(1, Math.ceil(duration * sampleRate));
+    const buffer = context.createBuffer(1, frameCount, sampleRate);
+    const samples = buffer.getChannelData(0);
+
+    const progressions: Record<MusicTheme, readonly (readonly number[])[]> = {
+      menu: [
+        [50, 53, 57],
+        [46, 50, 53],
+        [53, 57, 60],
+        [48, 52, 55],
+      ],
+      raid: [
+        [50, 53, 57],
+        [50, 55, 58],
+        [46, 50, 53],
+        [48, 52, 55],
+      ],
+      boss: [
+        [38, 41, 45],
+        [39, 43, 46],
+        [36, 39, 43],
+        [37, 41, 44],
+      ],
+    };
+    const motifs: Record<MusicTheme, readonly number[]> = {
+      menu: [62, 65, 69, 65, 58, 62, 65, 62, 65, 69, 72, 69, 60, 64, 67, 64],
+      raid: [62, 69, 65, 69, 62, 70, 67, 65, 58, 65, 62, 65, 60, 67, 64, 67],
+      boss: [50, 57, 53, 57, 51, 58, 55, 51, 48, 55, 51, 55, 49, 56, 53, 49],
+    };
+    const chords = progressions[theme];
+    const motif = motifs[theme];
+
+    chords.forEach((chord, chordIndex) => {
+      const chordStart = chordIndex * 4 * beatDuration;
+      chord.forEach((midi, noteIndex) => {
+        this.addMusicTone(
+          samples,
+          sampleRate,
+          chordStart,
+          beatDuration * 3.9,
+          this.midiToFrequency(midi),
+          theme === "boss" ? 0.055 : 0.045,
+          "pad",
+          noteIndex * 0.012,
+        );
+      });
+
+      this.addMusicTone(
+        samples,
+        sampleRate,
+        chordStart,
+        beatDuration * 1.7,
+        this.midiToFrequency(chord[0] - 12),
+        theme === "boss" ? 0.105 : 0.075,
+        "bass",
+      );
+      this.addMusicTone(
+        samples,
+        sampleRate,
+        chordStart + beatDuration * 2,
+        beatDuration * 1.7,
+        this.midiToFrequency(chord[0] - 12),
+        theme === "boss" ? 0.09 : 0.06,
+        "bass",
+      );
+    });
+
+    motif.forEach((midi, beatIndex) => {
+      const subdivision = theme === "raid" ? 0.5 : 1;
+      const start = beatIndex * beatDuration;
+      this.addMusicTone(
+        samples,
+        sampleRate,
+        start,
+        beatDuration * (theme === "menu" ? 0.72 : 0.52),
+        this.midiToFrequency(midi),
+        theme === "boss" ? 0.055 : 0.065,
+        "pluck",
+      );
+
+      if (subdivision < 1 && beatIndex % 2 === 1) {
+        this.addMusicTone(
+          samples,
+          sampleRate,
+          start + beatDuration * subdivision,
+          beatDuration * 0.34,
+          this.midiToFrequency(midi - 12),
+          0.032,
+          "pluck",
+        );
+      }
+    });
+
+    const edgeFrames = Math.min(
+      Math.floor(sampleRate * 0.05),
+      Math.floor(samples.length / 2),
+    );
+    let peak = 0;
+    for (let index = 0; index < samples.length; index += 1) {
+      if (edgeFrames > 0) {
+        const edge = Math.min(index, samples.length - 1 - index);
+        if (edge < edgeFrames) samples[index] *= edge / edgeFrames;
+      }
+      peak = Math.max(peak, Math.abs(samples[index]));
+    }
+
+    if (peak > 0.78) {
+      const normalization = 0.78 / peak;
+      for (let index = 0; index < samples.length; index += 1) {
+        samples[index] *= normalization;
+      }
+    }
+
+    this.musicBuffers.set(theme, buffer);
+    return buffer;
+  }
+
+  private addMusicTone(
+    samples: Float32Array,
+    sampleRate: number,
+    start: number,
+    duration: number,
+    frequency: number,
+    gain: number,
+    voice: "pad" | "bass" | "pluck",
+    phaseOffset = 0,
+  ): void {
+    const startFrame = Math.max(0, Math.floor(start * sampleRate));
+    const frameCount = Math.max(1, Math.floor(duration * sampleRate));
+    const endFrame = Math.min(samples.length, startFrame + frameCount);
+    const attack = voice === "pad" ? 0.18 : voice === "bass" ? 0.025 : 0.008;
+    const release = voice === "pad" ? 0.36 : voice === "bass" ? 0.22 : 0.14;
+
+    for (let frame = startFrame; frame < endFrame; frame += 1) {
+      const time = (frame - startFrame) / sampleRate;
+      const remaining = duration - time;
+      const attackEnvelope = Math.min(1, time / attack);
+      const releaseEnvelope = Math.min(1, remaining / release);
+      const envelope =
+        Math.sin((Math.min(1, attackEnvelope) * Math.PI) / 2) *
+        Math.sin((Math.min(1, releaseEnvelope) * Math.PI) / 2);
+      const angular = Math.PI * 2 * frequency * time + phaseOffset;
+      const fundamental = Math.sin(angular);
+      const second = Math.sin(angular * 2 + 0.17);
+      const third = Math.sin(angular * 3 + 0.31);
+      const color =
+        voice === "pad"
+          ? fundamental * 0.86 + second * 0.1 + third * 0.04
+          : voice === "bass"
+            ? fundamental * 0.9 + second * 0.1
+            : fundamental * 0.75 + second * 0.18 + third * 0.07;
+      const decay = voice === "pluck" ? Math.exp(-time * 3.2) : 1;
+      samples[frame] += color * envelope * decay * gain;
+    }
+  }
+
+  private midiToFrequency(midi: number): number {
+    return 440 * 2 ** ((midi - 69) / 12);
+  }
 
   private playShoot(at: number): void {
     this.tone({
