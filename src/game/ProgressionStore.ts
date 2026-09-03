@@ -62,6 +62,8 @@ export interface LifetimeStats {
 export interface ProgressionState {
   readonly version: typeof PROGRESSION_SAVE_VERSION;
   readonly highestStageCleared: number;
+  /** Next campaign stage to play; reset to 1 after a campaign defeat. */
+  readonly campaignResumeStage: number;
   readonly thread: number;
   readonly premium: number;
   readonly muted: boolean;
@@ -123,6 +125,7 @@ export function createDefaultState(): ProgressionState {
   return {
     version: PROGRESSION_SAVE_VERSION,
     highestStageCleared: 0,
+    campaignResumeStage: 1,
     thread: 0,
     premium: 0,
     muted: false,
@@ -226,6 +229,11 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
   const upgrades = isRecord(value.upgrades) ? value.upgrades : {};
   const stats = isRecord(value.stats) ? value.stats : {};
   const highestStageCleared = normalizeInteger(value.highestStageCleared, 0);
+  const legacyResumeStage = highestStageCleared + 1;
+  const campaignResumeStage = Math.min(
+    legacyResumeStage,
+    normalizeInteger(value.campaignResumeStage, legacyResumeStage, 1),
+  );
   const ownedNeedles = Array.from(
     new Set<NeedleSkinId>(["silver", ...normalizeIdList(value.ownedNeedles, NEEDLE_SKIN_IDS)]),
   );
@@ -265,6 +273,7 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
   return {
     version: PROGRESSION_SAVE_VERSION,
     highestStageCleared,
+    campaignResumeStage,
     thread: normalizeInteger(value.thread, 0),
     premium: normalizeInteger(value.premium, 0),
     muted: value.muted === true,
@@ -489,6 +498,7 @@ export function recordVictory(
   return {
     ...state,
     highestStageCleared,
+    campaignResumeStage: Math.max(1, Math.floor(stage) + 1),
     thread: state.thread + reward,
     unlockedSkills,
     stats: {
@@ -497,6 +507,15 @@ export function recordVictory(
       bossesDefeated: state.stats.bossesDefeated + (isBoss ? 1 : 0),
     },
   };
+}
+
+/** Clears only the active campaign checkpoint after a defeat. */
+export function resetCampaignAfterDefeat(
+  state: ProgressionState,
+): ProgressionState {
+  return state.campaignResumeStage === 1
+    ? state
+    : { ...state, campaignResumeStage: 1 };
 }
 
 /** Awards a side-route victory without moving the player's main campaign checkpoint. */

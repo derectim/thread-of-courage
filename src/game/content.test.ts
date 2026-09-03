@@ -5,6 +5,7 @@ import {
   ROOMS,
   getExpeditionNumber,
   getMonsterForStage,
+  getMovementPatternForProgress,
   getRequiredHits,
   getRoomForStage,
 } from "./content";
@@ -78,6 +79,89 @@ describe("expedition content", () => {
 
       expect(Boolean(monster.isBoss)).toBe(expectedBossId !== undefined);
       if (expectedBossId) expect(monster.id).toBe(expectedBossId);
+    }
+  });
+
+  it("ramps main-boss durability, speed, and phase pressure across the expedition", () => {
+    const expected = [
+      {
+        stage: 5,
+        id: "sewing-storm",
+        requiredHits: 13,
+        speedMultiplier: 1.06,
+        phaseTwoAt: 0.5,
+        phaseTwoPattern: "carousel",
+      },
+      {
+        stage: 10,
+        id: "moth-mask",
+        requiredHits: 16,
+        speedMultiplier: 1.16,
+        phaseTwoAt: 0.46,
+        phaseTwoPattern: "recoil",
+      },
+      {
+        stage: 15,
+        id: "madam-marionette",
+        requiredHits: 18,
+        speedMultiplier: 1.18,
+        phaseTwoAt: 0.42,
+        phaseTwoPattern: "stitches",
+      },
+      {
+        stage: 20,
+        id: "ripper",
+        requiredHits: 20,
+        speedMultiplier: 1.22,
+        phaseTwoAt: 0.38,
+        phaseTwoPattern: "stitches",
+      },
+    ] as const;
+
+    for (const tuning of expected) {
+      const monster = getMonsterForStage(tuning.stage);
+      expect(monster.id).toBe(tuning.id);
+      expect(getRequiredHits(monster, tuning.stage)).toBe(tuning.requiredHits);
+      expect(monster.bossTuning).toEqual({
+        speedMultiplier: tuning.speedMultiplier,
+        phaseTwoAt: tuning.phaseTwoAt,
+        phaseTwoPattern: tuning.phaseTwoPattern,
+      });
+      const phaseTwoHit = Math.ceil(
+        tuning.requiredHits * tuning.phaseTwoAt,
+      );
+      expect(
+        getMovementPatternForProgress(
+          monster,
+          phaseTwoHit - 1,
+          tuning.requiredHits,
+        ),
+      ).toBe(monster.pattern);
+      expect(
+        getMovementPatternForProgress(
+          monster,
+          phaseTwoHit,
+          tuning.requiredHits,
+        ),
+      ).toBe(tuning.phaseTwoPattern);
+    }
+
+    expect(getRequiredHits(getMonsterForStage(5), 5)).toBeLessThan(
+      getRequiredHits(getMonsterForStage(10), 10),
+    );
+    expect(getMonsterForStage(5).bossTuning?.phaseTwoAt).toBeGreaterThan(
+      getMonsterForStage(20).bossTuning?.phaseTwoAt ?? 1,
+    );
+    for (let index = 1; index < expected.length; index += 1) {
+      expect(expected[index].requiredHits).toBeGreaterThan(
+        expected[index - 1].requiredHits,
+      );
+      expect(expected[index].speedMultiplier).toBeGreaterThan(
+        expected[index - 1].speedMultiplier,
+      );
+      expect(expected[index].phaseTwoAt).toBeLessThan(
+        expected[index - 1].phaseTwoAt,
+      );
     }
   });
 

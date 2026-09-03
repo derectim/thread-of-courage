@@ -113,6 +113,178 @@ const MASTERY_REWARD_SYMBOLS: Readonly<Record<NeedleMasteryRewardKind, string>> 
 
 const SEASON_PREMIUM_COST = 25;
 
+interface GuidePoint {
+  readonly title: string;
+  readonly copy: string;
+  readonly symbol?: string;
+  readonly iconFileName?: string;
+}
+
+interface GuidePage {
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly artFileName: string;
+  readonly artAlt: string;
+  readonly backdropFileName?: string;
+  readonly visualSymbol: string;
+  readonly points: readonly GuidePoint[];
+}
+
+const GUIDE_PAGES: readonly GuidePage[] = [
+  {
+    eyebrow: "ПЕРВЫЙ СТЕЖОК",
+    title: "Метко шей — и освобождай путь",
+    summary: "Зашей кошмар точными попаданиями и проходи этап за этапом.",
+    artFileName: "hero-shot-3.webp",
+    artAlt: "Эля выпускает светящуюся иглу",
+    visualSymbol: "➶",
+    points: [
+      {
+        symbol: "◎",
+        title: "Сделай выстрел",
+        copy: "Коснись игрового поля, щёлкни мышью или нажми Пробел.",
+      },
+      {
+        symbol: "⌁",
+        title: "Ищи свободный край",
+        copy: "Новая игла должна войти в кошмар и не коснуться уже закреплённых игл.",
+      },
+      {
+        symbol: "◇",
+        title: "Береги оберег",
+        copy: "Столкновение расходует защиту. Если оберега не осталось — рейд окончен.",
+      },
+    ],
+  },
+  {
+    eyebrow: "КОШМАРЫ И КОМНАТЫ",
+    title: "Лица подскажут, что происходит",
+    summary: "Внешность врага меняется вместе с его состоянием, а каждая комната задаёт свой ритм.",
+    artFileName: "boss-madam-marionette-2.webp",
+    artAlt: "Повреждённая Мадам Марионетка",
+    backdropFileName: "room-puppet-theatre.webp",
+    visualSymbol: "♜",
+    points: [
+      {
+        symbol: "◉",
+        title: "Следи за лицом",
+        copy: "У врагов четыре вида повреждений: чем сильнее потрёпан кошмар, тем ближе победа.",
+      },
+      {
+        symbol: "♛",
+        title: "Особые этапы",
+        copy: "Мини-боссы ждут на этапах 3, 8, 13 и 18 каждого цикла, главные боссы — на каждом пятом.",
+      },
+      {
+        symbol: "⚠",
+        title: "Читай предупреждения",
+        copy: "Чердак ускоряет вращение, театр меняет направление, а машина пульсом меняет скорость.",
+      },
+      {
+        symbol: "↗",
+        title: "Учитывай броню",
+        copy: "Металлический шлем Напёрсточного Стража отражает иглу — целься в тканевый корпус.",
+      },
+    ],
+  },
+  {
+    eyebrow: "БОЕВЫЕ ПРИЁМЫ",
+    title: "Активное нажимай, пассивное работает само",
+    summary: "Собери свой набор в разделе «Усиления» до начала рейда.",
+    artFileName: "menu-icon-upgrades.webp",
+    artAlt: "Тканевая эмблема усилений",
+    visualSymbol: "◷",
+    points: [
+      {
+        symbol: "E",
+        title: "Большая кнопка в рейде",
+        copy: "Нажми её или клавишу E. Активный приём тратит заряд и иногда требует перезарядки.",
+      },
+      {
+        symbol: "✦",
+        title: "Выбери заранее",
+        copy: "Одновременно можно взять один активный приём и один пассивный талант.",
+      },
+      {
+        symbol: "∞",
+        title: "Пассивное — постоянно",
+        copy: "Талант действует без нажатия, а купленные за нити уровни сохраняются между рейдами.",
+      },
+    ],
+  },
+  {
+    eyebrow: "НИЖНЯЯ ЛЕНТА",
+    title: "Пять разделов мастерской",
+    summary: "Вот что находится за каждой тканевой иконкой внизу главного экрана.",
+    artFileName: "menu-icon-quests.webp",
+    artAlt: "Тканевая эмблема поручений",
+    visualSymbol: "⌂",
+    points: [
+      {
+        iconFileName: "menu-icon-upgrades.webp",
+        title: "Усиления",
+        copy: "Постоянные уровни, активные приёмы и пассивные таланты.",
+      },
+      {
+        iconFileName: "menu-icon-quests.webp",
+        title: "Поручения",
+        copy: "Задания дня, серия побед, недельный путь и постоянные достижения.",
+      },
+      {
+        iconFileName: "menu-icon-needles.webp",
+        title: "Иглы",
+        copy: "Открытие, выбор, боевые свойства и косметическое мастерство игл.",
+      },
+      {
+        iconFileName: "menu-icon-bestiary.webp",
+        title: "Бестиарий",
+        copy: "Встреченные враги и отметки мини-боссов и главных боссов.",
+      },
+      {
+        iconFileName: "menu-icon-shop.webp",
+        title: "Лавка",
+        copy: "Сезонный альбом, его награды и редкие фоны мастерской.",
+      },
+    ],
+  },
+  {
+    eyebrow: "ПРОГРЕСС И НАГРАДЫ",
+    title: "Возвращайся за новым узором",
+    summary: "Короткие и длинные цели дополняют обычное прохождение, но не мешают играть в своём темпе.",
+    artFileName: "ui-season-album.webp",
+    artAlt: "Тканевый сезонный альбом",
+    visualSymbol: "✦",
+    points: [
+      {
+        symbol: "☀",
+        title: "Каждый день",
+        copy: "Три поручения обновляются ежедневно; весь набор можно бесплатно заменить один раз за день.",
+      },
+      {
+        symbol: "⌁",
+        title: "Серия и неделя",
+        copy: "Сундук даётся за каждые 5 побед, большой — за каждые 10. Поражение сбрасывает серию и новый поход начинает с этапа 1; недельный путь состоит из 5 узлов.",
+      },
+      {
+        symbol: "♛",
+        title: "Сезон",
+        copy: "Задания дают опыт для 20 косметических ступеней бесплатной и Золотой дорожек.",
+      },
+      {
+        symbol: "◆",
+        title: "Три игровых ресурса",
+        copy: "✦ нити идут на усиления и иглы, ◆ пуговицы — на фоны и Золотую дорожку, ◈ осколки приходят из поручений и сундуков. Реальной оплаты здесь нет.",
+      },
+      {
+        symbol: "✓",
+        title: "Сохранение автоматическое",
+        copy: "После победы можно выйти и позже продолжить со следующего этапа. Прогресс хранится локально, а внутри VK синхронизируется между устройствами.",
+      },
+    ],
+  },
+] as const;
+
 export const TAB_LABELS: Readonly<Record<Exclude<MenuTab, "home">, { label: string; iconFileName: string }>> = {
   upgrades: { label: "Усиления", iconFileName: "menu-icon-upgrades.webp" },
   quests: { label: "Поручения", iconFileName: "menu-icon-quests.webp" },
@@ -147,6 +319,7 @@ export default class GameMenu {
   private state: ProgressionState;
   private tab: MenuTab = "home";
   private notice = "";
+  private guidePage: number | null = null;
   private readonly frame: HTMLElement | null;
 
   public constructor(
@@ -157,18 +330,21 @@ export default class GameMenu {
     this.state = initialState;
     this.frame = this.root.closest<HTMLElement>(".game-frame");
     this.root.addEventListener("click", this.handleClick);
+    this.root.addEventListener("keydown", this.handleKeyDown);
   }
 
   public show(state: ProgressionState, tab: MenuTab = "home", notice = ""): void {
     this.state = state;
     this.tab = tab;
     this.notice = notice;
+    this.guidePage = null;
     this.frame?.classList.add("menu-active");
     this.root.classList.remove("is-hidden");
     this.render();
   }
 
   public hide(): void {
+    this.guidePage = null;
     this.frame?.classList.remove("menu-active");
     this.root.classList.add("is-hidden");
   }
@@ -176,6 +352,7 @@ export default class GameMenu {
   public destroy(): void {
     this.frame?.classList.remove("menu-active");
     this.root.removeEventListener("click", this.handleClick);
+    this.root.removeEventListener("keydown", this.handleKeyDown);
     this.root.replaceChildren();
   }
 
@@ -184,6 +361,35 @@ export default class GameMenu {
     if (!target || target.disabled) return;
 
     const action = target.dataset.action;
+    if (action === "guide-open") {
+      this.guidePage = 0;
+      this.render();
+      this.focusGuideDialog();
+      return;
+    }
+    if (action === "guide-close" || action === "guide-done") {
+      this.closeGuide();
+      return;
+    }
+    if (action === "guide-back") {
+      this.moveGuide(-1);
+      return;
+    }
+    if (action === "guide-next") {
+      this.moveGuide(1);
+      return;
+    }
+    if (action === "guide-page") {
+      const page = Number.parseInt(target.dataset.page ?? "", 10);
+      if (Number.isInteger(page) && page >= 0 && page < GUIDE_PAGES.length) {
+        this.guidePage = page;
+        this.render();
+        this.root.querySelector<HTMLButtonElement>(`[data-action="guide-page"][data-page="${page}"]`)?.focus({ preventScroll: true });
+      }
+      return;
+    }
+    if (this.guidePage !== null) return;
+
     if (action === "start") {
       this.callbacks.onStart();
       return;
@@ -380,6 +586,62 @@ export default class GameMenu {
     }
   };
 
+  private readonly handleKeyDown = (event: KeyboardEvent): void => {
+    if (this.guidePage === null) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.closeGuide();
+      return;
+    }
+    if (event.key !== "Tab") return;
+
+    const dialog = this.root.querySelector<HTMLElement>(".guide-dialog");
+    if (!dialog) return;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => !element.hasAttribute("hidden"));
+    if (!focusable.length) {
+      event.preventDefault();
+      dialog.focus({ preventScroll: true });
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || active === dialog || !dialog.contains(active))) {
+      event.preventDefault();
+      last.focus({ preventScroll: true });
+    } else if (!event.shiftKey && (active === last || active === dialog || !dialog.contains(active))) {
+      event.preventDefault();
+      first.focus({ preventScroll: true });
+    }
+  };
+
+  private focusGuideDialog(): void {
+    this.root.querySelector<HTMLElement>(".guide-dialog")?.focus({ preventScroll: true });
+  }
+
+  private closeGuide(): void {
+    this.guidePage = null;
+    this.render();
+    this.root.querySelector<HTMLButtonElement>('[data-action="guide-open"]')?.focus({ preventScroll: true });
+  }
+
+  private moveGuide(offset: number): void {
+    if (this.guidePage === null) return;
+    this.guidePage = Math.max(0, Math.min(GUIDE_PAGES.length - 1, this.guidePage + offset));
+    const focusAction = this.guidePage === GUIDE_PAGES.length - 1 && offset > 0
+      ? "guide-done"
+      : offset > 0
+        ? "guide-next"
+        : "guide-back";
+    this.render();
+    this.root.querySelector<HTMLButtonElement>(`[data-action="${focusAction}"]`)?.focus({ preventScroll: true });
+  }
+
   private getDailyContext(): ReturnType<typeof getDailySelectionContext> {
     return getDailySelectionContext(
       this.state.highestStageCleared,
@@ -418,6 +680,7 @@ export default class GameMenu {
           chestId: activeButton.dataset.chestId,
           tier: activeButton.dataset.tier,
           track: activeButton.dataset.track,
+          page: activeButton.dataset.page,
         }
       : null;
     this.root.innerHTML = this.tab === "home" ? this.renderHome() : this.renderPanel();
@@ -433,7 +696,8 @@ export default class GameMenu {
           button.dataset.id === focusKey.id &&
           button.dataset.chestId === focusKey.chestId &&
           button.dataset.tier === focusKey.tier &&
-          button.dataset.track === focusKey.track,
+          button.dataset.track === focusKey.track &&
+          button.dataset.page === focusKey.page,
       );
       matchingButton?.focus({ preventScroll: true });
     }
@@ -482,27 +746,97 @@ export default class GameMenu {
 
   private renderHome(): string {
     const record = this.state.highestStageCleared;
+    const campaignStage = this.state.campaignResumeStage;
+    const guideIsOpen = this.guidePage !== null;
     return `
-      ${this.renderWorld()}
-      <div class="menu-vignette" aria-hidden="true"></div>
-      <header class="menu-topbar">
-        <button class="round-tool" data-action="fullscreen" aria-label="На весь экран">⛶</button>
-        <div class="currency-chip"><span>✦</span><strong>${this.state.thread}</strong><small>нити</small></div>
-        <div class="currency-chip premium"><span>◆</span><strong>${this.state.premium}</strong><small>пуговицы</small></div>
-        <button class="round-tool" data-action="sound" aria-label="${this.state.muted ? "Включить звук и музыку" : "Выключить звук и музыку"}">${this.state.muted ? "🔇" : "♪"}</button>
-      </header>
-      <section class="menu-hero-copy">
-        <span class="menu-kicker">ТКАНЕВЫЙ РЕЙД</span>
-        <h1>Нитка<br />храбрости</h1>
-        <p>Зашивай кошмары и не дай иглам столкнуться.</p>
-      </section>
-      ${this.renderAnimatedHero()}
-      <div class="menu-record ${this.notice ? "has-notice" : ""}">
-        ${this.notice ? `<span>${this.notice}</span><small>Лучший результат: <strong>${record || "—"}</strong></small>` : `Лучший результат: <strong>${record || "—"}</strong>`}
+      <div class="menu-home" ${guideIsOpen ? 'aria-hidden="true" inert' : ""}>
+        ${this.renderWorld()}
+        <div class="menu-vignette" aria-hidden="true"></div>
+        <header class="menu-topbar">
+          <button class="round-tool" data-action="fullscreen" aria-label="На весь экран">⛶</button>
+          <div class="currency-chip"><span>✦</span><strong>${this.state.thread}</strong><small>нити</small></div>
+          <div class="currency-chip premium"><span>◆</span><strong>${this.state.premium}</strong><small>пуговицы</small></div>
+          <button class="round-tool" data-action="sound" aria-label="${this.state.muted ? "Включить звук и музыку" : "Выключить звук и музыку"}">${this.state.muted ? "🔇" : "♪"}</button>
+        </header>
+        <button class="menu-guide-trigger" data-action="guide-open" aria-haspopup="dialog" aria-label="Открыть мини-гайд «Как играть»">
+          <span aria-hidden="true">?</span><strong>Как играть</strong>
+        </button>
+        <section class="menu-hero-copy">
+          <span class="menu-kicker">ТКАНЕВЫЙ РЕЙД</span>
+          <h1>Нитка<br />храбрости</h1>
+          <p>Зашивай кошмары и не дай иглам столкнуться.</p>
+        </section>
+        ${this.renderAnimatedHero()}
+        <div class="menu-record ${this.notice ? "has-notice" : ""}">
+          ${this.notice ? `<span>${this.notice}</span><small>Лучший результат: <strong>${record || "—"}</strong></small>` : `Лучший результат: <strong>${record || "—"}</strong>`}
+        </div>
+        <button class="raid-button" data-action="start"><span>${campaignStage === 1 ? "В РЕЙД!" : "ПРОДОЛЖИТЬ ПУТЬ"}</span><small>${campaignStage === 1 ? "Новый поход · этап 1" : `Следующий этап: ${campaignStage}`}</small></button>
+        ${this.renderNav()}
       </div>
-      <button class="raid-button" data-action="start"><span>В РЕЙД!</span><small>Мини-боссы между главными</small></button>
-      ${this.renderNav()}
+      ${guideIsOpen ? this.renderGuide(this.guidePage!) : ""}
     `;
+  }
+
+  private renderGuide(pageIndex: number): string {
+    const page = GUIDE_PAGES[pageIndex];
+    const isFirst = pageIndex === 0;
+    const isLast = pageIndex === GUIDE_PAGES.length - 1;
+    const points = page.points.map((point) => `
+      <li class="guide-point">
+        ${point.iconFileName
+          ? `<img src="${asset(point.iconFileName)}" alt="" aria-hidden="true" draggable="false" />`
+          : `<span aria-hidden="true">${point.symbol ?? "✦"}</span>`}
+        <div><strong>${point.title}</strong><p>${point.copy}</p></div>
+      </li>`).join("");
+    const dots = GUIDE_PAGES.map((guidePage, index) => `
+      <button
+        type="button"
+        class="${index === pageIndex ? "is-active" : ""}"
+        data-action="guide-page"
+        data-page="${index}"
+        aria-label="${guidePage.title}, страница ${index + 1} из ${GUIDE_PAGES.length}"
+        ${index === pageIndex ? 'aria-current="step"' : ""}
+      ><span></span></button>`).join("");
+
+    return `
+      <div class="guide-layer">
+        <div class="guide-scrim" aria-hidden="true"></div>
+        <section
+          class="guide-dialog ${page.points.length > 3 ? "is-dense" : ""}"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="guide-title"
+          aria-describedby="guide-summary"
+          tabindex="-1"
+        >
+          <button class="guide-close" data-action="guide-close" aria-label="Закрыть мини-гайд">×</button>
+          <header class="guide-heading">
+            <span>${page.eyebrow}</span>
+            <small>Страница ${pageIndex + 1} из ${GUIDE_PAGES.length}</small>
+            <h2 id="guide-title">${page.title}</h2>
+          </header>
+          <div class="guide-scroll" aria-live="polite">
+            <div class="guide-page">
+              <figure class="guide-visual ${page.backdropFileName ? "has-backdrop" : ""}" aria-label="${page.artAlt}">
+                ${page.backdropFileName ? `<img class="guide-visual-backdrop" src="${asset(page.backdropFileName)}" alt="" aria-hidden="true" draggable="false" />` : ""}
+                <img class="guide-visual-art" src="${asset(page.artFileName)}" alt="" aria-hidden="true" draggable="false" />
+                <span aria-hidden="true">${page.visualSymbol}</span>
+              </figure>
+              <div class="guide-copy">
+                <p id="guide-summary">${page.summary}</p>
+                <ul class="guide-points">${points}</ul>
+              </div>
+            </div>
+          </div>
+          <div class="guide-dots" role="navigation" aria-label="Страницы мини-гайда">${dots}</div>
+          <footer class="guide-actions">
+            <button class="guide-back" data-action="guide-back" ${isFirst ? "disabled" : ""}>← <span>Назад</span></button>
+            ${isLast
+              ? `<button class="guide-primary" data-action="guide-done"><span>Всё понятно</span> ✓</button>`
+              : `<button class="guide-primary" data-action="guide-next"><span>Далее</span> →</button>`}
+          </footer>
+        </section>
+      </div>`;
   }
 
   private renderPanel(): string {
@@ -707,7 +1041,13 @@ export default class GameMenu {
       </section>
 
       <section class="streak-card ${streak.pendingChests.length ? "has-reward" : ""}" aria-labelledby="streak-title">
-        <img src="${asset("ui-streak-chest.webp")}" alt="" aria-hidden="true" draggable="false" />
+        <div
+          class="streak-chest-visual ${streak.pendingChests.length ? "is-ready" : ""}"
+          role="img"
+          aria-label="${streak.pendingChests.length ? "Открывающийся сундук с наградой" : "Закрытый сундук серии побед"}"
+        >
+          ${[1, 2, 3].map((frame) => `<img class="streak-chest-frame frame-${frame}" src="${asset(`ui-streak-chest-frame-${frame}.webp`)}" alt="" aria-hidden="true" draggable="false" />`).join("")}
+        </div>
         <div class="streak-copy">
           <span>СЕРИЯ ПОБЕД</span><h3 id="streak-title">${streak.current} подряд · рекорд ${streak.best}</h3>
           <p>${streak.pendingChests.length ? "Сундук уже ждёт — забери награду." : `До сундука осталось ${nextMilestone - streak.current}. Поражение обнулит текущую серию.`}</p>

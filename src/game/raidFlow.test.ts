@@ -12,22 +12,22 @@ describe("getRaidStartStage", () => {
     expect(getRaidStartStage(0)).toBe(1);
   });
 
-  it("resumes at exactly the stage after the persisted victory", () => {
-    expect(getRaidStartStage(1)).toBe(2);
-    expect(getRaidStartStage(4)).toBe(5);
-    expect(getRaidStartStage(20)).toBe(21);
+  it("starts at the explicitly persisted campaign checkpoint", () => {
+    expect(getRaidStartStage(2)).toBe(2);
+    expect(getRaidStartStage(5)).toBe(5);
+    expect(getRaidStartStage(21)).toBe(21);
   });
 
   it("safely normalizes malformed progress", () => {
     expect(getRaidStartStage(-10)).toBe(1);
     expect(getRaidStartStage(Number.NaN)).toBe(1);
-    expect(getRaidStartStage(4.9)).toBe(5);
+    expect(getRaidStartStage(4.9)).toBe(4);
   });
 
   it("uses the already rewarded victory state without replaying or skipping a stage", () => {
     const victory = recordVictory(createDefaultState(), 4, false, 3);
 
-    expect(getRaidStartStage(victory.highestStageCleared)).toBe(5);
+    expect(getRaidStartStage(victory.campaignResumeStage)).toBe(5);
     expect(victory.highestStageCleared).toBe(4);
     expect(victory.thread).toBe(3);
     expect(victory.stats.monstersDefeated).toBe(1);

@@ -10,6 +10,12 @@ export interface RoomDefinition {
   readonly accentColor: number;
 }
 
+export interface BossTuning {
+  readonly speedMultiplier: number;
+  readonly phaseTwoAt: number;
+  readonly phaseTwoPattern: MovementPattern;
+}
+
 export interface MonsterDefinition {
   readonly id: string;
   readonly name: string;
@@ -22,6 +28,7 @@ export interface MonsterDefinition {
   readonly shadowColor: number;
   readonly isBoss?: boolean;
   readonly isMiniBoss?: boolean;
+  readonly bossTuning?: BossTuning;
   readonly textureKeys?: readonly string[];
 }
 
@@ -108,11 +115,16 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     epithet: "прячет сердце под лоскутами",
     roomId: "attic",
     pattern: "recoil",
-    baseHits: 12,
+    baseHits: 13,
     bodyColor: 0x6b4a6f,
     accentColor: 0xe8b44d,
     shadowColor: 0x3f304b,
     isBoss: true,
+    bossTuning: {
+      speedMultiplier: 1.06,
+      phaseTwoAt: 0.5,
+      phaseTwoPattern: "carousel",
+    },
     textureKeys: [
       "boss-sewing-storm-0",
       "boss-sewing-storm-1",
@@ -126,11 +138,16 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     epithet: "боится ярких нитей",
     roomId: "theatre",
     pattern: "stitches",
-    baseHits: 14,
+    baseHits: 16,
     bodyColor: 0xd59a8a,
     accentColor: 0xf2e3c6,
     shadowColor: 0x6b4a6f,
     isBoss: true,
+    bossTuning: {
+      speedMultiplier: 1.16,
+      phaseTwoAt: 0.46,
+      phaseTwoPattern: "recoil",
+    },
     textureKeys: [
       "boss-moth-mask-0",
       "boss-moth-mask-1",
@@ -179,11 +196,16 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     epithet: "дёргает за забытые нити",
     roomId: "theatre",
     pattern: "pendulum",
-    baseHits: 15,
+    baseHits: 17,
     bodyColor: 0x8a5578,
     accentColor: 0xf2e3c6,
     shadowColor: 0x3f304b,
     isBoss: true,
+    bossTuning: {
+      speedMultiplier: 1.18,
+      phaseTwoAt: 0.42,
+      phaseTwoPattern: "stitches",
+    },
     textureKeys: [
       "boss-madam-marionette-0",
       "boss-madam-marionette-1",
@@ -249,11 +271,16 @@ export const MONSTERS: readonly MonsterDefinition[] = [
     epithet: "разрывает саму ткань мира",
     roomId: "machine",
     pattern: "recoil",
-    baseHits: 17,
+    baseHits: 19,
     bodyColor: 0x705134,
     accentColor: 0x39b7a5,
     shadowColor: 0x171a24,
     isBoss: true,
+    bossTuning: {
+      speedMultiplier: 1.22,
+      phaseTwoAt: 0.38,
+      phaseTwoPattern: "stitches",
+    },
     textureKeys: [
       "boss-ripper-0",
       "boss-ripper-1",
@@ -327,6 +354,21 @@ export function getRoomForStage(stage: number): RoomDefinition {
 export function getExpeditionNumber(stage: number): number {
   const normalizedStage = Math.max(1, Math.floor(stage));
   return Math.floor((normalizedStage - 1) / 20) + 1;
+}
+
+export function getMovementPatternForProgress(
+  monster: MonsterDefinition,
+  completedHits: number,
+  requiredHits: number,
+): MovementPattern {
+  const tuning = monster.bossTuning;
+  if (
+    !tuning ||
+    completedHits < Math.max(1, requiredHits) * tuning.phaseTwoAt
+  ) {
+    return monster.pattern;
+  }
+  return tuning.phaseTwoPattern;
 }
 
 export function getRequiredHits(monster: MonsterDefinition, stage: number): number {

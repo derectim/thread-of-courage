@@ -14,6 +14,7 @@ import {
   recordChallengeVictory,
   recordShot,
   recordVictory,
+  resetCampaignAfterDefeat,
   save as saveProgression,
   type ProgressionState,
   type UpgradeId,
@@ -25,6 +26,7 @@ import {
   ROOMS,
   getExpeditionNumber,
   getMonsterForStage,
+  getMovementPatternForProgress,
   getRequiredHits,
   getRoomForStage,
   type MonsterDefinition,
@@ -38,6 +40,7 @@ import {
   getHeroNeedleLayout,
 } from "./heroAnimation";
 import { getAlphaSurfaceRadius, type AlphaMask } from "./silhouette";
+import { isSentinelHelmetHit } from "./sentinelArmor";
 import {
   NEEDLE_ART_TIP_Y,
   getAttachedNeedleRotation,
@@ -200,6 +203,7 @@ export class RaidScene extends Phaser.Scene {
   private accurateStreak = 0;
   private maxAccurateStreak = 0;
   private stageHadCollision = false;
+  private sentinelRicochetHintShown = false;
   private upgradePurchaseLockedUntil = 0;
   private menu!: GameMenu;
   private readonly sfx = new SoundEngine();
@@ -339,7 +343,7 @@ export class RaidScene extends Phaser.Scene {
     this.menu.hide();
     this.closeOverlay();
     this.state = "transition";
-    this.stage = getRaidStartStage(this.progression.highestStageCleared);
+    this.stage = getRaidStartStage(this.progression.campaignResumeStage);
     this.shieldCharges = this.getStartingWardCharges();
     this.inputCooldownUntil = this.time.now + 260;
     this.createMonster();
@@ -842,14 +846,15 @@ export class RaidScene extends Phaser.Scene {
     const skillSpeed = getSkill(
       this.progression.equippedSkill,
     ).modifiers.rotationSpeedMultiplier ?? 1;
-    const mothPressure = this.currentMonster.id === "moth-mask" ? 1.16 : 1;
+    const bossSpeedMultiplier =
+      this.currentMonster.bossTuning?.speedMultiplier ?? 1;
     this.rotationSpeed =
       Math.min(
         2.35,
         0.72 + Math.log2(this.stage + 1) * 0.22 + Math.floor(this.stage / 5) * 0.025,
       ) *
       skillSpeed *
-      mothPressure *
+      bossSpeedMultiplier *
       (this.weeklyModifier?.effects.rotationSpeedMultiplier ?? 1);
     if (this.weeklyModifier?.effects.reverseRotation) this.patternDirection *= -1;
     this.baseRotation = 0;
@@ -857,6 +862,7 @@ export class RaidScene extends Phaser.Scene {
     this.accurateStreak = 0;
     this.maxAccurateStreak = 0;
     this.stageHadCollision = false;
+    this.sentinelRicochetHintShown = false;
     this.monsterArtwork = null;
 
     this.monsterShadow = this.add
@@ -983,27 +989,18 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private getActivePattern(): MovementPattern {
-    if (!this.currentMonster.isBoss || this.hits < this.requiredHits / 2) {
-      return this.currentMonster.pattern;
-    }
-
-    switch (this.currentMonster.id) {
-      case "sewing-storm":
-        return "carousel";
-      case "madam-marionette":
-        return "stitches";
-      case "moth-mask":
-        return "recoil";
-      case "ripper":
-        return "stitches";
-      default:
-        return this.currentMonster.pattern;
-    }
+    return getMovementPatternForProgress(
+      this.currentMonster,
+      this.hits,
+      this.requiredHits,
+    );
   }
 
   private refreshPatternLabel(): void {
     const bossPhase =
-      this.currentMonster.isBoss && this.hits >= this.requiredHits / 2
+      this.currentMonster.bossTuning &&
+      this.hits >=
+        this.requiredHits * this.currentMonster.bossTuning.phaseTwoAt
         ? " · ФАЗА II"
         : "";
     this.patternText.setText(
@@ -1029,7 +1026,8 @@ export class RaidScene extends Phaser.Scene {
           Math.sin(
             this.patternElapsed *
               (1.25 + this.stage * 0.025) *
-              pendulumSpeed,
+              pendulumSpeed *
+              (this.currentMonster.bossTuning?.speedMultiplier ?? 1),
           ) *
             1.55 *
             this.patternDirection;
@@ -1296,14 +1294,79 @@ export class RaidScene extends Phaser.Scene {
         );
       },
       onComplete: () => {
-        projectile.destroy(true);
-        this.resolveHit();
+        this.resolveProjectile(projectile);
       },
     });
   }
 
-  private resolveHit(): void {
-    let localAngle = normalizeAngle(WORLD_HIT_ANGLE - this.monster.rotation);
+  private resolveProjectile(projectile: Phaser.GameObjects.Container): void {
+    const localAngle = normalizeAngle(
+      WORLD_HIT_ANGLE - this.monster.rotation,
+    );
+    if (isSentinelHelmetHit(this.currentMonster.id, localAngle)) {
+      this.ricochetNeedle(projectile);
+      return;
+    }
+
+    projectile.destroy(true);
+    this.resolveHit(localAngle);
+  }
+
+  private ricochetNeedle(projectile: Phaser.GameObjects.Container): void {
+    this.shotInFlight = false;
+    this.stageHadCollision = true;
+    this.accurateStreak = 0;
+    this.sfx.ricochet();
+    this.cameras.main.shake(90, 0.0024);
+    this.cameras.main.flash(80, 242, 227, 198, false);
+
+    if (!this.sentinelRicochetHintShown) {
+      this.sentinelRicochetHintShown = true;
+      this.tipText.setText(
+        "Шлем Стража отбивает иглы — целься мимо брони!",
+      );
+    }
+
+    const direction = this.patternDirection >= 0 ? 1 : -1;
+    const spark = this.add
+      .graphics()
+      .setPosition(projectile.x, projectile.y)
+      .setDepth(14);
+    spark.lineStyle(3, 0xffedb0, 0.96);
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (Math.PI * 2 * index) / 6;
+      spark.lineBetween(
+        Math.cos(angle) * 5,
+        Math.sin(angle) * 5,
+        Math.cos(angle) * 22,
+        Math.sin(angle) * 22,
+      );
+    }
+    spark.fillStyle(0xffffff, 1);
+    spark.fillCircle(0, 0, 4);
+
+    this.tweens.add({
+      targets: spark,
+      alpha: 0,
+      scale: 1.45,
+      duration: 170,
+      ease: "Quad.Out",
+      onComplete: () => spark.destroy(),
+    });
+    this.tweens.add({
+      targets: projectile,
+      x: projectile.x + direction * 96,
+      y: projectile.y + 86,
+      rotation: projectile.rotation + direction * 1.65,
+      alpha: 0,
+      duration: 270,
+      ease: "Quad.Out",
+      onComplete: () => projectile.destroy(true),
+    });
+  }
+
+  private resolveHit(initialLocalAngle: number): void {
+    let localAngle = initialLocalAngle;
     const precisionLevel = this.progression.upgrades.precision;
     const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
     const needleModifiers = needleSkin.modifiers;
@@ -1866,7 +1929,7 @@ export class RaidScene extends Phaser.Scene {
     this.state = "failed";
     this.setCombatHudVisible(false);
     this.roomEffectText.setAlpha(0);
-    this.progression = {
+    const defeatProgression = {
       ...this.progression,
       dailySystems: recordDailyGameplayEvent(
         this.progression.dailySystems,
@@ -1878,6 +1941,10 @@ export class RaidScene extends Phaser.Scene {
         ),
       ),
     };
+    this.progression =
+      this.raidMode === "campaign"
+        ? resetCampaignAfterDefeat(defeatProgression)
+        : defeatProgression;
     this.persistProgress();
     this.sfx.fail();
     this.cameras.main.shake(240, 0.009);
@@ -1885,10 +1952,9 @@ export class RaidScene extends Phaser.Scene {
 
     this.time.delayedCall(300, () => {
       this.tipText.setText(
-        "Нить оборвалась на " +
-          this.stage +
-          "-м стежке · рекорд " +
-          this.progression.highestStageCleared,
+        this.raidMode === "weekly"
+          ? `Недельный путь оборвался на узле ${this.weeklyNode?.order ?? 1}`
+          : `Нить оборвалась на этапе ${this.stage} · рекорд ${this.progression.highestStageCleared}`,
       );
       this.closeOverlay();
       this.state = "menu";
@@ -1898,7 +1964,7 @@ export class RaidScene extends Phaser.Scene {
         this.raidMode === "weekly" ? "quests" : "home",
         this.raidMode === "weekly"
           ? `Недельный путь оборвался на узле ${this.weeklyNode?.order ?? 1}`
-          : `Рейд окончен: этап ${this.stage}`,
+          : `Поход окончен на этапе ${this.stage} · новый рейд с этапа 1`,
       );
     });
   }

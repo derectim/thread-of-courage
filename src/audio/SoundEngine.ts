@@ -1,6 +1,7 @@
 export type SoundName =
   | "shoot"
   | "hit"
+  | "ricochet"
   | "fail"
   | "win"
   | "ui"
@@ -128,6 +129,9 @@ export class SoundEngine {
           case "hit":
             this.playHit(now);
             break;
+          case "ricochet":
+            this.playRicochet(now);
+            break;
           case "fail":
             this.playFail(now);
             break;
@@ -156,6 +160,10 @@ export class SoundEngine {
 
   public hit(): void {
     this.play("hit");
+  }
+
+  public ricochet(): void {
+    this.play("ricochet");
   }
 
   public fail(): void {
@@ -821,6 +829,26 @@ export class SoundEngine {
       type: "square",
     });
     this.noise(at, 0.11, 0.3, 720, "lowpass");
+  }
+
+  private playRicochet(at: number): void {
+    this.tone({
+      at,
+      duration: 0.085,
+      frequency: 1860,
+      endFrequency: 980,
+      gain: 0.2,
+      type: "square",
+    });
+    this.tone({
+      at: at + 0.018,
+      duration: 0.12,
+      frequency: 2637,
+      endFrequency: 1760,
+      gain: 0.1,
+      type: "triangle",
+    });
+    this.noise(at, 0.055, 0.075, 2400, "highpass");
   }
 
   private playFail(at: number): void {

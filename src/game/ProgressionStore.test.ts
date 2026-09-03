@@ -21,6 +21,7 @@ import {
   recordShot,
   recordChallengeVictory,
   recordVictory,
+  resetCampaignAfterDefeat,
   save,
   unlockRandomNeedle,
   unlockBackground,
@@ -67,6 +68,7 @@ describe("ProgressionStore v3 persistence", () => {
     const storage = new MemoryStorage();
     const state = createState({
       highestStageCleared: 25,
+      campaignResumeStage: 18,
       thread: 875,
       premium: 42,
       muted: true,
@@ -108,6 +110,7 @@ describe("ProgressionStore v3 persistence", () => {
     expect(migrated).toEqual(
       createState({
         highestStageCleared: 11,
+        campaignResumeStage: 12,
         thread: 275,
         muted: true,
         upgrades: { power: 2, precision: 1, speed: 3, ward: 1 },
@@ -137,6 +140,7 @@ describe("ProgressionStore v3 persistence", () => {
     expect(migrated).toEqual(
       createState({
         highestStageCleared: 8,
+        campaignResumeStage: 9,
         thread: 123,
         muted: true,
         stats: {
@@ -164,6 +168,16 @@ describe("ProgressionStore v3 persistence", () => {
     );
 
     expect(load(storage)).toEqual(current);
+  });
+
+  it("preserves the old resume behavior when a v3 save predates campaign checkpoints", () => {
+    const storage = new MemoryStorage();
+    const legacyV3 = createState({ highestStageCleared: 14 });
+    const stored: Record<string, unknown> = { ...legacyV3 };
+    delete stored.campaignResumeStage;
+    storage.setItem(PROGRESSION_SAVE_KEY, JSON.stringify(stored));
+
+    expect(load(storage).campaignResumeStage).toBe(15);
   });
 
   it("sanitizes malformed v3 values and rejects unowned equipment", () => {
@@ -431,6 +445,7 @@ describe("run records", () => {
 
     expect(victory.thread).toBe(17);
     expect(victory.highestStageCleared).toBe(10);
+    expect(victory.campaignResumeStage).toBe(11);
     expect(victory.stats.monstersDefeated).toBe(1);
     expect(victory.stats.bossesDefeated).toBe(1);
     expect(victory.unlockedSkills).toEqual(["steady-hand", "time-seam"]);
@@ -450,15 +465,40 @@ describe("run records", () => {
     const victory = recordVictory(state, 3, false, 2);
 
     expect(victory.highestStageCleared).toBe(12);
+    expect(victory.campaignResumeStage).toBe(4);
     expect(victory.stats.monstersDefeated).toBe(4);
     expect(victory.stats.bossesDefeated).toBe(1);
   });
 
+  it("resets only the active campaign checkpoint after defeat", () => {
+    const state = createState({
+      highestStageCleared: 20,
+      campaignResumeStage: 13,
+      thread: 777,
+      premium: 9,
+      ownedNeedles: ["silver", "bone"],
+      equippedNeedle: "bone",
+      upgrades: { power: 2, precision: 1, speed: 3, ward: 1 },
+    });
+
+    const reset = resetCampaignAfterDefeat(state);
+
+    expect(reset).toEqual({ ...state, campaignResumeStage: 1 });
+    expect(reset.highestStageCleared).toBe(20);
+    expect(reset.thread).toBe(777);
+    expect(reset.ownedNeedles).toEqual(["silver", "bone"]);
+  });
+
   it("rewards a side-route victory without advancing the campaign checkpoint", () => {
-    const state = createState({ highestStageCleared: 7, thread: 4 });
+    const state = createState({
+      highestStageCleared: 7,
+      campaignResumeStage: 5,
+      thread: 4,
+    });
     const victory = recordChallengeVictory(state, true, 3);
 
     expect(victory.highestStageCleared).toBe(7);
+    expect(victory.campaignResumeStage).toBe(5);
     expect(victory.thread).toBe(7);
     expect(victory.stats.monstersDefeated).toBe(1);
     expect(victory.stats.bossesDefeated).toBe(1);

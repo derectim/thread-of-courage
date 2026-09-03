@@ -9,6 +9,7 @@ import {
 const SOUND_NAMES: readonly SoundName[] = [
   'shoot',
   'hit',
+  'ricochet',
   'fail',
   'win',
   'ui',
@@ -415,10 +416,11 @@ describe('SoundEngine without browser audio APIs', () => {
     expect(context.close).toHaveBeenCalledOnce();
   });
 
-  it('safely exposes the upgrade and boss convenience methods', async () => {
+  it('safely exposes the upgrade, ricochet, and boss convenience methods', async () => {
     const engine = new SoundEngine();
 
     expect(() => engine.upgrade()).not.toThrow();
+    expect(() => engine.ricochet()).not.toThrow();
     expect(() => engine.boss()).not.toThrow();
     await expect(engine.unlock()).resolves.toBe(false);
 
