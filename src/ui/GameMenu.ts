@@ -43,12 +43,12 @@ const UPGRADE_NAMES: Readonly<Record<UpgradeId, { name: string; symbol: string }
   ward: { name: "Оберег лоскутницы", symbol: "◇" },
 };
 
-const TAB_LABELS: Readonly<Record<Exclude<MenuTab, "home">, { label: string; symbol: string }>> = {
-  upgrades: { label: "Усиления", symbol: "↗" },
-  quests: { label: "Поручения", symbol: "▤" },
-  needles: { label: "Иглы", symbol: "➶" },
-  bestiary: { label: "Бестиарий", symbol: "◉" },
-  shop: { label: "Лавка", symbol: "▰" },
+export const TAB_LABELS: Readonly<Record<Exclude<MenuTab, "home">, { label: string; iconFileName: string }>> = {
+  upgrades: { label: "Усиления", iconFileName: "menu-icon-upgrades.webp" },
+  quests: { label: "Поручения", iconFileName: "menu-icon-quests.webp" },
+  needles: { label: "Иглы", iconFileName: "menu-icon-needles.webp" },
+  bestiary: { label: "Бестиарий", iconFileName: "menu-icon-bestiary.webp" },
+  shop: { label: "Лавка", iconFileName: "menu-icon-shop.webp" },
 };
 
 function asset(path: string): string {
@@ -286,7 +286,7 @@ export default class GameMenu {
       </header>
       <section class="menu-panel" aria-label="${TAB_LABELS[tab].label}">
         <header class="panel-heading">
-          <span>${TAB_LABELS[tab].symbol}</span>
+          <img class="panel-tab-icon" src="${asset(TAB_LABELS[tab].iconFileName)}" width="38" height="38" alt="" aria-hidden="true" draggable="false" />
           <h2>${TAB_LABELS[tab].label}</h2>
           <button data-action="home" aria-label="Закрыть">×</button>
         </header>
@@ -441,7 +441,10 @@ export default class GameMenu {
 
   private renderNav(): string {
     return `<nav class="menu-nav" aria-label="Разделы">${Object.entries(TAB_LABELS).map(([id, item]) => `
-      <button data-tab="${id}" class="${this.tab === id ? "is-active" : ""}" ${this.tab === id ? 'aria-current="page"' : ""}><span>${item.symbol}</span><small>${item.label}</small></button>
+      <button type="button" data-tab="${id}" class="${this.tab === id ? "is-active" : ""}" ${this.tab === id ? 'aria-current="page"' : ""}>
+        <img class="menu-nav-icon" src="${asset(item.iconFileName)}" width="44" height="44" alt="" aria-hidden="true" draggable="false" />
+        <small>${item.label}</small>
+      </button>
     `).join("")}</nav>`;
   }
 }
