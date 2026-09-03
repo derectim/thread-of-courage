@@ -1,6 +1,10 @@
 import Phaser from "phaser";
 
 import SoundEngine from "../audio/SoundEngine";
+import type {
+  PlatformAdapter,
+  RewardedAdResult,
+} from "../platform/PlatformAdapter";
 import GameMenu from "../ui/GameMenu";
 import { getStageReward } from "./Economy";
 import {
@@ -74,6 +78,18 @@ import {
   type NeedleMasteryVictoryKind,
 } from "./NeedleMastery";
 import { recordSeasonPassEvent } from "./SeasonPass";
+import { getStageRotationSpeed } from "./StagePacing";
+import {
+  createLeaderboardViewModel,
+  type LeaderboardViewModel,
+} from "./Leaderboard";
+import {
+  beginRewardedAbilityRequest,
+  createRewardedAbilityRunState,
+  finishRewardedAbilityRequest,
+  recordLoss,
+  type RewardedAbilityRunState,
+} from "./AdRules";
 import {
   completeWeeklyRouteNode,
   createWeeklyRoute,
@@ -210,8 +226,12 @@ export class RaidScene extends Phaser.Scene {
   private readonly silhouetteMasks = new Map<string, AlphaMask | null>();
   private abilityRuntime: ActiveAbilityRuntime =
     createActiveAbilityRuntime("time-loop");
+  private rewardedAbilityRun: RewardedAbilityRunState =
+    createRewardedAbilityRunState();
+  private activeRunSerial = 0;
+  private lossInterstitialPending: Promise<void> | null = null;
 
-  public constructor() {
+  public constructor(private readonly platform: PlatformAdapter) {
     super("raid");
   }
 
@@ -268,8 +288,8 @@ export class RaidScene extends Phaser.Scene {
     const menuRoot = document.querySelector<HTMLElement>("#game-menu");
     if (!menuRoot) throw new Error("Не найден контейнер главного меню");
     this.menu = new GameMenu(menuRoot, this.progression, {
-      onStart: () => this.startRaidFromMenu(),
-      onStartWeekly: () => this.startWeeklyRouteFromMenu(),
+      onStart: () => void this.startRaidFromMenu(),
+      onStartWeekly: () => void this.startWeeklyRouteFromMenu(),
       onStateChange: (state) => this.applyMenuProgress(state),
       onToggleSound: (muted) => {
         this.sfx.setMuted(muted);
@@ -277,6 +297,7 @@ export class RaidScene extends Phaser.Scene {
         this.sfx.ui();
       },
       onFullscreen: () => this.requestFullscreen(),
+      onLoadLeaderboard: () => this.loadLeaderboardForMenu(),
     });
     this.menu.show(this.progression);
 
@@ -306,6 +327,7 @@ export class RaidScene extends Phaser.Scene {
     ) {
       return;
     }
+    if (this.rewardedAbilityRun.requestInFlight) return;
 
     const deltaSeconds = Math.min(delta, 50) / 1000;
     this.roomElapsed += deltaSeconds;
@@ -335,7 +357,9 @@ export class RaidScene extends Phaser.Scene {
     this.sfx.resumeForPlatform();
   }
 
-  private startRaidFromMenu(): void {
+  private async startRaidFromMenu(): Promise<void> {
+    await this.waitForLossInterstitial();
+    if (this.state !== "menu") return;
     this.raidMode = "campaign";
     this.weeklyNode = null;
     this.weeklyModifier = null;
@@ -343,6 +367,7 @@ export class RaidScene extends Phaser.Scene {
     this.menu.hide();
     this.closeOverlay();
     this.state = "transition";
+    this.resetRunAbility();
     this.stage = getRaidStartStage(this.progression.campaignResumeStage);
     this.shieldCharges = this.getStartingWardCharges();
     this.inputCooldownUntil = this.time.now + 260;
@@ -350,7 +375,9 @@ export class RaidScene extends Phaser.Scene {
     this.beginPlaying("Не дай иглам столкнуться");
   }
 
-  private startWeeklyRouteFromMenu(): void {
+  private async startWeeklyRouteFromMenu(): Promise<void> {
+    await this.waitForLossInterstitial();
+    if (this.state !== "menu") return;
     this.weeklyRoute = createWeeklyRoute(new Date());
     const weeklyRoute = syncWeeklyRouteProgress(
       this.progression.weeklyRoute,
@@ -365,6 +392,7 @@ export class RaidScene extends Phaser.Scene {
     this.menu.hide();
     this.closeOverlay();
     this.state = "transition";
+    this.resetRunAbility();
     this.shieldCharges = this.getStartingWardCharges();
     this.inputCooldownUntil = this.time.now + 260;
     this.createMonster();
@@ -387,6 +415,56 @@ export class RaidScene extends Phaser.Scene {
     if (this.currentRoom) this.updateRoomBackground(this.currentRoom);
   }
 
+  private async loadLeaderboardForMenu(): Promise<LeaderboardViewModel> {
+    const userId = this.platform.launchContext?.userId ?? null;
+    const localCurrentUser = userId
+      ? {
+          id: userId,
+          firstName: "Ваш рекорд",
+          highestStageCleared: this.progression.highestStageCleared,
+        }
+      : null;
+    const result = await this.platform.loadLeaderboard();
+
+    if (result.status === "ready") {
+      const view = createLeaderboardViewModel("success", result.payload, {
+        currentUserId: userId,
+        localCurrentUser,
+      });
+      const hasLocalOnly = view.rows.some((row) => row.isLocalOnly);
+      return hasLocalOnly
+        ? {
+            ...view,
+            message:
+              "Ваш локальный рекорд отмечен отдельно и не влияет на места. Общий результат появится после защищённой записи VK.",
+          }
+        : view;
+    }
+
+    if (localCurrentUser) {
+      const fallback = createLeaderboardViewModel("success", null, {
+        localCurrentUser,
+      });
+      return {
+        ...fallback,
+        message:
+          result.status === "unsupported"
+            ? "Показываем локальный рекорд. Общий рейтинг пока недоступен на этом устройстве."
+            : "Не удалось обновить общий рейтинг. Локальный рекорд сохранён и показан отдельно.",
+      };
+    }
+
+    return {
+      ...createLeaderboardViewModel(
+        result.status === "unsupported" ? "success" : "error",
+      ),
+      message:
+        result.status === "unsupported"
+          ? "Общий рейтинг доступен при запуске игры внутри VK."
+          : "Не удалось загрузить рейтинг. Попробуйте ещё раз.",
+    };
+  }
+
   private getStartingWardCharges(): number {
     const skillBonus = getSkill(this.progression.equippedSkill).modifiers.startingWardBonus ?? 0;
     return getWardCharges(this.progression.upgrades.ward) + skillBonus;
@@ -399,6 +477,18 @@ export class RaidScene extends Phaser.Scene {
     return normalizeActiveAbilityId(
       progressionWithActiveAbility.equippedActiveAbility,
     );
+  }
+
+  private resetRunAbility(): void {
+    this.activeRunSerial += 1;
+    this.rewardedAbilityRun = createRewardedAbilityRunState();
+    this.abilityRuntime = createActiveAbilityRuntime(
+      this.getEquippedActiveAbilityId(),
+    );
+  }
+
+  private async waitForLossInterstitial(): Promise<void> {
+    await this.lossInterstitialPending;
   }
 
   private requestFullscreen(): void {
@@ -683,7 +773,7 @@ export class RaidScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(28);
     this.abilityStateText = this.add
-      .text(365, 687, "×2 · E", {
+      .text(365, 687, "×1 · E", {
         fontFamily: "Inter, Segoe UI, sans-serif",
         fontSize: "10px",
         fontStyle: "bold",
@@ -708,7 +798,7 @@ export class RaidScene extends Phaser.Scene {
       ) => {
         event.stopPropagation();
         this.abilityButton.setScale(0.97);
-        this.activateSelectedAbility();
+        void this.activateSelectedAbility();
         this.time.delayedCall(90, () => this.abilityButton?.setScale(1));
       },
     );
@@ -840,19 +930,13 @@ export class RaidScene extends Phaser.Scene {
     this.lastRoomReversalEvent = -1;
     this.roomEffectVisualKey = "";
     this.roomEffectText?.setText("").setAlpha(0);
-    this.abilityRuntime = createActiveAbilityRuntime(
-      this.getEquippedActiveAbilityId(),
-    );
     const skillSpeed = getSkill(
       this.progression.equippedSkill,
     ).modifiers.rotationSpeedMultiplier ?? 1;
     const bossSpeedMultiplier =
       this.currentMonster.bossTuning?.speedMultiplier ?? 1;
     this.rotationSpeed =
-      Math.min(
-        2.35,
-        0.72 + Math.log2(this.stage + 1) * 0.22 + Math.floor(this.stage / 5) * 0.025,
-      ) *
+      getStageRotationSpeed(this.stage) *
       skillSpeed *
       bossSpeedMultiplier *
       (this.weeklyModifier?.effects.rotationSpeedMultiplier ?? 1);
@@ -1110,11 +1194,61 @@ export class RaidScene extends Phaser.Scene {
 
   private handleKeyboardAbility(event: KeyboardEvent): void {
     if (event.repeat) return;
-    this.activateSelectedAbility();
+    void this.activateSelectedAbility();
   }
 
-  private activateSelectedAbility(): void {
-    if (this.state !== "playing" || this.shotInFlight) return;
+  private async activateSelectedAbility(): Promise<void> {
+    if (
+      this.state !== "playing" ||
+      this.shotInFlight ||
+      this.rewardedAbilityRun.consumed ||
+      this.rewardedAbilityRun.requestInFlight ||
+      !canActivateAbility(this.abilityRuntime, this.time.now)
+    ) {
+      return;
+    }
+
+    const pending = beginRewardedAbilityRequest(this.rewardedAbilityRun);
+    if (!pending) return;
+    this.rewardedAbilityRun = pending;
+    const requestedRunSerial = this.activeRunSerial;
+    const ability = getActiveAbility(this.abilityRuntime.id);
+    this.tipText.setText(`Видео откроет приём «${ability.shortName}» один раз за поход`);
+    this.refreshAbilityHud();
+
+    let adResult: RewardedAdResult;
+    try {
+      adResult = await this.platform.showRewardedAd();
+    } catch {
+      adResult = "error";
+    }
+
+    if (requestedRunSerial !== this.activeRunSerial) return;
+    if (this.state !== "playing") {
+      this.rewardedAbilityRun = finishRewardedAbilityRequest(
+        this.rewardedAbilityRun,
+        false,
+      );
+      return;
+    }
+
+    if (adResult !== "rewarded") {
+      this.rewardedAbilityRun = finishRewardedAbilityRequest(
+        this.rewardedAbilityRun,
+        false,
+      );
+      this.tipText.setText(
+        adResult === "unsupported"
+          ? "Видео недоступно: открой игру внутри приложения VK"
+          : adResult === "unavailable"
+            ? "Видео сейчас недоступно — способность сохранена"
+            : adResult === "cancelled"
+              ? "Видео не завершено — способность сохранена"
+              : "Не удалось открыть видео — способность сохранена",
+      );
+      this.refreshAbilityHud();
+      return;
+    }
 
     const result = activateAbility(
       this.abilityRuntime,
@@ -1122,8 +1256,19 @@ export class RaidScene extends Phaser.Scene {
       this.shieldCharges,
       this.getStartingWardCharges(),
     );
-    if (!result) return;
+    if (!result) {
+      this.rewardedAbilityRun = finishRewardedAbilityRequest(
+        this.rewardedAbilityRun,
+        false,
+      );
+      this.refreshAbilityHud();
+      return;
+    }
 
+    this.rewardedAbilityRun = finishRewardedAbilityRequest(
+      this.rewardedAbilityRun,
+      true,
+    );
     this.abilityRuntime = result.runtime;
     this.shieldCharges = result.wardCharges;
     this.sfx.upgrade();
@@ -1199,10 +1344,15 @@ export class RaidScene extends Phaser.Scene {
     );
     const armed =
       this.abilityRuntime.magneticArmed || this.abilityRuntime.spareKnotArmed;
-    const available = canActivateAbility(this.abilityRuntime, this.time.now);
+    const available =
+      !this.rewardedAbilityRun.requestInFlight &&
+      !this.rewardedAbilityRun.consumed &&
+      canActivateAbility(this.abilityRuntime, this.time.now);
 
     let stateText = `×${this.abilityRuntime.charges} · E`;
-    if (timeRemaining > 0) {
+    if (this.rewardedAbilityRun.requestInFlight) {
+      stateText = "ВИДЕО…";
+    } else if (timeRemaining > 0) {
       stateText = `АКТИВНО ${(timeRemaining / 1000).toFixed(1)}с`;
     } else if (armed) {
       stateText = "ЗАРЯЖЕНО";
@@ -1232,7 +1382,11 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private fireNeedle(): void {
-    if (this.state !== "playing" || this.shotInFlight) return;
+    if (
+      this.state !== "playing" ||
+      this.shotInFlight ||
+      this.rewardedAbilityRun.requestInFlight
+    ) return;
     if (this.time.now < this.inputCooldownUntil) return;
 
     this.shotInFlight = true;
@@ -1929,8 +2083,10 @@ export class RaidScene extends Phaser.Scene {
     this.state = "failed";
     this.setCombatHudVisible(false);
     this.roomEffectText.setAlpha(0);
+    const lossCadence = recordLoss(this.progression.adCadence);
     const defeatProgression = {
       ...this.progression,
+      adCadence: lossCadence.state,
       dailySystems: recordDailyGameplayEvent(
         this.progression.dailySystems,
         { type: "defeat" },
@@ -1966,7 +2122,24 @@ export class RaidScene extends Phaser.Scene {
           ? `Недельный путь оборвался на узле ${this.weeklyNode?.order ?? 1}`
           : `Поход окончен на этапе ${this.stage} · новый рейд с этапа 1`,
       );
+      if (lossCadence.shouldShowInterstitial) {
+        this.queueLossInterstitial();
+      }
     });
+  }
+
+  private queueLossInterstitial(): void {
+    if (this.lossInterstitialPending) return;
+    let tracked!: Promise<void>;
+    tracked = this.platform
+      .showInterstitialAd()
+      .then(() => undefined, () => undefined)
+      .finally(() => {
+        if (this.lossInterstitialPending === tracked) {
+          this.lossInterstitialPending = null;
+        }
+      });
+    this.lossInterstitialPending = tracked;
   }
 
   private advanceStage(): void {

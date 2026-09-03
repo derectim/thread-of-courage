@@ -180,6 +180,24 @@ describe("ProgressionStore v3 persistence", () => {
     expect(load(storage).campaignResumeStage).toBe(15);
   });
 
+  it("persists ad cadence and normalizes saves created before it existed", () => {
+    const storage = new MemoryStorage();
+    const current = createState({ adCadence: { lossesModulo: 2 } });
+    expect(save(current, storage)).toBe(true);
+    expect(load(storage).adCadence).toEqual({ lossesModulo: 2 });
+
+    const oldSave: Record<string, unknown> = { ...current };
+    delete oldSave.adCadence;
+    storage.setItem(PROGRESSION_SAVE_KEY, JSON.stringify(oldSave));
+    expect(load(storage).adCadence).toEqual({ lossesModulo: 0 });
+
+    storage.setItem(
+      PROGRESSION_SAVE_KEY,
+      JSON.stringify({ ...current, adCadence: { lossesModulo: 11 } }),
+    );
+    expect(load(storage).adCadence).toEqual({ lossesModulo: 2 });
+  });
+
   it("sanitizes malformed v3 values and rejects unowned equipment", () => {
     const storage = new MemoryStorage();
     storage.setItem(

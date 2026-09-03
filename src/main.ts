@@ -62,7 +62,7 @@ async function startGame(): Promise<void> {
     transparent: false,
     antialias: true,
     pixelArt: false,
-    scene: [RaidScene],
+    scene: [new RaidScene(platform)],
     scale: {
       mode: Phaser.Scale.EXPAND,
       autoCenter: Phaser.Scale.CENTER_BOTH,

@@ -8,17 +8,44 @@ export const VK_CLOUD_CHUNK_SIZE = 3_000;
 export const VK_CLOUD_MAX_CHUNKS = 12;
 
 const VK_TAPTIC_IMPACT_METHOD = "VKWebAppTapticImpactOccurred";
+const VK_CHECK_NATIVE_ADS_METHOD = "VKWebAppCheckNativeAds";
+const VK_SHOW_NATIVE_ADS_METHOD = "VKWebAppShowNativeAds";
+const VK_GET_AUTH_TOKEN_METHOD = "VKWebAppGetAuthToken";
+const VK_CALL_API_METHOD = "VKWebAppCallAPIMethod";
 
 type VkBridgeMethod =
   | "VKWebAppInit"
   | "VKWebAppStorageGet"
   | "VKWebAppStorageSet"
-  | "VKWebAppTapticImpactOccurred";
+  | "VKWebAppTapticImpactOccurred"
+  | "VKWebAppCheckNativeAds"
+  | "VKWebAppShowNativeAds"
+  | "VKWebAppGetAuthToken"
+  | "VKWebAppCallAPIMethod"
+  | "VKWebAppShowLeaderBoardBox"
+  | "VKWebAppShowOrderBox";
 
 type VkBridgeParams =
   | { readonly style: "medium" }
   | { readonly keys: readonly string[] }
-  | { readonly key: string; readonly value: string };
+  | { readonly key: string; readonly value: string }
+  | {
+      readonly ad_format: "reward" | "interstitial";
+      readonly use_waterfall?: boolean;
+    }
+  | { readonly app_id: number; readonly scope: string }
+  | {
+      readonly method: "apps.getLeaderboard";
+      readonly params: {
+        readonly type: "level";
+        readonly global: 1;
+        readonly extended: 1;
+        readonly v: "5.199";
+        readonly access_token: string;
+      };
+    }
+  | { readonly user_result: number; readonly global: 1 }
+  | { readonly type: "item"; readonly item: string };
 
 interface VkCloudChunkManifest {
   readonly format: "thread-chunks-v1";
@@ -26,6 +53,26 @@ interface VkCloudChunkManifest {
 }
 
 export type PlatformKind = "standalone" | "vk";
+export type RewardedAdResult =
+  | "rewarded"
+  | "unsupported"
+  | "unavailable"
+  | "cancelled"
+  | "error";
+export type InterstitialAdResult =
+  | "shown"
+  | "unsupported"
+  | "unavailable"
+  | "cancelled"
+  | "error";
+export type LeaderboardResult = "shown" | "unsupported" | "error";
+export type VkLeaderboardLoadResult =
+  | { readonly status: "ready"; readonly payload: unknown }
+  | { readonly status: "unsupported" | "error" };
+export interface OrderResult {
+  readonly status: "success" | "cancel" | "fail" | "unsupported" | "error";
+  readonly orderId?: string;
+}
 
 export interface PlatformLifecycleHandlers {
   readonly onPause: () => void;
@@ -49,6 +96,16 @@ export interface PlatformAdapter {
   initialize(): Promise<boolean>;
   /** Provides one short tactile response for a confirmed successful hit. */
   hitFeedback(): void;
+  /** Voluntary video; only `rewarded` is permission to grant the ability. */
+  showRewardedAd(): Promise<RewardedAdResult>;
+  /** Best-effort between-attempt ad that never blocks continued play on failure. */
+  showInterstitialAd(): Promise<InterstitialAdResult>;
+  /** Opens the native VK leaderboard without storing or trusting the score. */
+  showLeaderboard(userResult: number): Promise<LeaderboardResult>;
+  /** Reads the VK level leaderboard; this never writes or submits a score. */
+  loadLeaderboard(): Promise<VkLeaderboardLoadResult>;
+  /** Opens a native order dialog; callers must verify purchases server-side. */
+  showOrder(itemName: string): Promise<OrderResult>;
   /** Loads the latest serialized cross-device progress for this VK player. */
   loadCloudProgress(): Promise<string | null>;
   /** Stores serialized progress for this VK player. */
@@ -70,7 +127,14 @@ export type VkBridgeListener = (event: VkBridgeEvent) => void;
 export interface VkBridgeLike {
   send(method: VkBridgeMethod, params?: VkBridgeParams): unknown;
   supportsAsync?(
-    method: "VKWebAppTapticImpactOccurred",
+    method:
+      | "VKWebAppTapticImpactOccurred"
+      | "VKWebAppCheckNativeAds"
+      | "VKWebAppShowNativeAds"
+      | "VKWebAppGetAuthToken"
+      | "VKWebAppCallAPIMethod"
+      | "VKWebAppShowLeaderBoardBox"
+      | "VKWebAppShowOrderBox",
   ): Promise<boolean>;
   subscribe(listener: VkBridgeListener): void;
   unsubscribe(listener: VkBridgeListener): void;
@@ -98,7 +162,7 @@ export interface PlatformAdapterOptions {
   readonly bridge?: VkBridgeLike;
 }
 
-type SuspensionSource = "document" | "vk";
+type SuspensionSource = "document" | "vk" | "native-ad";
 
 class BrowserPlatformAdapter implements PlatformAdapter {
   public readonly kind: PlatformKind;
@@ -109,6 +173,8 @@ class BrowserPlatformAdapter implements PlatformAdapter {
   private readonly bridge: VkBridgeLike | null;
   private initPromise: Promise<boolean> | null = null;
   private tapticSupportPromise: Promise<boolean> | null = null;
+  private nativeAdsSupportPromise: Promise<boolean> | null = null;
+  private nativeAdInFlight = false;
   private listeningToBridge = false;
   private destroyed = false;
 
@@ -181,6 +247,113 @@ class BrowserPlatformAdapter implements PlatformAdapter {
       );
     } catch {
       // Vibration is optional and must never interrupt gameplay.
+    }
+  }
+
+  public async showRewardedAd(): Promise<RewardedAdResult> {
+    const result = await this.showNativeAd("reward");
+    return result === "shown" ? "rewarded" : result;
+  }
+
+  public showInterstitialAd(): Promise<InterstitialAdResult> {
+    return this.showNativeAd("interstitial");
+  }
+
+  public async showLeaderboard(userResult: number): Promise<LeaderboardResult> {
+    if (!(await this.canUseVkMethod("VKWebAppShowLeaderBoardBox"))) {
+      return "unsupported";
+    }
+    const normalizedResult = Number.isFinite(userResult)
+      ? Math.max(0, Math.floor(userResult))
+      : 0;
+    try {
+      const response = await Promise.resolve(
+        this.bridge!.send("VKWebAppShowLeaderBoardBox", {
+          user_result: normalizedResult,
+          global: 1,
+        }),
+      );
+      return isRecord(response) && response.success === true ? "shown" : "error";
+    } catch {
+      return "error";
+    }
+  }
+
+  public async loadLeaderboard(): Promise<VkLeaderboardLoadResult> {
+    if (this.destroyed || this.kind !== "vk" || !this.bridge) {
+      return { status: "unsupported" };
+    }
+
+    if (!(await this.initialize()) || this.destroyed) {
+      return { status: "error" };
+    }
+    if (!(await this.canReadVkLeaderboard())) {
+      return { status: "unsupported" };
+    }
+
+    try {
+      const authResponse = await Promise.resolve(
+        this.bridge.send(VK_GET_AUTH_TOKEN_METHOD, {
+          app_id: this.launchContext?.appId ?? VK_APP_ID,
+          scope: "",
+        }),
+      );
+      const accessToken =
+        isRecord(authResponse) && typeof authResponse.access_token === "string"
+          ? authResponse.access_token.trim()
+          : "";
+      if (!accessToken) return { status: "error" };
+
+      const apiResponse = await Promise.resolve(
+        this.bridge.send(VK_CALL_API_METHOD, {
+          method: "apps.getLeaderboard",
+          params: {
+            type: "level",
+            global: 1,
+            extended: 1,
+            v: "5.199",
+            access_token: accessToken,
+          },
+        }),
+      );
+      if (!isRecord(apiResponse) || !("response" in apiResponse)) {
+        return { status: "error" };
+      }
+      return { status: "ready", payload: apiResponse.response };
+    } catch (error) {
+      return isUnsupportedBridgeFailure(error)
+        ? { status: "unsupported" }
+        : { status: "error" };
+    }
+  }
+
+  public async showOrder(itemName: string): Promise<OrderResult> {
+    const item = itemName.trim();
+    if (!item) return { status: "fail" };
+    if (!(await this.canUseVkMethod("VKWebAppShowOrderBox"))) {
+      return { status: "unsupported" };
+    }
+    try {
+      const response = await Promise.resolve(
+        this.bridge!.send("VKWebAppShowOrderBox", { type: "item", item }),
+      );
+      if (!isRecord(response)) return { status: "error" };
+      const bridgeStatus = response.status;
+      const status =
+        bridgeStatus === "success" ||
+        bridgeStatus === "cancel" ||
+        bridgeStatus === "fail"
+          ? bridgeStatus
+          : response.success === true
+            ? "success"
+            : null;
+      if (!status) {
+        return { status: "error" };
+      }
+      const orderId = normalizeOrderId(response.order_id);
+      return orderId ? { status, orderId } : { status };
+    } catch {
+      return { status: "error" };
     }
   }
 
@@ -309,9 +482,77 @@ class BrowserPlatformAdapter implements PlatformAdapter {
     }
   }
 
+  private async showNativeAd(
+    format: "reward" | "interstitial",
+  ): Promise<InterstitialAdResult> {
+    if (this.destroyed || this.kind !== "vk" || !this.bridge) {
+      return "unsupported";
+    }
+    if (this.nativeAdInFlight) return "unavailable";
+    this.nativeAdInFlight = true;
+    let nativeViewOpened = false;
+
+    try {
+      if (!(await this.initialize()) || this.destroyed) return "unsupported";
+      if (!(await this.getNativeAdsSupport()) || this.destroyed) {
+        return "unsupported";
+      }
+
+      // Reward fallback can silently substitute an interstitial, so it is
+      // explicitly disabled: only an actual rewarded placement may grant use.
+      const params =
+        format === "reward"
+          ? ({ ad_format: format, use_waterfall: false } as const)
+          : ({ ad_format: format } as const);
+      const availability = await Promise.resolve(
+        this.bridge.send(VK_CHECK_NATIVE_ADS_METHOD, params),
+      );
+      if (!isRecord(availability)) return "error";
+      if (availability.result !== true) return "unavailable";
+
+      nativeViewOpened = true;
+      this.setSuspended("native-ad", true);
+      const shown = await Promise.resolve(
+        this.bridge.send(VK_SHOW_NATIVE_ADS_METHOD, params),
+      );
+      if (!isRecord(shown)) return "error";
+      return shown.result === true ? "shown" : "cancelled";
+    } catch (error) {
+      return classifyNativeAdFailure(error);
+    } finally {
+      if (nativeViewOpened) this.setSuspended("native-ad", false);
+      this.nativeAdInFlight = false;
+    }
+  }
+
   private async canUseVkStorage(): Promise<boolean> {
     if (this.destroyed || this.kind !== "vk" || !this.bridge) return false;
     return this.initialize();
+  }
+
+  private async canUseVkMethod(
+    method: "VKWebAppShowLeaderBoardBox" | "VKWebAppShowOrderBox",
+  ): Promise<boolean> {
+    if (this.destroyed || this.kind !== "vk" || !this.bridge) return false;
+    if (!(await this.initialize()) || !this.bridge.supportsAsync) return false;
+    try {
+      return (await this.bridge.supportsAsync(method)) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async canReadVkLeaderboard(): Promise<boolean> {
+    if (!this.bridge?.supportsAsync) return true;
+    try {
+      const [authSupported, apiSupported] = await Promise.all([
+        this.bridge.supportsAsync(VK_GET_AUTH_TOKEN_METHOD),
+        this.bridge.supportsAsync(VK_CALL_API_METHOD),
+      ]);
+      return authSupported === true && apiSupported === true;
+    } catch {
+      return false;
+    }
   }
 
   private async readVkStorageValues(keys: readonly string[]): Promise<Map<string, string>> {
@@ -350,6 +591,25 @@ class BrowserPlatformAdapter implements PlatformAdapter {
     return this.tapticSupportPromise;
   }
 
+  private getNativeAdsSupport(): Promise<boolean> {
+    if (this.nativeAdsSupportPromise) return this.nativeAdsSupportPromise;
+    if (!this.bridge?.supportsAsync) return Promise.resolve(false);
+
+    try {
+      this.nativeAdsSupportPromise = Promise.all([
+        this.bridge.supportsAsync(VK_CHECK_NATIVE_ADS_METHOD),
+        this.bridge.supportsAsync(VK_SHOW_NATIVE_ADS_METHOD),
+      ]).then(
+        ([checkSupported, showSupported]) =>
+          checkSupported === true && showSupported === true,
+        () => false,
+      );
+    } catch {
+      this.nativeAdsSupportPromise = Promise.resolve(false);
+    }
+    return this.nativeAdsSupportPromise;
+  }
+
   private setSuspended(source: SuspensionSource, suspended: boolean): void {
     if (this.destroyed) return;
 
@@ -371,6 +631,34 @@ class BrowserPlatformAdapter implements PlatformAdapter {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeOrderId(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized || undefined;
+  }
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? String(value)
+    : undefined;
+}
+
+function isUnsupportedBridgeFailure(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const errorData = isRecord(value.error_data) ? value.error_data : {};
+  return Number(errorData.error_code) === 6;
+}
+
+function classifyNativeAdFailure(
+  value: unknown,
+): "unsupported" | "unavailable" | "cancelled" | "error" {
+  if (!isRecord(value)) return "error";
+  const errorData = isRecord(value.error_data) ? value.error_data : {};
+  const code = Number(errorData.error_code);
+  if (code === 4) return "cancelled";
+  if (code === 6) return "unsupported";
+  if (code === 10 || code === 20) return "unavailable";
+  return "error";
 }
 
 function getCloudChunkKey(index: number): string {

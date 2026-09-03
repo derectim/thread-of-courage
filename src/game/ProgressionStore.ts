@@ -39,6 +39,11 @@ import {
   syncWeeklyRouteProgress,
   type WeeklyRouteProgress,
 } from "./WeeklyRoute";
+import {
+  createAdCadenceState,
+  normalizeAdCadenceState,
+  type AdCadenceState,
+} from "./AdRules";
 import { MONSTERS, ROOMS, getMonsterForStage } from "./content";
 
 export const PROGRESSION_SAVE_KEY = "thread-of-courage-save-v3";
@@ -83,6 +88,7 @@ export interface ProgressionState {
   readonly weeklyRoute: WeeklyRouteProgress;
   readonly seasonPass: SeasonPassState;
   readonly ownedSeasonCosmetics: readonly string[];
+  readonly adCadence: AdCadenceState;
 }
 
 export interface ProgressionStorage {
@@ -156,6 +162,7 @@ export function createDefaultState(): ProgressionState {
     weeklyRoute: createWeeklyRouteProgress(weeklyRoute),
     seasonPass: createSeasonPassState(),
     ownedSeasonCosmetics: [],
+    adCadence: createAdCadenceState(),
   };
 }
 
@@ -305,6 +312,7 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
     weeklyRoute: syncWeeklyRouteProgress(value.weeklyRoute, weeklyRouteDefinition),
     seasonPass: syncSeasonPassState(value.seasonPass),
     ownedSeasonCosmetics: normalizeStringList(value.ownedSeasonCosmetics),
+    adCadence: normalizeAdCadenceState(value.adCadence),
   };
 }
 

@@ -20,20 +20,20 @@ describe("active abilities", () => {
     expect(normalizeActiveAbilityId("unknown")).toBe("time-loop");
     expect(ACTIVE_ABILITIES).toHaveLength(3);
     for (const ability of ACTIVE_ABILITIES) {
-      expect(ability.chargesPerStage).toBeGreaterThan(0);
+      expect(ability.chargesPerStage).toBe(1);
+      expect(ability.cooldownMs).toBe(0);
       expect(ability.unlockStage).toBeGreaterThan(0);
     }
   });
 
-  it("starts a time loop, spends a charge, and enforces its cooldown", () => {
+  it("starts a time loop and spends its single run charge", () => {
     const runtime = createActiveAbilityRuntime("time-loop");
     const activation = activateAbility(runtime, 1_000, 0, 0);
     expect(activation?.effect).toBe("time-loop");
-    expect(activation?.runtime.charges).toBe(1);
+    expect(activation?.runtime.charges).toBe(0);
     expect(activation?.runtime.effectUntil).toBe(3_600);
-    expect(getCooldownRemaining(activation!.runtime, 2_000)).toBe(6_000);
-    expect(canActivateAbility(activation!.runtime, 7_999)).toBe(false);
-    expect(canActivateAbility(activation!.runtime, 8_000)).toBe(true);
+    expect(getCooldownRemaining(activation!.runtime, 2_000)).toBe(0);
+    expect(canActivateAbility(activation!.runtime, 8_000)).toBe(false);
   });
 
   it("arms and consumes a magnetic stitch", () => {

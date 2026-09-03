@@ -58,6 +58,10 @@ import {
   type MonsterDefinition,
 } from "../game/content";
 import { HERO_CROSSBOW_FRAMES } from "../game/heroAnimation";
+import {
+  createLeaderboardViewModel,
+  type LeaderboardViewModel,
+} from "../game/Leaderboard";
 import { NEEDLE_ART_TIP_Y, getNeedleArtSize } from "../game/needleVisual";
 import {
   BACKGROUNDS,
@@ -78,6 +82,7 @@ export interface GameMenuCallbacks {
   readonly onStateChange: (state: ProgressionState) => void;
   readonly onToggleSound: (muted: boolean) => void;
   readonly onFullscreen: () => void;
+  readonly onLoadLeaderboard: () => Promise<LeaderboardViewModel>;
 }
 
 const UPGRADE_NAMES: Readonly<Record<UpgradeId, { name: string; symbol: string }>> = {
@@ -199,7 +204,7 @@ const GUIDE_PAGES: readonly GuidePage[] = [
       {
         symbol: "E",
         title: "Большая кнопка в рейде",
-        copy: "Нажми её или клавишу E. Активный приём тратит заряд и иногда требует перезарядки.",
+        copy: "Нажми её или клавишу E, посмотри короткое видео и примени выбранный приём один раз за поход.",
       },
       {
         symbol: "✦",
@@ -300,6 +305,15 @@ function asset(path: string): string {
   ).href;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function firstStageForMonster(monsterId: string): number {
   for (let stage = 1; stage <= 20; stage += 1) {
     if (getMonsterForStage(stage).id === monsterId) return stage;
@@ -320,6 +334,9 @@ export default class GameMenu {
   private tab: MenuTab = "home";
   private notice = "";
   private guidePage: number | null = null;
+  private leaderboardOpen = false;
+  private leaderboardRequest = 0;
+  private leaderboard = createLeaderboardViewModel("idle");
   private readonly frame: HTMLElement | null;
 
   public constructor(
@@ -338,6 +355,7 @@ export default class GameMenu {
     this.tab = tab;
     this.notice = notice;
     this.guidePage = null;
+    this.leaderboardOpen = false;
     this.frame?.classList.add("menu-active");
     this.root.classList.remove("is-hidden");
     this.render();
@@ -345,6 +363,7 @@ export default class GameMenu {
 
   public hide(): void {
     this.guidePage = null;
+    this.leaderboardOpen = false;
     this.frame?.classList.remove("menu-active");
     this.root.classList.add("is-hidden");
   }
@@ -365,6 +384,14 @@ export default class GameMenu {
       this.guidePage = 0;
       this.render();
       this.focusGuideDialog();
+      return;
+    }
+    if (action === "leaderboard-open" || action === "leaderboard-retry") {
+      void this.openLeaderboard();
+      return;
+    }
+    if (action === "leaderboard-close") {
+      this.closeLeaderboard();
       return;
     }
     if (action === "guide-close" || action === "guide-done") {
@@ -388,7 +415,7 @@ export default class GameMenu {
       }
       return;
     }
-    if (this.guidePage !== null) return;
+    if (this.guidePage !== null || this.leaderboardOpen) return;
 
     if (action === "start") {
       this.callbacks.onStart();
@@ -587,15 +614,18 @@ export default class GameMenu {
   };
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
-    if (this.guidePage === null) return;
+    if (this.guidePage === null && !this.leaderboardOpen) return;
     if (event.key === "Escape") {
       event.preventDefault();
-      this.closeGuide();
+      if (this.leaderboardOpen) this.closeLeaderboard();
+      else this.closeGuide();
       return;
     }
     if (event.key !== "Tab") return;
 
-    const dialog = this.root.querySelector<HTMLElement>(".guide-dialog");
+    const dialog = this.root.querySelector<HTMLElement>(
+      this.leaderboardOpen ? ".leaderboard-dialog" : ".guide-dialog",
+    );
     if (!dialog) return;
     const focusable = Array.from(
       dialog.querySelectorAll<HTMLElement>(
@@ -628,6 +658,41 @@ export default class GameMenu {
     this.guidePage = null;
     this.render();
     this.root.querySelector<HTMLButtonElement>('[data-action="guide-open"]')?.focus({ preventScroll: true });
+  }
+
+  private async openLeaderboard(): Promise<void> {
+    const request = ++this.leaderboardRequest;
+    this.guidePage = null;
+    this.leaderboardOpen = true;
+    this.leaderboard = createLeaderboardViewModel("loading");
+    this.render();
+    this.focusLeaderboardDialog();
+
+    try {
+      const leaderboard = await this.callbacks.onLoadLeaderboard();
+      if (request !== this.leaderboardRequest || !this.leaderboardOpen) return;
+      this.leaderboard = leaderboard;
+    } catch {
+      if (request !== this.leaderboardRequest || !this.leaderboardOpen) return;
+      this.leaderboard = createLeaderboardViewModel("error");
+    }
+    this.render();
+    this.focusLeaderboardDialog();
+  }
+
+  private closeLeaderboard(): void {
+    this.leaderboardRequest += 1;
+    this.leaderboardOpen = false;
+    this.render();
+    this.root
+      .querySelector<HTMLButtonElement>('[data-action="leaderboard-open"]')
+      ?.focus({ preventScroll: true });
+  }
+
+  private focusLeaderboardDialog(): void {
+    this.root
+      .querySelector<HTMLElement>(".leaderboard-dialog")
+      ?.focus({ preventScroll: true });
   }
 
   private moveGuide(offset: number): void {
@@ -748,8 +813,9 @@ export default class GameMenu {
     const record = this.state.highestStageCleared;
     const campaignStage = this.state.campaignResumeStage;
     const guideIsOpen = this.guidePage !== null;
+    const modalIsOpen = guideIsOpen || this.leaderboardOpen;
     return `
-      <div class="menu-home" ${guideIsOpen ? 'aria-hidden="true" inert' : ""}>
+      <div class="menu-home" ${modalIsOpen ? 'aria-hidden="true" inert' : ""}>
         ${this.renderWorld()}
         <div class="menu-vignette" aria-hidden="true"></div>
         <header class="menu-topbar">
@@ -760,6 +826,9 @@ export default class GameMenu {
         </header>
         <button class="menu-guide-trigger" data-action="guide-open" aria-haspopup="dialog" aria-label="Открыть мини-гайд «Как играть»">
           <span aria-hidden="true">?</span><strong>Как играть</strong>
+        </button>
+        <button class="menu-leaderboard-trigger" data-action="leaderboard-open" aria-haspopup="dialog" aria-label="Открыть таблицу лидеров">
+          <span aria-hidden="true">♛</span><strong>Рейтинг</strong>
         </button>
         <section class="menu-hero-copy">
           <span class="menu-kicker">ТКАНЕВЫЙ РЕЙД</span>
@@ -774,7 +843,50 @@ export default class GameMenu {
         ${this.renderNav()}
       </div>
       ${guideIsOpen ? this.renderGuide(this.guidePage!) : ""}
+      ${this.leaderboardOpen ? this.renderLeaderboard() : ""}
     `;
+  }
+
+  private renderLeaderboard(): string {
+    let rankedPosition = 0;
+    const rows = this.leaderboard.rows.map((row) => {
+      const fullName = `${row.firstName} ${row.lastName}`.trim() || `Игрок ${row.id}`;
+      const initials = `${row.firstName.charAt(0)}${row.lastName.charAt(0)}`.trim() || "✦";
+      const position = row.isLocalOnly ? null : ++rankedPosition;
+      return `
+        <li class="leaderboard-row ${row.isCurrentUser ? "is-current" : ""} ${row.isLocalOnly ? "is-local-only" : ""}">
+          <span class="leaderboard-place ${position !== null && position <= 3 ? `is-top-${position}` : ""}">${position ?? "—"}</span>
+          ${row.photoUrl
+            ? `<img class="leaderboard-avatar" src="${escapeHtml(row.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
+            : `<span class="leaderboard-avatar is-placeholder" aria-hidden="true">${escapeHtml(initials)}</span>`}
+          <span class="leaderboard-name"><strong>${escapeHtml(fullName)}</strong>${row.isLocalOnly ? "<small>ЛОКАЛЬНО</small>" : row.isCurrentUser ? "<small>ВЫ</small>" : ""}</span>
+          <span class="leaderboard-level"><small>ЭТАП</small><strong>${row.level}</strong></span>
+        </li>`;
+    }).join("");
+    const isLoading = this.leaderboard.status === "loading";
+    const canRetry = this.leaderboard.status === "error" || this.leaderboard.status === "empty";
+
+    return `
+      <div class="guide-layer leaderboard-layer">
+        <div class="guide-scrim" aria-hidden="true"></div>
+        <section class="leaderboard-dialog" role="dialog" aria-modal="true" aria-labelledby="leaderboard-title" tabindex="-1">
+          <button class="guide-close" data-action="leaderboard-close" aria-label="Закрыть таблицу лидеров">×</button>
+          <header class="leaderboard-heading">
+            <span aria-hidden="true">♛</span>
+            <div><small>ЛУЧШИЕ ШВЕИ VK</small><h2 id="leaderboard-title">Рейтинг мастеров</h2><p>Кто прошёл дальше всех</p></div>
+          </header>
+          <div class="leaderboard-scroll" aria-live="polite" aria-busy="${isLoading}">
+            ${isLoading ? `<div class="leaderboard-state"><i aria-hidden="true"></i><strong>Собираем лучший отряд…</strong><span>${this.leaderboard.message ?? "Загружаем рейтинг…"}</span></div>` : ""}
+            ${!isLoading && rows ? `<ol class="leaderboard-list">${rows}</ol>` : ""}
+            ${!isLoading && this.leaderboard.message ? `<div class="leaderboard-note" role="status">${escapeHtml(this.leaderboard.message)}</div>` : ""}
+            ${!isLoading && !rows ? `<div class="leaderboard-empty" aria-hidden="true"><span>♛</span><i>✦</i></div>` : ""}
+          </div>
+          <footer class="leaderboard-footer">
+            <span>Профили не открываются · видны только имя, место и этап</span>
+            ${canRetry ? `<button data-action="leaderboard-retry">Обновить</button>` : ""}
+          </footer>
+        </section>
+      </div>`;
   }
 
   private renderGuide(pageIndex: number): string {
@@ -906,10 +1018,10 @@ export default class GameMenu {
         <article class="meta-card ability-card ${equipped ? "is-equipped" : ""} ${unlocked ? "" : "is-locked"}">
           <div class="item-symbol ability-emblem" aria-hidden="true"><span>${ability.symbol}</span></div>
           <div class="item-copy">
-            <div class="card-kicker"><span>Активный приём</span><strong>${equipped ? "выбран" : unlocked ? `${ability.chargesPerStage} зар.` : `этап ${ability.unlockStage}`}</strong></div>
+            <div class="card-kicker"><span>Активный приём</span><strong>${equipped ? "выбран" : unlocked ? "1 видео" : `этап ${ability.unlockStage}`}</strong></div>
             <h3>${ability.name}</h3>
             <p>${ability.description}</p>
-            <small>${ability.chargesPerStage} ${ability.chargesPerStage === 1 ? "заряд" : "заряда"} на комнату${ability.cooldownMs ? ` · перезарядка ${Math.round(ability.cooldownMs / 1000)} сек.` : ""}</small>
+            <small>Один просмотр · одно применение за весь поход</small>
           </div>
           <button class="select-button card-action" data-action="active-ability" data-id="${ability.id}" aria-pressed="${equipped}" ${!unlocked || equipped ? "disabled" : ""}>
             <span>${equipped ? "ВЫБРАН" : unlocked ? "ВЫБРАТЬ" : `ЭТАП ${ability.unlockStage}`}</span><small>${equipped ? "В РЕЙДЕ" : unlocked ? "ПРИЁМ" : "ЗАКРЫТО"}</small>
@@ -939,7 +1051,7 @@ export default class GameMenu {
         <div><strong>Мастерская усилений</strong><p>Вкладывай нити в постоянную силу. Чем выше уровень, тем дороже следующий стежок.</p></div>
       </div>
       <div class="card-stack upgrade-stack">${upgrades}</div>
-      <div class="section-divider"><span>Активные приёмы</span><small>Кнопка выбранного приёма появится прямо в рейде</small></div>
+      <div class="section-divider"><span>Активные приёмы</span><small>После видео · один раз за поход</small></div>
       <div class="card-stack ability-stack">${activeAbilities}</div>
       <div class="section-divider"><span>Пассивные таланты</span><small>Одновременно действует один талант</small></div>
       <div class="card-stack skill-stack">${skills}</div>`;
