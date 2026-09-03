@@ -345,6 +345,35 @@ describe('SoundEngine without browser audio APIs', () => {
     engine.destroy();
   });
 
+  it('silences platform pauses and waits for a new gesture after restore', async () => {
+    const fakeDocument = installFakeBrowserAudio();
+    const engine = new SoundEngine();
+    engine.setMusicTheme('raid');
+    fakeDocument.dispatchEvent(new Event('pointerdown'));
+    await settleAudioPromises();
+
+    const context = FakeAudioContext.instances[0];
+    const firstSource = musicSources(context)[0];
+    engine.pauseForPlatform();
+
+    expect(firstSource.stop).toHaveBeenCalledOnce();
+    expect(context.gains[0].gain.value).toBe(0);
+    await expect(engine.unlock()).resolves.toBe(false);
+
+    engine.resumeForPlatform();
+    await settleAudioPromises();
+    expect(musicSources(context)).toHaveLength(1);
+    expect(context.gains[0].gain.value).toBe(0);
+    await expect(engine.unlock()).resolves.toBe(false);
+
+    fakeDocument.dispatchEvent(new Event('pointerdown'));
+    await settleAudioPromises();
+    expect(context.gains[0].gain.value).toBeCloseTo(0.22);
+    expect(musicSources(context)).toHaveLength(2);
+
+    engine.destroy();
+  });
+
   it('retries immediately when a later trusted click arrives during a stalled WebKit resume', async () => {
     vi.useFakeTimers();
     try {

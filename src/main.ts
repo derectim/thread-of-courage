@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 
 import RaidScene from "./game/RaidScene";
+import { createPlatformAdapter } from "./platform";
 import "./style.css";
 
 const loading = document.querySelector<HTMLElement>("#loading");
@@ -49,4 +50,23 @@ try {
   throw error;
 }
 
-window.addEventListener("beforeunload", () => game.destroy(true));
+const platform = createPlatformAdapter();
+const unsubscribeLifecycle = platform.subscribeLifecycle({
+  onPause: () => {
+    const raidScene = game.scene.getScene("raid");
+    if (raidScene instanceof RaidScene) raidScene.pauseForPlatform();
+    game.loop.sleep();
+  },
+  onResume: () => {
+    const raidScene = game.scene.getScene("raid");
+    if (raidScene instanceof RaidScene) raidScene.resumeForPlatform();
+    game.loop.wake();
+  },
+});
+void platform.initialize();
+
+window.addEventListener("beforeunload", () => {
+  unsubscribeLifecycle();
+  platform.destroy();
+  game.destroy(true);
+});

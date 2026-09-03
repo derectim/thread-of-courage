@@ -236,6 +236,14 @@ export class RaidScene extends Phaser.Scene {
     this.updatePattern(this.getActivePattern(), deltaSeconds);
   }
 
+  public pauseForPlatform(): void {
+    this.sfx.pauseForPlatform();
+  }
+
+  public resumeForPlatform(): void {
+    this.sfx.resumeForPlatform();
+  }
+
   private startRaidFromMenu(): void {
     this.sfx.setMusicTheme("raid");
     this.menu.hide();

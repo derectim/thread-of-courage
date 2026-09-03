@@ -1,0 +1,16 @@
+export {
+  VK_APP_ID,
+  VK_APP_URL,
+  createPlatformAdapter,
+  detectVkLaunchContext,
+  type PlatformAdapter,
+  type PlatformAdapterOptions,
+  type PlatformDocument,
+  type PlatformKind,
+  type PlatformLifecycleHandlers,
+  type PlatformWindow,
+  type VkBridgeEvent,
+  type VkBridgeLike,
+  type VkBridgeListener,
+  type VkLaunchContext,
+} from "./PlatformAdapter";

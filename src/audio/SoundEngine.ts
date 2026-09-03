@@ -34,6 +34,8 @@ export class SoundEngine {
   private listeningForGesture = false;
   private gestureCompletionConfirmed = false;
   private listeningForVisibility = false;
+  private platformPaused = false;
+  private waitingForPlatformGesture = false;
   private destroyed = false;
 
   public constructor(volume = 0.22) {
@@ -48,7 +50,11 @@ export class SoundEngine {
   }
 
   private unlockInternal(fromTrustedGesture: boolean): Promise<boolean> {
-    if (this.destroyed || !this.isDocumentVisible()) {
+    if (this.destroyed || this.platformPaused || !this.isDocumentVisible()) {
+      this.listenForFirstGesture();
+      return Promise.resolve(false);
+    }
+    if (this.waitingForPlatformGesture && !fromTrustedGesture) {
       this.listenForFirstGesture();
       return Promise.resolve(false);
     }
@@ -65,6 +71,8 @@ export class SoundEngine {
 
     if (context.state === "running") {
       this.needsAudioPrime = false;
+      this.waitingForPlatformGesture = false;
+      this.restoreMasterGain();
       this.stopListeningAfterConfirmedGesture();
       this.ensureRequestedMusic();
       return Promise.resolve(true);
@@ -89,10 +97,26 @@ export class SoundEngine {
   }
 
   public play(sound: SoundName): void {
-    if (this.destroyed || this.muted || !this.isDocumentVisible()) return;
+    if (
+      this.destroyed ||
+      this.platformPaused ||
+      this.muted ||
+      !this.isDocumentVisible()
+    ) {
+      return;
+    }
 
     void this.unlock().then((ready) => {
-      if (!ready || this.muted || !this.context || !this.masterGain) return;
+      if (
+        !ready ||
+        this.platformPaused ||
+        this.muted ||
+        !this.isDocumentVisible() ||
+        !this.context ||
+        !this.masterGain
+      ) {
+        return;
+      }
 
       try {
         const now = this.context.currentTime + 0.005;
@@ -167,7 +191,7 @@ export class SoundEngine {
     if (this.destroyed) return;
 
     this.requestedMusicTheme = theme;
-    if (this.muted || !this.isDocumentVisible()) return;
+    if (this.muted || this.platformPaused || !this.isDocumentVisible()) return;
 
     if (this.context?.state === "running") {
       this.ensureRequestedMusic();
@@ -192,13 +216,13 @@ export class SoundEngine {
     const gain = this.masterGain.gain;
     const now = this.context.currentTime;
     gain.cancelScheduledValues(now);
-    gain.setTargetAtTime(muted ? 0 : this.volume, now, 0.015);
+    gain.setTargetAtTime(muted || this.platformPaused ? 0 : this.volume, now, 0.015);
 
     if (muted) {
       this.needsAudioPrime = true;
       this.stopMusicSource();
       this.listenForFirstGesture();
-    } else if (this.isDocumentVisible()) {
+    } else if (!this.platformPaused && this.isDocumentVisible()) {
       // setMuted(false) is normally called by the sound button. Going through
       // unlock() keeps that click in the same synchronous WebKit activation.
       this.needsAudioPrime = true;
@@ -210,6 +234,35 @@ export class SoundEngine {
 
   public isMuted(): boolean {
     return this.muted;
+  }
+
+  /** Immediately silences audio without changing the player's mute setting. */
+  public pauseForPlatform(): void {
+    if (this.destroyed || this.platformPaused) return;
+    this.platformPaused = true;
+    this.waitingForPlatformGesture = true;
+    this.needsAudioPrime = true;
+    this.stopMusicSource(true);
+
+    const context = this.context;
+    const gain = this.masterGain?.gain;
+    if (context && gain) {
+      const now = context.currentTime;
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(0, now);
+    }
+    this.listenForFirstGesture();
+  }
+
+  /**
+   * Allows audio again, but deliberately waits for a new trusted gesture so
+   * iOS/WKWebView can unlock the output after VK restores the view.
+   */
+  public resumeForPlatform(): void {
+    if (this.destroyed || !this.platformPaused) return;
+    this.platformPaused = false;
+    this.needsAudioPrime = true;
+    this.listenForFirstGesture();
   }
 
   public destroy(): void {
@@ -247,7 +300,7 @@ export class SoundEngine {
           context = new Context();
         }
         const masterGain = context.createGain();
-        masterGain.gain.value = this.muted ? 0 : this.volume;
+        masterGain.gain.value = this.muted || this.platformPaused ? 0 : this.volume;
         masterGain.connect(context.destination);
         const musicBus = context.createGain();
         musicBus.gain.value = 1;
@@ -285,7 +338,9 @@ export class SoundEngine {
       // background. A bounded wait keeps a later trusted gesture able to retry.
       await this.waitForResumeAttempt(resumeAttempt);
 
-      if (this.destroyed || context !== this.context) return false;
+      if (this.destroyed || this.platformPaused || context !== this.context) {
+        return false;
+      }
       if (!this.isDocumentVisible()) {
         this.needsAudioPrime = true;
         this.listenForFirstGesture();
@@ -295,6 +350,8 @@ export class SoundEngine {
       const ready = (context.state as AudioContextState) === "running";
       if (ready) {
         this.needsAudioPrime = false;
+        this.waitingForPlatformGesture = false;
+        this.restoreMasterGain();
         this.stopListeningAfterConfirmedGesture();
         this.ensureRequestedMusic();
       } else {
@@ -477,12 +534,23 @@ export class SoundEngine {
     );
   }
 
+  private restoreMasterGain(): void {
+    const context = this.context;
+    const gain = this.masterGain?.gain;
+    if (!context || !gain || this.platformPaused) return;
+
+    const now = context.currentTime;
+    gain.cancelScheduledValues(now);
+    gain.setTargetAtTime(this.muted ? 0 : this.volume, now, 0.015);
+  }
+
   private ensureRequestedMusic(): void {
     const theme = this.requestedMusicTheme;
     const context = this.context;
     const musicBus = this.musicBus;
     if (
       this.destroyed ||
+      this.platformPaused ||
       this.muted ||
       this.needsAudioPrime ||
       !theme ||
