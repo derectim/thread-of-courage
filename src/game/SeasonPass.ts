@@ -1,6 +1,8 @@
 export const SEASON_PASS_VERSION = 1 as const;
 export const SEASON_PASS_TIER_COUNT = 20 as const;
+/** XP needed for the first tier. Later tiers deliberately grow by a fixed step. */
 export const SEASON_PASS_XP_PER_TIER = 100 as const;
+export const SEASON_PASS_XP_GROWTH_PER_TIER = 50 as const;
 export const CURRENT_SEASON_ID = "living-thread-01" as const;
 
 export type SeasonPassTrack = "free" | "premium";
@@ -152,7 +154,11 @@ export const SEASON_PASS_TIERS: readonly SeasonPassTierDefinition[] =
     const tier = index + 1;
     return {
       tier,
-      requiredXp: tier * SEASON_PASS_XP_PER_TIER,
+      // 100, 250, 450, 700 ... 11 500. Early rewards remain welcoming,
+      // while completing the album is a season-long goal rather than two raids.
+      requiredXp:
+        tier * SEASON_PASS_XP_PER_TIER
+        + (SEASON_PASS_XP_GROWTH_PER_TIER * tier * (tier - 1)) / 2,
       freeReward: makeReward("free", tier, FREE_REWARDS[index]),
       premiumReward: makeReward("premium", tier, PREMIUM_REWARDS[index]),
     };
@@ -162,59 +168,59 @@ export const SEASON_TASKS: readonly SeasonTaskDefinition[] = [
   {
     id: "first-pattern",
     name: "Разбудить узор",
-    description: "Сделать 75 успешных попаданий.",
+    description: "Сделать 150 успешных попаданий.",
     metric: "successfulHits",
-    target: 75,
-    xpReward: 80,
+    target: 150,
+    xpReward: 120,
   },
   {
     id: "steady-road",
     name: "Длинная строчка",
-    description: "Завершить 20 этапов.",
+    description: "Завершить 50 этапов.",
     metric: "stagesCompleted",
-    target: 20,
-    xpReward: 120,
+    target: 50,
+    xpReward: 240,
   },
   {
     id: "boss-thread",
     name: "Нить против великанов",
-    description: "Победить 6 главных боссов.",
+    description: "Победить 12 главных боссов.",
     metric: "bossesDefeated",
-    target: 6,
-    xpReward: 180,
+    target: 12,
+    xpReward: 300,
   },
   {
     id: "daily-habit",
     name: "Ритуал мастерской",
-    description: "Выполнить 10 ежедневных поручений.",
+    description: "Выполнить 14 ежедневных поручений.",
     metric: "dailyTasksCompleted",
-    target: 10,
-    xpReward: 160,
+    target: 14,
+    xpReward: 360,
   },
   {
     id: "weekly-wanderer",
     name: "По недельной выкройке",
-    description: "Пройти 10 узлов недельного маршрута.",
+    description: "Пройти 12 узлов недельного маршрута.",
     metric: "weeklyNodesCompleted",
-    target: 10,
-    xpReward: 160,
+    target: 12,
+    xpReward: 360,
   },
   {
     id: "golden-rhythm",
     name: "Золотой ритм",
-    description: "Сделать 300 успешных попаданий.",
+    description: "Сделать 1000 успешных попаданий.",
     metric: "successfulHits",
-    target: 300,
-    xpReward: 220,
+    target: 1000,
+    xpReward: 600,
   },
 ] as const;
 
 const EVENT_XP: Readonly<Record<SeasonPassEvent, number>> = {
   "successful-hit": 0,
-  "stage-victory": 12,
-  "boss-victory": 18,
-  "daily-task-completed": 45,
-  "weekly-node-completed": 20,
+  "stage-victory": 8,
+  "boss-victory": 12,
+  "daily-task-completed": 30,
+  "weekly-node-completed": 15,
 };
 
 const EVENT_METRIC: Readonly<Record<SeasonPassEvent, SeasonPassMetric>> = {
@@ -225,7 +231,8 @@ const EVENT_METRIC: Readonly<Record<SeasonPassEvent, SeasonPassMetric>> = {
   "weekly-node-completed": "weeklyNodesCompleted",
 };
 
-const MAX_PASS_XP = SEASON_PASS_TIER_COUNT * SEASON_PASS_XP_PER_TIER;
+const MAX_PASS_XP =
+  SEASON_PASS_TIERS[SEASON_PASS_TIERS.length - 1]?.requiredXp ?? 0;
 
 function normalizeCount(value: unknown, maximum = Number.MAX_SAFE_INTEGER): number {
   const numeric = typeof value === "number" ? value : Number(value);
@@ -316,26 +323,32 @@ export function syncSeasonPassState(
 }
 
 export function getUnlockedSeasonPassTier(xp: number): number {
-  return Math.min(
-    SEASON_PASS_TIER_COUNT,
-    Math.floor(normalizeCount(xp, MAX_PASS_XP) / SEASON_PASS_XP_PER_TIER),
+  const normalizedXp = normalizeCount(xp, MAX_PASS_XP);
+  return SEASON_PASS_TIERS.reduce(
+    (unlocked, tier) => normalizedXp >= tier.requiredXp ? tier.tier : unlocked,
+    0,
   );
 }
 
 export function getSeasonPassStatus(state: SeasonPassState): SeasonPassStatus {
   const xp = normalizeCount(state.xp, MAX_PASS_XP);
   const unlockedTier = getUnlockedSeasonPassTier(xp);
+  const currentThreshold = unlockedTier === 0
+    ? 0
+    : SEASON_PASS_TIERS[unlockedTier - 1]?.requiredXp ?? 0;
+  const nextThreshold = SEASON_PASS_TIERS[unlockedTier]?.requiredXp ?? null;
+  const tierSpan = nextThreshold === null ? null : nextThreshold - currentThreshold;
   return {
     unlockedTier,
     xp,
     xpIntoTier:
       unlockedTier >= SEASON_PASS_TIER_COUNT
         ? SEASON_PASS_XP_PER_TIER
-        : xp % SEASON_PASS_XP_PER_TIER,
+        : xp - currentThreshold,
     xpForNextTier:
       unlockedTier >= SEASON_PASS_TIER_COUNT
         ? null
-        : SEASON_PASS_XP_PER_TIER,
+        : tierSpan,
     completedTasks: state.completedTaskIds.length,
   };
 }

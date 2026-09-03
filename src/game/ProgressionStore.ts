@@ -44,6 +44,11 @@ import {
   normalizeAdCadenceState,
   type AdCadenceState,
 } from "./AdRules";
+import {
+  createWorkshopCollectionState,
+  normalizeWorkshopCollectionState,
+  type WorkshopCollectionState,
+} from "./WorkshopCollection";
 import { MONSTERS, ROOMS, getMonsterForStage } from "./content";
 
 export const PROGRESSION_SAVE_KEY = "thread-of-courage-save-v3";
@@ -88,6 +93,7 @@ export interface ProgressionState {
   readonly weeklyRoute: WeeklyRouteProgress;
   readonly seasonPass: SeasonPassState;
   readonly ownedSeasonCosmetics: readonly string[];
+  readonly workshopCollection: WorkshopCollectionState;
   readonly adCadence: AdCadenceState;
 }
 
@@ -162,6 +168,7 @@ export function createDefaultState(): ProgressionState {
     weeklyRoute: createWeeklyRouteProgress(weeklyRoute),
     seasonPass: createSeasonPassState(),
     ownedSeasonCosmetics: [],
+    workshopCollection: createWorkshopCollectionState(),
     adCadence: createAdCadenceState(),
   };
 }
@@ -276,6 +283,8 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
       : DEFAULT_ACTIVE_ABILITY_ID;
   const dailyContext = getDailySelectionContext(highestStageCleared, ownedNeedles);
   const weeklyRouteDefinition = createWeeklyRoute(new Date());
+  const needleMastery = normalizeNeedleMasteryState(value.needleMastery);
+  const ownedSeasonCosmetics = normalizeStringList(value.ownedSeasonCosmetics);
 
   return {
     version: PROGRESSION_SAVE_VERSION,
@@ -308,10 +317,14 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
     equippedActiveAbility,
     dailySystems: normalizeDailySystemsState(value.dailySystems, new Date(), dailyContext),
     cosmeticFragments: normalizeInteger(value.cosmeticFragments, 0),
-    needleMastery: normalizeNeedleMasteryState(value.needleMastery),
+    needleMastery,
     weeklyRoute: syncWeeklyRouteProgress(value.weeklyRoute, weeklyRouteDefinition),
     seasonPass: syncSeasonPassState(value.seasonPass),
-    ownedSeasonCosmetics: normalizeStringList(value.ownedSeasonCosmetics),
+    ownedSeasonCosmetics,
+    workshopCollection: normalizeWorkshopCollectionState(value.workshopCollection, {
+      ownedSeasonCosmeticIds: ownedSeasonCosmetics,
+      needleMastery,
+    }),
     adCadence: normalizeAdCadenceState(value.adCadence),
   };
 }

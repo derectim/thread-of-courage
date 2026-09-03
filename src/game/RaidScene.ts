@@ -77,6 +77,11 @@ import {
   recordNeedleMasteryVictory,
   type NeedleMasteryVictoryKind,
 } from "./NeedleMastery";
+import {
+  getWorkshopCollectible,
+  type WorkshopCollectible,
+  type WorkshopCollectibleKind,
+} from "./WorkshopCollection";
 import { recordSeasonPassEvent } from "./SeasonPass";
 import { getStageRotationSpeed } from "./StagePacing";
 import {
@@ -116,6 +121,70 @@ const MONSTER_RADIUS = 78;
 const WORLD_HIT_ANGLE = Math.PI / 2;
 const BASE_NEEDLE_GAP = 0.085;
 const BASE_PROJECTILE_DURATION = 175;
+
+type NeedleCosmeticKind = Extract<
+  WorkshopCollectibleKind,
+  "needle-trail" | "needle-impact" | "needle-aura"
+>;
+
+interface NeedleCosmeticPalette {
+  readonly primary: number;
+  readonly secondary: number;
+}
+
+type NeedleImpactMotif =
+  | "stitches"
+  | "stars"
+  | "shards"
+  | "lightning"
+  | "petals"
+  | "crown";
+
+const NEEDLE_COSMETIC_PALETTES: readonly NeedleCosmeticPalette[] = [
+  { primary: 0xf8f1d9, secondary: 0xbad9ff },
+  { primary: 0xe8b44d, secondary: 0xffefad },
+  { primary: 0xc768aa, secondary: 0xf4a7d8 },
+  { primary: 0x50d7cf, secondary: 0xa8fff5 },
+  { primary: 0xa78bfa, secondary: 0xe4d8ff },
+  { primary: 0xff8d58, secondary: 0xffd46c },
+] as const;
+
+function getNeedleCosmeticPalette(id: string): NeedleCosmeticPalette {
+  if (id.includes("silver") || id.endsWith("free-7")) {
+    return { primary: 0xf8f1d9, secondary: 0xbad9ff };
+  }
+  if (id.includes("bone")) {
+    return { primary: 0xd9a968, secondary: 0xffe0a3 };
+  }
+  if (id.includes("storm") || id.endsWith("premium-14")) {
+    return { primary: 0x50d7cf, secondary: 0xa78bfa };
+  }
+  if (id.includes("sunrise") || id.endsWith("free-17")) {
+    return { primary: 0xffb83d, secondary: 0xffef9a };
+  }
+  if (id.endsWith("free-14")) {
+    return { primary: 0x9b62c7, secondary: 0xe09be2 };
+  }
+  if (id.endsWith("premium-8")) {
+    return { primary: 0xe34f91, secondary: 0xff9dc5 };
+  }
+
+  let hash = 0;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = (hash * 31 + id.charCodeAt(index)) >>> 0;
+  }
+  return NEEDLE_COSMETIC_PALETTES[hash % NEEDLE_COSMETIC_PALETTES.length];
+}
+
+function getNeedleImpactMotif(id: string): NeedleImpactMotif {
+  if (id.includes("storm")) return "lightning";
+  if (id.includes("sunrise")) return "petals";
+  if (id.includes("bone")) return "shards";
+  if (id.endsWith("premium-16")) return "crown";
+  if (id.endsWith("premium-4") || id.endsWith("free-17")) return "stars";
+  if (id.endsWith("premium-10")) return "shards";
+  return "stitches";
+}
 
 export const CONFIRMED_HIT_EVENT = "raid:confirmed-hit";
 export const PROGRESSION_SAVED_EVENT = "progression:saved";
@@ -1413,6 +1482,26 @@ export class RaidScene extends Phaser.Scene {
       .container(this.hero.x + releaseAnchor.x, this.hero.y + releaseAnchor.tipY)
       .setDepth(7);
     const projectileSize = getNeedleArtSize(62);
+    const equippedTrail = this.getEquippedNeedleCosmetic("needle-trail");
+    const equippedAura = this.getEquippedNeedleCosmetic("needle-aura");
+    if (equippedAura) {
+      const palette = getNeedleCosmeticPalette(equippedAura.id);
+      const aura = this.add
+        .ellipse(0, 31, 22, 74, palette.primary, 0.12)
+        .setStrokeStyle(1.5, palette.secondary, 0.72)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      projectile.add(aura);
+      this.tweens.add({
+        targets: aura,
+        alpha: { from: 0.42, to: 0.14 },
+        scaleX: { from: 0.88, to: 1.18 },
+        scaleY: { from: 0.94, to: 1.08 },
+        duration: equippedAura.id.includes("storm") ? 90 : 180,
+        yoyo: true,
+        repeat: 1,
+        ease: "Sine.InOut",
+      });
+    }
     const glow = this.add.rectangle(0, 31, 10, 62, needleSkin.headColor, 0.24);
     const needle = this.add
       .image(0, 0, needleSkin.textureKey)
@@ -1423,6 +1512,9 @@ export class RaidScene extends Phaser.Scene {
     const startX = projectile.x;
     const startY = projectile.y;
     const flight = { progress: 0 };
+    let previousTrailX = startX;
+    let previousTrailY = startY + 28;
+    let previousTrailProgress = 0;
     const speedLevel = this.progression.upgrades.speed;
     const skinSpeed = needleSkin.modifiers.projectileSpeedMultiplier ?? 1;
     const duration = Math.max(
@@ -1446,6 +1538,22 @@ export class RaidScene extends Phaser.Scene {
           MONSTER_Y + liveSurface + 1,
           flight.progress,
         );
+        if (
+          equippedTrail &&
+          flight.progress - previousTrailProgress >= 0.075
+        ) {
+          const trailY = projectile.y + 28;
+          this.spawnNeedleTrailSegment(
+            previousTrailX,
+            previousTrailY,
+            projectile.x,
+            trailY,
+            equippedTrail,
+          );
+          previousTrailX = projectile.x;
+          previousTrailY = trailY;
+          previousTrailProgress = flight.progress;
+        }
       },
       onComplete: () => {
         this.resolveProjectile(projectile);
@@ -1637,6 +1745,7 @@ export class RaidScene extends Phaser.Scene {
     }
 
     this.flashMonster(isEmpowered ? needleSkin.headColor : 0xf2e3c6);
+    this.spawnEquippedNeedleImpact(localAngle);
     this.spawnHitText(isEmpowered, stitchPower);
     this.updateMonsterDamageVisual();
     this.updateHealth();
@@ -1779,6 +1888,10 @@ export class RaidScene extends Phaser.Scene {
     const back = this.attachedNeedleBackLayer;
     const front = this.attachedNeedleFrontLayer;
     const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
+    const equippedAura = this.getEquippedNeedleCosmetic("needle-aura");
+    const auraPalette = equippedAura
+      ? getNeedleCosmeticPalette(equippedAura.id)
+      : null;
     back.removeAll(true);
     front.clear();
 
@@ -1811,6 +1924,15 @@ export class RaidScene extends Phaser.Scene {
       const entryY = directionY * entry;
       const visibleInner = Math.max(10, surface - 11);
       const visibleOuter = surface + 8;
+      if (auraPalette) {
+        front.lineStyle(9, auraPalette.primary, 0.16);
+        front.lineBetween(
+          directionX * visibleInner,
+          directionY * visibleInner,
+          directionX * visibleOuter,
+          directionY * visibleOuter,
+        );
+      }
       front.lineStyle(6, 0x111827, 0.82);
       front.lineBetween(
         directionX * visibleInner,
@@ -1909,6 +2031,204 @@ export class RaidScene extends Phaser.Scene {
       scale: 1.14,
       duration: 150,
       onComplete: () => flash.destroy(),
+    });
+  }
+
+  private getEquippedNeedleCosmetic(
+    kind: NeedleCosmeticKind,
+  ): WorkshopCollectible | null {
+    const id = this.progression.workshopCollection?.equipped[kind] ?? null;
+    if (!id) return null;
+    const collectible = getWorkshopCollectible(id);
+    return collectible?.kind === kind ? collectible : null;
+  }
+
+  private spawnNeedleTrailSegment(
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    collectible: WorkshopCollectible,
+  ): void {
+    const palette = getNeedleCosmeticPalette(collectible.id);
+    const stitch = this.add.graphics().setDepth(6);
+    stitch.lineStyle(4.5, 0x101827, 0.28);
+    stitch.lineBetween(fromX, fromY, toX, toY);
+    stitch.lineStyle(2.25, palette.primary, 0.88);
+    stitch.lineBetween(fromX, fromY, toX, toY);
+
+    const midpointX = (fromX + toX) / 2;
+    const midpointY = (fromY + toY) / 2;
+    if (
+      collectible.id.includes("storm") ||
+      collectible.id.endsWith("premium-14")
+    ) {
+      stitch.lineStyle(1.4, palette.secondary, 0.9);
+      stitch.beginPath();
+      stitch.moveTo(midpointX - 4, midpointY - 3);
+      stitch.lineTo(midpointX + 1, midpointY);
+      stitch.lineTo(midpointX - 2, midpointY + 4);
+      stitch.strokePath();
+    } else if (
+      collectible.id.endsWith("premium-2") ||
+      collectible.id.includes("sunrise")
+    ) {
+      stitch.fillStyle(palette.secondary, 0.9);
+      stitch.fillPoints(
+        [
+          new Phaser.Math.Vector2(midpointX, midpointY - 3.5),
+          new Phaser.Math.Vector2(midpointX + 2, midpointY),
+          new Phaser.Math.Vector2(midpointX, midpointY + 3.5),
+          new Phaser.Math.Vector2(midpointX - 2, midpointY),
+        ],
+        true,
+      );
+    }
+
+    this.tweens.add({
+      targets: stitch,
+      alpha: 0,
+      y: stitch.y + 3,
+      duration: 250,
+      ease: "Quad.Out",
+      onComplete: () => stitch.destroy(),
+    });
+  }
+
+  private spawnEquippedNeedleImpact(localAngle: number): void {
+    const collectible = this.getEquippedNeedleCosmetic("needle-impact");
+    if (!collectible) return;
+
+    const palette = getNeedleCosmeticPalette(collectible.id);
+    const motif = getNeedleImpactMotif(collectible.id);
+    const worldAngle = localAngle + this.monster.rotation;
+    const surface = this.getMonsterSurfaceRadius(localAngle);
+    const impact = this.add
+      .graphics()
+      .setPosition(
+        this.monster.x + Math.cos(worldAngle) * surface,
+        this.monster.y + Math.sin(worldAngle) * surface,
+      )
+      .setDepth(14)
+      .setRotation(worldAngle - Math.PI / 2);
+
+    impact.lineStyle(2.2, palette.primary, 0.96);
+    if (motif === "lightning") {
+      for (const direction of [-1, 1]) {
+        impact.beginPath();
+        impact.moveTo(direction * 2, -2);
+        impact.lineTo(direction * 11, -10);
+        impact.lineTo(direction * 7, -13);
+        impact.lineTo(direction * 18, -21);
+        impact.strokePath();
+      }
+    } else if (motif === "crown") {
+      impact.beginPath();
+      impact.moveTo(-18, 2);
+      impact.lineTo(-14, -15);
+      impact.lineTo(-5, -7);
+      impact.lineTo(0, -19);
+      impact.lineTo(6, -7);
+      impact.lineTo(15, -15);
+      impact.lineTo(18, 2);
+      impact.closePath();
+      impact.strokePath();
+      impact.lineBetween(-17, 3, 17, 3);
+    } else if (motif === "petals") {
+      impact.fillStyle(palette.primary, 0.82);
+      for (let index = 0; index < 5; index += 1) {
+        const angle = (Math.PI * 2 * index) / 5 - Math.PI / 2;
+        const tangentX = -Math.sin(angle);
+        const tangentY = Math.cos(angle);
+        const innerX = Math.cos(angle) * 5;
+        const innerY = Math.sin(angle) * 5;
+        const outerX = Math.cos(angle) * 19;
+        const outerY = Math.sin(angle) * 19;
+        impact.fillPoints(
+          [
+            new Phaser.Math.Vector2(innerX, innerY),
+            new Phaser.Math.Vector2(
+              (innerX + outerX) / 2 + tangentX * 3.5,
+              (innerY + outerY) / 2 + tangentY * 3.5,
+            ),
+            new Phaser.Math.Vector2(outerX, outerY),
+            new Phaser.Math.Vector2(
+              (innerX + outerX) / 2 - tangentX * 3.5,
+              (innerY + outerY) / 2 - tangentY * 3.5,
+            ),
+          ],
+          true,
+        );
+      }
+    } else if (motif === "shards") {
+      impact.fillStyle(palette.primary, 0.88);
+      for (let index = 0; index < 5; index += 1) {
+        const angle = (Math.PI * 2 * index) / 5;
+        const directionX = Math.cos(angle);
+        const directionY = Math.sin(angle);
+        const tangentX = -directionY;
+        const tangentY = directionX;
+        impact.fillPoints(
+          [
+            new Phaser.Math.Vector2(directionX * 7, directionY * 7),
+            new Phaser.Math.Vector2(
+              directionX * 13 + tangentX * 2.5,
+              directionY * 13 + tangentY * 2.5,
+            ),
+            new Phaser.Math.Vector2(directionX * 23, directionY * 23),
+            new Phaser.Math.Vector2(
+              directionX * 13 - tangentX * 2.5,
+              directionY * 13 - tangentY * 2.5,
+            ),
+          ],
+          true,
+        );
+      }
+    } else if (motif === "stars") {
+      impact.fillStyle(palette.primary, 0.94);
+      for (const [x, y, size] of [
+        [-12, -9, 5],
+        [12, -13, 4],
+        [4, 11, 3],
+      ] as const) {
+        impact.fillPoints(
+          [
+            new Phaser.Math.Vector2(x, y - size),
+            new Phaser.Math.Vector2(x + size * 0.45, y),
+            new Phaser.Math.Vector2(x, y + size),
+            new Phaser.Math.Vector2(x - size * 0.45, y),
+          ],
+          true,
+        );
+      }
+    } else {
+      for (let index = 0; index < 6; index += 1) {
+        const angle = (Math.PI * 2 * index) / 6;
+        const tangentX = -Math.sin(angle);
+        const tangentY = Math.cos(angle);
+        const centerX = Math.cos(angle) * 13;
+        const centerY = Math.sin(angle) * 13;
+        impact.lineBetween(
+          centerX - tangentX * 4,
+          centerY - tangentY * 4,
+          centerX + tangentX * 4,
+          centerY + tangentY * 4,
+        );
+      }
+    }
+
+    impact.lineStyle(1.7, palette.secondary, 1);
+    impact.lineBetween(-5, -5, 5, 5);
+    impact.lineBetween(5, -5, -5, 5);
+    this.tweens.add({
+      targets: impact,
+      alpha: 0,
+      scaleX: 1.34,
+      scaleY: 1.34,
+      rotation: impact.rotation + (motif === "lightning" ? 0 : 0.14),
+      duration: motif === "crown" ? 360 : 280,
+      ease: "Quad.Out",
+      onComplete: () => impact.destroy(),
     });
   }
 

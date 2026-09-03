@@ -46,6 +46,19 @@ import {
   type SeasonPassTrack,
 } from "../game/SeasonPass";
 import {
+  WORKSHOP_COLLECTIBLES,
+  equipWorkshopCollectible,
+  getEquippedWorkshopCollectible,
+  getWorkshopCollectionSummary,
+  getWorkshopCollectible,
+  getWorkshopPatchArtFileName,
+  grantWorkshopCollectible,
+  normalizeWorkshopCollectionState,
+  type WorkshopCollectionState,
+  type WorkshopCollectible,
+  type WorkshopCollectibleKind,
+} from "../game/WorkshopCollection";
+import {
   claimWeeklyRouteReward,
   createWeeklyRoute,
   getWeeklyModifier,
@@ -116,7 +129,41 @@ const MASTERY_REWARD_SYMBOLS: Readonly<Record<NeedleMasteryRewardKind, string>> 
   title: "♛",
 };
 
-const SEASON_PREMIUM_COST = 25;
+const SEASON_PREMIUM_COST = 60;
+
+const WORKSHOP_KIND_LABELS: Readonly<Record<WorkshopCollectibleKind, string>> = {
+  title: "Титул",
+  patch: "Нашивка",
+  "portrait-frame": "Рамка",
+  "name-glow": "Свечение имени",
+  "name-font": "Почерк имени",
+  "needle-trail": "След иглы",
+  "needle-impact": "Попадание",
+  "needle-aura": "Сияние иглы",
+  "workshop-ornament": "Предмет мастерской",
+};
+
+const PROFILE_COLLECTIBLE_KINDS: readonly WorkshopCollectibleKind[] = [
+  "title",
+  "patch",
+  "portrait-frame",
+  "name-glow",
+  "name-font",
+];
+
+const NEEDLE_COLLECTIBLE_KINDS: readonly WorkshopCollectibleKind[] = [
+  "needle-trail",
+  "needle-impact",
+  "needle-aura",
+];
+
+function collectibleVariant(id: string): number {
+  return Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 5;
+}
+
+function collectibleDisplayName(name: string): string {
+  return name.replace(/^Титул «|»$/g, "");
+}
 
 interface GuidePoint {
   readonly title: string;
@@ -249,7 +296,7 @@ const GUIDE_PAGES: readonly GuidePage[] = [
       {
         iconFileName: "menu-icon-shop.webp",
         title: "Лавка",
-        copy: "Сезонный альбом, его награды и редкие фоны мастерской.",
+        copy: "Книга мастерской, экипировка коллекции и длинный сезонный альбом.",
       },
     ],
   },
@@ -274,7 +321,7 @@ const GUIDE_PAGES: readonly GuidePage[] = [
       {
         symbol: "♛",
         title: "Сезон",
-        copy: "Задания дают опыт для 20 косметических ступеней бесплатной и Золотой дорожек.",
+        copy: "Задания дают опыт для 20 длинных косметических ступеней. Награды можно надевать в Книге мастерской.",
       },
       {
         symbol: "◆",
@@ -483,6 +530,30 @@ export default class GameMenu {
       this.commit(unlockBackground(this.state, id));
       return;
     }
+    if (action === "workshop-toggle") {
+      const id = target.dataset.id ?? "";
+      const collectible = getWorkshopCollectible(id);
+      if (!collectible) {
+        this.showNotice("Украшение не найдено");
+        return;
+      }
+      const collection = this.getWorkshopCollection();
+      if (!collection.ownedCollectibleIds.includes(id)) {
+        this.showNotice("Сначала открой это украшение");
+        return;
+      }
+      const isEquipped = collection.equipped[collectible.kind] === id;
+      const workshopCollection = equipWorkshopCollectible(
+        collection,
+        collectible.kind,
+        isEquipped ? null : id,
+      );
+      this.commit(
+        { ...this.state, workshopCollection },
+        isEquipped ? `${collectible.name}: снято` : `${collectible.name}: выбрано`,
+      );
+      return;
+    }
     if (action === "quest") {
       const id = target.dataset.id as QuestId;
       const quest = QUESTS.find((item) => item.id === id);
@@ -607,9 +678,14 @@ export default class GameMenu {
           ownedSeasonCosmetics: Array.from(
             new Set([...this.state.ownedSeasonCosmetics, result.reward.id]),
           ),
+          workshopCollection: grantWorkshopCollectible(
+            this.getWorkshopCollection(),
+            result.reward.id,
+          ),
         },
         `В альбоме: ${result.reward.name}`,
       );
+      return;
     }
   };
 
@@ -848,18 +924,37 @@ export default class GameMenu {
   }
 
   private renderLeaderboard(): string {
+    const collection = this.getWorkshopCollection();
+    const profileTitle = getEquippedWorkshopCollectible(collection, "title");
+    const profilePatch = getEquippedWorkshopCollectible(collection, "patch");
+    const profileFrame = getEquippedWorkshopCollectible(collection, "portrait-frame");
+    const profileGlow = getEquippedWorkshopCollectible(collection, "name-glow");
+    const profileFont = getEquippedWorkshopCollectible(collection, "name-font");
+    const profilePatchFile = profilePatch
+      ? getWorkshopPatchArtFileName(profilePatch.id)
+      : null;
     let rankedPosition = 0;
     const rows = this.leaderboard.rows.map((row) => {
       const fullName = `${row.firstName} ${row.lastName}`.trim() || `Игрок ${row.id}`;
       const initials = `${row.firstName.charAt(0)}${row.lastName.charAt(0)}`.trim() || "✦";
       const position = row.isLocalOnly ? null : ++rankedPosition;
+      const profileClasses = row.isCurrentUser
+        ? [
+            profileFrame ? `has-profile-frame profile-frame-v-${collectibleVariant(profileFrame.id)}` : "",
+            profileGlow ? `has-profile-glow profile-glow-v-${collectibleVariant(profileGlow.id)}` : "",
+            profileFont ? `has-profile-font profile-font-v-${collectibleVariant(profileFont.id)}` : "",
+          ].filter(Boolean).join(" ")
+        : "";
       return `
-        <li class="leaderboard-row ${row.isCurrentUser ? "is-current" : ""} ${row.isLocalOnly ? "is-local-only" : ""}">
+        <li class="leaderboard-row ${row.isCurrentUser ? "is-current" : ""} ${row.isLocalOnly ? "is-local-only" : ""} ${profileClasses}">
           <span class="leaderboard-place ${position !== null && position <= 3 ? `is-top-${position}` : ""}">${position ?? "—"}</span>
-          ${row.photoUrl
-            ? `<img class="leaderboard-avatar" src="${escapeHtml(row.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
-            : `<span class="leaderboard-avatar is-placeholder" aria-hidden="true">${escapeHtml(initials)}</span>`}
-          <span class="leaderboard-name"><strong>${escapeHtml(fullName)}</strong>${row.isLocalOnly ? "<small>ЛОКАЛЬНО</small>" : row.isCurrentUser ? "<small>ВЫ</small>" : ""}</span>
+          <span class="leaderboard-avatar-shell">
+            ${row.photoUrl
+              ? `<img class="leaderboard-avatar" src="${escapeHtml(row.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
+              : `<span class="leaderboard-avatar is-placeholder" aria-hidden="true">${escapeHtml(initials)}</span>`}
+            ${row.isCurrentUser && profilePatchFile ? `<img class="leaderboard-profile-patch" src="${asset(profilePatchFile)}" alt="" aria-hidden="true" />` : ""}
+          </span>
+          <span class="leaderboard-name"><span><strong>${escapeHtml(fullName)}</strong>${row.isLocalOnly ? "<small>ЛОКАЛЬНО</small>" : row.isCurrentUser ? "<small>ВЫ</small>" : ""}</span>${row.isCurrentUser && profileTitle ? `<em>${escapeHtml(collectibleDisplayName(profileTitle.name))}</em>` : ""}</span>
           <span class="leaderboard-level"><small>ЭТАП</small><strong>${row.level}</strong></span>
         </li>`;
     }).join("");
@@ -882,7 +977,7 @@ export default class GameMenu {
             ${!isLoading && !rows ? `<div class="leaderboard-empty" aria-hidden="true"><span>♛</span><i>✦</i></div>` : ""}
           </div>
           <footer class="leaderboard-footer">
-            <span>Профили не открываются · видны только имя, место и этап</span>
+            <span>Профили не открываются · ваш выбранный образ показан прямо в строке</span>
             ${canRetry ? `<button data-action="leaderboard-retry">Обновить</button>` : ""}
           </footer>
         </section>
@@ -1268,7 +1363,139 @@ export default class GameMenu {
     }).join("");
   }
 
+  private getWorkshopCollection(): WorkshopCollectionState {
+    return normalizeWorkshopCollectionState(this.state.workshopCollection, {
+      ownedSeasonCosmeticIds: this.state.ownedSeasonCosmetics,
+      needleMastery: this.state.needleMastery,
+    });
+  }
+
+  private renderCollectiblePreview(
+    collectible: WorkshopCollectible,
+    locked = false,
+  ): string {
+    const patchFile = getWorkshopPatchArtFileName(collectible.id);
+    const variant = collectibleVariant(collectible.id);
+    const stateClass = locked ? " is-locked" : "";
+    if (patchFile) {
+      return `<span class="collectible-preview is-patch v-${variant}${stateClass}"><img src="${asset(patchFile)}" alt="" aria-hidden="true" draggable="false" /></span>`;
+    }
+
+    const contents: Readonly<Record<WorkshopCollectibleKind, string>> = {
+      title: `<b>Аа</b><i>✦</i>`,
+      patch: `<b>◆</b>`,
+      "portrait-frame": `<i class="portrait-dot">✦</i>`,
+      "name-glow": `<b>Аа</b><i>✧</i>`,
+      "name-font": `<b>Аб</b>`,
+      "needle-trail": `<i class="preview-needle">➶</i><i class="preview-thread"></i>`,
+      "needle-impact": `<b>✦</b><i>·</i><i>✧</i>`,
+      "needle-aura": `<b>⌁</b><i class="preview-aura"></i>`,
+      "workshop-ornament": `<b>${this.getOrnamentSymbol(collectible.name)}</b>`,
+    };
+    return `<span class="collectible-preview is-${collectible.kind} v-${variant}${stateClass}" aria-hidden="true">${contents[collectible.kind]}</span>`;
+  }
+
+  private getOrnamentSymbol(name: string): string {
+    if (/ножниц/i.test(name)) return "✂";
+    if (/час/i.test(name)) return "◷";
+    if (/сердц/i.test(name)) return "♥";
+    if (/лун/i.test(name)) return "☾";
+    if (/челнок/i.test(name)) return "➶";
+    return "⌂";
+  }
+
+  private renderWorkshopToggle(
+    collectible: WorkshopCollectible,
+    collection: WorkshopCollectionState,
+  ): string {
+    const equipped = collection.equipped[collectible.kind] === collectible.id;
+    const verb = collectible.kind === "workshop-ornament"
+      ? "ПОСТАВИТЬ"
+      : collectible.kind.startsWith("needle-")
+        ? "ВКЛЮЧИТЬ"
+        : "НАДЕТЬ";
+    return `<button class="collectible-toggle ${equipped ? "is-equipped" : ""}" data-action="workshop-toggle" data-id="${collectible.id}" aria-pressed="${equipped}">${equipped ? "СНЯТЬ" : verb}</button>`;
+  }
+
+  private renderCollectionShelf(
+    collection: WorkshopCollectionState,
+    kinds: readonly WorkshopCollectibleKind[],
+    title: string,
+    summary: string,
+    open = false,
+  ): string {
+    const owned = WORKSHOP_COLLECTIBLES.filter(
+      (collectible) =>
+        kinds.includes(collectible.kind) &&
+        collection.ownedCollectibleIds.includes(collectible.id),
+    );
+    return `
+      <details class="collection-shelf" ${open ? "open" : ""}>
+        <summary><span>${title}</span><small>${summary}</small><b>${owned.length}</b></summary>
+        ${owned.length > 0
+          ? `<div class="collection-grid">${owned.map((collectible) => `
+              <article class="collection-item rarity-${collectible.rarity}">
+                ${this.renderCollectiblePreview(collectible)}
+                <div><small>${WORKSHOP_KIND_LABELS[collectible.kind]}</small><strong>${escapeHtml(collectibleDisplayName(collectible.name))}</strong></div>
+                ${this.renderWorkshopToggle(collectible, collection)}
+              </article>`).join("")}</div>`
+          : `<p class="collection-empty">Здесь появятся открытые награды. Первые предметы лежат в сезонном альбоме ниже.</p>`}
+      </details>`;
+  }
+
+  private renderWorkshopBook(collection: WorkshopCollectionState): string {
+    const summary = getWorkshopCollectionSummary(collection);
+    const title = getEquippedWorkshopCollectible(collection, "title");
+    const patch = getEquippedWorkshopCollectible(collection, "patch");
+    const portraitFrame = getEquippedWorkshopCollectible(collection, "portrait-frame");
+    const nameGlow = getEquippedWorkshopCollectible(collection, "name-glow");
+    const nameFont = getEquippedWorkshopCollectible(collection, "name-font");
+    const ornament = getEquippedWorkshopCollectible(collection, "workshop-ornament");
+    const next = summary.nextLevel;
+    const progress = next
+      ? Math.min(100, (summary.collectedTowardNextLevel / Math.max(1, next.requiredCollectionCount - summary.currentLevel.requiredCollectionCount)) * 100)
+      : 100;
+    const patchFile = patch ? getWorkshopPatchArtFileName(patch.id) : null;
+    const profileClass = [
+      portraitFrame ? `has-frame frame-v-${collectibleVariant(portraitFrame.id)}` : "",
+      nameGlow ? `has-glow glow-v-${collectibleVariant(nameGlow.id)}` : "",
+      nameFont ? `has-font font-v-${collectibleVariant(nameFont.id)}` : "",
+    ].filter(Boolean).join(" ");
+
+    return `
+      <section class="workshop-book" aria-labelledby="workshop-book-title">
+        <header class="workshop-book-heading">
+          <div><span>КОЛЛЕКЦИЯ И ПРОФИЛЬ</span><h3 id="workshop-book-title">Книга мастерской</h3><p>Награды теперь можно надевать, включать и ставить в комнате.</p></div>
+          <b>ур. ${summary.workshopLevel}</b>
+        </header>
+        <div class="workshop-room is-level-${summary.workshopLevel}">
+          <img class="workshop-book-art" src="${asset("ui-workshop-book.webp")}" alt="Открытая книга с коллекцией нашивок и рамок" />
+          ${summary.workshopLevel >= 2 ? `<i class="workshop-addition addition-lamp" title="Тёплая лампа">✦</i>` : ""}
+          ${summary.workshopLevel >= 3 ? `<span class="workshop-addition addition-patch">${patchFile ? `<img src="${asset(patchFile)}" alt="" />` : "◆"}</span>` : ""}
+          ${summary.workshopLevel >= 4 ? `<img class="workshop-addition addition-album" src="${asset("ui-season-album.webp")}" alt="" />` : ""}
+          ${summary.workshopLevel >= 5 ? `<span class="workshop-addition addition-frame">✦</span>` : ""}
+          ${summary.workshopLevel >= 6 ? `<img class="workshop-addition addition-chest" src="${asset("ui-streak-chest.webp")}" alt="" />` : ""}
+          ${ornament ? `<span class="workshop-addition addition-equipped-ornament" title="${escapeHtml(ornament.name)}"><b>${this.getOrnamentSymbol(ornament.name)}</b><small>${escapeHtml(collectibleDisplayName(ornament.name))}</small></span>` : ""}
+          <strong>${escapeHtml(summary.currentLevel.name)}</strong>
+        </div>
+        <div class="workshop-progress-copy"><span>${summary.collectedCount}/${summary.totalCollectibleCount} предметов</span><strong>${next ? `До «${next.name}»: ${summary.neededForNextLevel}` : "Мастерская завершена"}</strong></div>
+        <div class="workshop-progress" role="progressbar" aria-label="Развитие мастерской" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress)}"><span style="width:${progress}%"></span></div>
+        <p class="workshop-level-copy">${escapeHtml(summary.currentLevel.description)} ${escapeHtml(summary.currentLevel.visualAdditions.join(" · "))}</p>
+
+        <article class="workshop-profile ${profileClass}" aria-label="Предпросмотр профиля">
+          <div class="workshop-avatar"><img src="${asset("hero-menu-v2.webp")}" alt="" />${patchFile ? `<img class="profile-patch" src="${asset(patchFile)}" alt="" />` : ""}</div>
+          <div class="workshop-profile-name"><small>ВАШ ПРОФИЛЬ</small><strong>Мастер Живой нити</strong><span>${title ? escapeHtml(collectibleDisplayName(title.name)) : "Выберите титул в книге"}</span></div>
+          <div class="profile-loadout"><span>${portraitFrame ? "Рамка надета" : "Без рамки"}</span><span>${nameGlow ? "Имя светится" : "Без свечения"}</span><span>${nameFont ? "Особый почерк" : "Обычный почерк"}</span></div>
+        </article>
+
+        ${this.renderCollectionShelf(collection, PROFILE_COLLECTIBLE_KINDS, "Профиль", "титулы, нашивки, рамки и имя", true)}
+        ${this.renderCollectionShelf(collection, NEEDLE_COLLECTIBLE_KINDS, "Игла", "следы, попадания и сияния")}
+        ${this.renderCollectionShelf(collection, ["workshop-ornament"], "Комната", "предметы, которые появляются в мастерской")}
+      </section>`;
+  }
+
   private renderShop(): string {
+    const workshopCollection = this.getWorkshopCollection();
     const passStatus = getSeasonPassStatus(this.state.seasonPass);
     const passProgress = passStatus.xpForNextTier === null
       ? 100
@@ -1284,6 +1511,33 @@ export default class GameMenu {
         </li>`;
     }).join("");
 
+    const renderSeasonTrack = (
+      tier: (typeof SEASON_PASS_TIERS)[number],
+      track: SeasonPassTrack,
+      claimed: boolean,
+      unlocked: boolean,
+      premiumEnabled: boolean,
+    ): string => {
+      const reward = track === "free" ? tier.freeReward : tier.premiumReward;
+      const collectible = getWorkshopCollectible(reward.id);
+      if (!collectible) return "";
+      const available = unlocked && (track === "free" || premiumEnabled);
+      const equipped = workshopCollection.equipped[collectible.kind] === collectible.id;
+      const action = claimed
+        ? `<button class="${equipped ? "is-equipped" : ""}" data-action="workshop-toggle" data-id="${collectible.id}" aria-pressed="${equipped}">${equipped ? "СНЯТЬ" : collectible.kind === "workshop-ornament" ? "ПОСТАВИТЬ" : collectible.kind.startsWith("needle-") ? "ВКЛЮЧИТЬ" : "НАДЕТЬ"}</button>`
+        : `<button data-action="season-claim" data-tier="${tier.tier}" data-track="${track}" ${available ? "" : "disabled"} aria-label="Забрать награду ${reward.name}">${available ? "ЗАБРАТЬ" : track === "premium" && !premiumEnabled ? "ЗАКРЫТО" : `НУЖЕН ${tier.tier} УР.`}</button>`;
+      return `
+        <div class="season-track ${track === "free" ? "free-track" : "premium-track"} ${premiumEnabled ? "is-enabled" : ""}">
+          <span>${track === "free" ? "БЕСПЛАТНО" : "ЗОЛОТАЯ ДОРОЖКА"}</span>
+          <div class="season-reward-copy">
+            ${this.renderCollectiblePreview(collectible, !available && !claimed)}
+            <div><small>${WORKSHOP_KIND_LABELS[collectible.kind]}</small><strong>${reward.name}</strong></div>
+          </div>
+          <small class="season-reward-description">${reward.description}</small>
+          ${action}
+        </div>`;
+    };
+
     const seasonTiers = SEASON_PASS_TIERS.map((tier) => {
       const unlocked = tier.tier <= passStatus.unlockedTier;
       const freeClaimed = this.state.seasonPass.claimedFreeTiers.includes(tier.tier);
@@ -1292,14 +1546,8 @@ export default class GameMenu {
       return `
         <article class="season-tier ${unlocked ? "is-unlocked" : "is-locked"} ${freeClaimed && (premiumClaimed || !premiumEnabled) ? "is-complete" : ""}">
           <div class="season-tier-number"><span>${tier.tier}</span><small>${tier.requiredXp} XP</small></div>
-          <div class="season-track free-track">
-            <span>БЕСПЛАТНО</span><strong>${tier.freeReward.name}</strong><small>${tier.freeReward.description}</small>
-            <button data-action="season-claim" data-tier="${tier.tier}" data-track="free" ${!unlocked || freeClaimed ? "disabled" : ""} aria-label="${freeClaimed ? `${tier.freeReward.name}: получено` : `Забрать бесплатную награду ${tier.freeReward.name}`}">${freeClaimed ? "✓ ПОЛУЧЕНО" : unlocked ? "ЗАБРАТЬ" : `НУЖЕН ${tier.tier} УР.`}</button>
-          </div>
-          <div class="season-track premium-track ${premiumEnabled ? "is-enabled" : ""}">
-            <span>ЗОЛОТАЯ ДОРОЖКА</span><strong>${tier.premiumReward.name}</strong><small>${tier.premiumReward.description}</small>
-            <button data-action="season-claim" data-tier="${tier.tier}" data-track="premium" ${!unlocked || premiumClaimed || !premiumEnabled ? "disabled" : ""} aria-label="${premiumClaimed ? `${tier.premiumReward.name}: получено` : `Забрать премиальную награду ${tier.premiumReward.name}`}">${premiumClaimed ? "✓ ПОЛУЧЕНО" : !premiumEnabled ? "ЗАКРЫТО" : unlocked ? "ЗАБРАТЬ" : `НУЖЕН ${tier.tier} УР.`}</button>
-          </div>
+          ${renderSeasonTrack(tier, "free", freeClaimed, unlocked, premiumEnabled)}
+          ${renderSeasonTrack(tier, "premium", premiumClaimed, unlocked, premiumEnabled)}
         </article>`;
     }).join("");
 
@@ -1320,16 +1568,19 @@ export default class GameMenu {
     }).join("");
 
     return `
+      ${this.renderWorkshopBook(workshopCollection)}
+
+      <div class="section-divider shop-divider"><span>Сезонный путь</span><small>долгая коллекция</small></div>
       <section class="season-album" aria-labelledby="season-album-title">
         <header class="season-hero">
           <img src="${asset("ui-season-album.webp")}" alt="" aria-hidden="true" draggable="false" />
-          <div><span>СЕЗОН 1 · ЖИВАЯ НИТЬ</span><h3 id="season-album-title">Сезонный альбом</h3><p>20 уровней украшений. Все награды косметические и не усиливают героя.</p></div>
+          <div><span>СЕЗОН 1 · ЖИВАЯ НИТЬ</span><h3 id="season-album-title">Сезонный альбом</h3><p>20 долгих уровней. Каждую награду видно заранее, а открытую можно сразу использовать.</p></div>
           <b>${passStatus.unlockedTier}/20</b>
         </header>
         <div class="season-xp-copy"><span>Опыт альбома · ${passStatus.xp} XP</span><strong>${passStatus.xpForNextTier === null ? "Альбом завершён" : `До уровня ${passStatus.unlockedTier + 1}: ${passStatus.xpForNextTier - passStatus.xpIntoTier} XP`}</strong></div>
         <div class="season-xp-bar" role="progressbar" aria-label="Опыт сезонного альбома" aria-valuemin="0" aria-valuemax="${passStatus.xpForNextTier ?? 100}" aria-valuenow="${passStatus.xpForNextTier === null ? 100 : passStatus.xpIntoTier}"><span style="width:${passProgress}%"></span></div>
         <div class="season-premium-box ${this.state.seasonPass.prototypePremiumEnabled ? "is-enabled" : ""}">
-          <div><span>${this.state.seasonPass.prototypePremiumEnabled ? "ЗОЛОТАЯ ДОРОЖКА ОТКРЫТА" : "ПРОТОТИП ЗОЛОТОЙ ДОРОЖКИ"}</span><p>${this.state.seasonPass.prototypePremiumEnabled ? "Все достигнутые премиальные награды можно забирать." : "Открывается только за игровые пуговицы. Реальных покупок и оплаты здесь нет."}</p></div>
+          <div><span>${this.state.seasonPass.prototypePremiumEnabled ? "ЗОЛОТАЯ ДОРОЖКА ОТКРЫТА" : "ЗОЛОТАЯ ДОРОЖКА"}</span><p>${this.state.seasonPass.prototypePremiumEnabled ? "Все достигнутые премиальные награды можно забирать." : "Редкая долгосрочная цель: 60 игровых пуговиц. Реальных покупок здесь нет."}</p></div>
           <button data-action="season-premium" ${this.state.seasonPass.prototypePremiumEnabled ? "disabled" : ""}><span>${this.state.seasonPass.prototypePremiumEnabled ? "ОТКРЫТО" : `◆ ${SEASON_PREMIUM_COST}`}</span><small>${this.state.seasonPass.prototypePremiumEnabled ? "АКТИВНО" : "ИГРОВЫЕ ПУГОВИЦЫ"}</small></button>
         </div>
         <details class="season-tasks" open>
