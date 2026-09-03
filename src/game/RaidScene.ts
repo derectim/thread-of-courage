@@ -1055,16 +1055,22 @@ export class RaidScene extends Phaser.Scene {
         directionX * visibleOuter,
         directionY * visibleOuter,
       );
-      front.fillStyle(0x111827, 0.9);
-      front.fillCircle(entryX, entryY, 6);
-      front.fillStyle(needleSkin.headColor, 1);
-      front.fillCircle(entryX, entryY, 3.5);
-      front.lineStyle(2, needleSkin.tailColor, 1);
+      // Mark the puncture with a tiny embroidered seam instead of a round
+      // rivet. The dark under-stitch keeps it readable on every monster while
+      // the narrow coloured thread makes the needle feel embedded in fabric.
+      front.lineStyle(4, 0x111827, 0.72);
       front.lineBetween(
-        entryX - tangentX * 4,
-        entryY - tangentY * 4,
-        entryX + tangentX * 4,
-        entryY + tangentY * 4,
+        entryX - tangentX * 5,
+        entryY - tangentY * 5,
+        entryX + tangentX * 5,
+        entryY + tangentY * 5,
+      );
+      front.lineStyle(1.75, needleSkin.tailColor, 1);
+      front.lineBetween(
+        entryX - tangentX * 4.25,
+        entryY - tangentY * 4.25,
+        entryX + tangentX * 4.25,
+        entryY + tangentY * 4.25,
       );
     }
   }

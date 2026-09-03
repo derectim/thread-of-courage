@@ -1479,10 +1479,10 @@ button {
   }
 
   .menu-hero {
-    top: max(137px, calc(var(--safe-top) + 129px));
+    top: max(clamp(194px, 23vh, 212px), calc(var(--safe-top) + 186px));
     right: 50%;
     bottom: auto;
-    width: min(104vw, 410px);
+    width: min(88vw, 350px);
     transform: translateX(50%);
   }
 
@@ -1823,9 +1823,13 @@ button {
     font-size: 36px;
   }
 
+  .menu-hero-copy p {
+    display: none;
+  }
+
   .menu-hero {
-    top: max(126px, calc(var(--safe-top) + 118px));
-    width: min(98vw, 365px);
+    top: max(164px, calc(var(--safe-top) + 156px));
+    width: min(70vw, calc(100vh - 380px), 285px);
   }
 }
 
