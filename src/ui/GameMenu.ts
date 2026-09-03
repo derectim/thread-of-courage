@@ -91,6 +91,19 @@ import type { PlatformUserProfile } from "../platform/PlatformAdapter";
 
 export type MenuTab = "home" | "upgrades" | "quests" | "needles" | "bestiary" | "shop";
 
+interface HiddenPanelView {
+  readonly tab: Exclude<MenuTab, "home">;
+  readonly scrollTop: number;
+}
+
+export function resolvePanelScrollRestoration(
+  storedTab: MenuTab | null | undefined,
+  nextTab: MenuTab,
+  scrollTop: number | undefined,
+): number | undefined {
+  return storedTab === nextTab && nextTab !== "home" ? scrollTop : undefined;
+}
+
 export interface GameMenuCallbacks {
   readonly onStart: () => void;
   readonly onStartWeekly: () => void;
@@ -391,6 +404,7 @@ export default class GameMenu {
   private wardrobeOpen = false;
   private profileRequest = 0;
   private profile: PlatformUserProfile | null = null;
+  private hiddenPanelView: HiddenPanelView | null = null;
   private destroyed = false;
   private readonly frame: HTMLElement | null;
 
@@ -407,6 +421,12 @@ export default class GameMenu {
 
   public show(state: ProgressionState, tab: MenuTab = "home", notice = ""): void {
     if (this.destroyed) return;
+    const hiddenScrollTop = resolvePanelScrollRestoration(
+      this.hiddenPanelView?.tab,
+      tab,
+      this.hiddenPanelView?.scrollTop,
+    );
+    this.hiddenPanelView = null;
     this.state = state;
     this.tab = tab;
     this.notice = notice;
@@ -417,10 +437,19 @@ export default class GameMenu {
     this.frame?.classList.add("menu-active");
     this.root.classList.remove("is-hidden");
     this.render();
+    if (hiddenScrollTop !== undefined) {
+      const panelScroll = this.root.querySelector<HTMLElement>(".panel-scroll");
+      if (panelScroll) panelScroll.scrollTop = hiddenScrollTop;
+    }
     if (!this.profile) void this.loadProfile();
   }
 
   public hide(): void {
+    const panelScroll = this.root.querySelector<HTMLElement>(".panel-scroll");
+    this.hiddenPanelView =
+      this.tab !== "home" && panelScroll
+        ? { tab: this.tab, scrollTop: panelScroll.scrollTop }
+        : null;
     this.profileRequest += 1;
     this.guidePage = null;
     this.leaderboardOpen = false;
@@ -892,9 +921,12 @@ export default class GameMenu {
     const activeButton = this.root.contains(document.activeElement) && document.activeElement instanceof HTMLButtonElement
       ? document.activeElement
       : null;
-    const previousScrollTop = activeButton?.dataset.action && activeButton.dataset.action !== "home"
-      ? this.root.querySelector<HTMLElement>(".panel-scroll")?.scrollTop
-      : undefined;
+    const renderedPanel = this.root.querySelector<HTMLElement>(".menu-panel");
+    const previousScrollTop = resolvePanelScrollRestoration(
+      renderedPanel?.dataset.menuTab as MenuTab | undefined,
+      this.tab,
+      renderedPanel?.querySelector<HTMLElement>(".panel-scroll")?.scrollTop,
+    );
     const previousProfileDialog = this.root.querySelector<HTMLElement>(
       ".profile-dialog",
     );
@@ -1271,7 +1303,7 @@ export default class GameMenu {
         <div class="currency-chip"><span>✦</span><strong>${this.state.thread}</strong><small>нити</small></div>
         <div class="currency-chip premium"><span>◆</span><strong>${this.state.premium}</strong><small>пуговицы</small></div>
       </header>
-      <section class="menu-panel" aria-label="${TAB_LABELS[tab].label}">
+      <section class="menu-panel" data-menu-tab="${tab}" aria-label="${TAB_LABELS[tab].label}">
         <header class="panel-heading">
           <img class="panel-tab-icon" src="${asset(TAB_LABELS[tab].iconFileName)}" width="38" height="38" alt="" aria-hidden="true" draggable="false" />
           <h2>${TAB_LABELS[tab].label}</h2>

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getBestiaryThreatLabel, TAB_LABELS } from "./GameMenu";
+import {
+  getBestiaryThreatLabel,
+  resolvePanelScrollRestoration,
+  TAB_LABELS,
+} from "./GameMenu";
 
 describe("menu tab artwork", () => {
   it("maps every menu section to a unique published icon", () => {
@@ -19,5 +23,18 @@ describe("bestiary threat labels", () => {
     expect(getBestiaryThreatLabel({})).toBe("");
     expect(getBestiaryThreatLabel({ isMiniBoss: true })).toBe("МИНИ-БОСС");
     expect(getBestiaryThreatLabel({ isBoss: true })).toBe("БОСС");
+  });
+});
+
+describe("menu panel scroll restoration", () => {
+  it("restores the same panel after returning from gameplay without relying on focus", () => {
+    expect(resolvePanelScrollRestoration("quests", "quests", 640)).toBe(640);
+    expect(resolvePanelScrollRestoration("quests", "quests", 0)).toBe(0);
+  });
+
+  it("does not carry a saved position into another panel or the home screen", () => {
+    expect(resolvePanelScrollRestoration("quests", "needles", 640)).toBeUndefined();
+    expect(resolvePanelScrollRestoration("quests", "home", 640)).toBeUndefined();
+    expect(resolvePanelScrollRestoration(undefined, "quests", 640)).toBeUndefined();
   });
 });
