@@ -41,6 +41,7 @@ import {
 } from "./needleVisual";
 import {
   getNextStageTip,
+  getRaidStartStage,
   resolveVictoryChoice,
   type VictoryChoice,
 } from "./raidFlow";
@@ -259,7 +260,7 @@ export class RaidScene extends Phaser.Scene {
     this.menu.hide();
     this.closeOverlay();
     this.state = "transition";
-    this.stage = 1;
+    this.stage = getRaidStartStage(this.progression.highestStageCleared);
     this.shieldCharges = this.getStartingWardCharges();
     this.inputCooldownUntil = this.time.now + 260;
     this.createMonster();

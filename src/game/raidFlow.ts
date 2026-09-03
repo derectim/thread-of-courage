@@ -10,6 +10,13 @@ export type VictoryDestination =
   | { readonly kind: "menu"; readonly persistProgress: true }
   | { readonly kind: "next-stage" };
 
+export function getRaidStartStage(highestStageCleared: number): number {
+  const clearedStage = Number.isFinite(highestStageCleared)
+    ? Math.max(0, Math.floor(highestStageCleared))
+    : 0;
+  return clearedStage + 1;
+}
+
 export function resolveVictoryChoice(
   choice: VictoryChoice,
 ): VictoryDestination {
