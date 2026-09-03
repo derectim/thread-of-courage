@@ -12,6 +12,7 @@ export {
   type PlatformDocument,
   type PlatformKind,
   type PlatformLifecycleHandlers,
+  type PlatformUserProfile,
   type PlatformNavigator,
   type PlatformWindow,
   type RewardedAdResult,

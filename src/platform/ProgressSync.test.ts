@@ -32,6 +32,7 @@ function fakePlatform(cloud: string | null): PlatformAdapter {
     showInterstitialAd: vi.fn(async () => "unsupported" as const),
     showLeaderboard: vi.fn(async () => "unsupported" as const),
     loadLeaderboard: vi.fn(async () => ({ status: "unsupported" as const })),
+    getUserInfo: vi.fn(async () => null),
     showOrder: vi.fn(async () => ({ status: "unsupported" as const })),
     loadCloudProgress: vi.fn(async () => cloud),
     saveCloudProgress: vi.fn(async () => true),

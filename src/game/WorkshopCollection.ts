@@ -8,6 +8,10 @@ import {
   type SeasonCosmeticKind,
   type SeasonPassTrack,
 } from "./SeasonPass";
+import {
+  WEEKLY_ROUTE_REWARD_VARIANTS,
+  resolveWeeklyRouteCollectibleId,
+} from "./WeeklyRoute";
 
 export const WORKSHOP_COLLECTION_VERSION = 1 as const;
 export const WORKSHOP_COLLECTION_SAVE_KEY = "thread-of-courage-workshop-v1";
@@ -29,6 +33,7 @@ export type WorkshopCollectibleKind =
 export type WorkshopCollectibleSource =
   | "season"
   | "needle-mastery"
+  | "weekly-route"
   | "workshop-milestone";
 export type WorkshopCollectibleRarity =
   | "common"
@@ -65,7 +70,7 @@ export interface WorkshopCollectionStorage {
 }
 
 export interface WorkshopEntitlements {
-  /** IDs copied from ProgressionState.ownedSeasonCosmetics. */
+  /** Known reward IDs copied from the legacy ProgressionState entitlement list. */
   readonly ownedSeasonCosmeticIds?: readonly string[];
   /** A NeedleMasteryState or untrusted save data accepted by its normalizer. */
   readonly needleMastery?: unknown;
@@ -164,6 +169,19 @@ const MASTERY_COLLECTIBLES: readonly WorkshopCollectible[] =
     cosmeticOnly: true as const,
   }));
 
+const WEEKLY_ROUTE_COLLECTIBLES: readonly WorkshopCollectible[] =
+  WEEKLY_ROUTE_REWARD_VARIANTS.map((reward) => ({
+    id: reward.id,
+    kind: "patch" as const,
+    source: "weekly-route" as const,
+    sourceId: reward.variant,
+    name: reward.name,
+    description: reward.description,
+    artKey: reward.id,
+    rarity: "epic" as const,
+    cosmeticOnly: true as const,
+  }));
+
 const MILESTONE_COLLECTIBLES: readonly WorkshopCollectible[] = [
   {
     id: "workshop-glow-warm-thread",
@@ -225,6 +243,7 @@ const MILESTONE_COLLECTIBLES: readonly WorkshopCollectible[] = [
 export const WORKSHOP_COLLECTIBLES: readonly WorkshopCollectible[] = [
   ...SEASON_COLLECTIBLES,
   ...MASTERY_COLLECTIBLES,
+  ...WEEKLY_ROUTE_COLLECTIBLES,
   ...MILESTONE_COLLECTIBLES,
 ];
 
@@ -297,6 +316,10 @@ export const WORKSHOP_PATCH_ART: Readonly<Record<string, string>> = {
   "bone-mastery-6": "patch-old-craft.webp",
   "storm-mastery-6": "patch-storm-tamer.webp",
   "sunrise-mastery-6": "patch-first-ray.webp",
+  "weekly-emblem-moon-thimble": "patch-weekly-moon-thimble.webp",
+  "weekly-emblem-golden-spool": "patch-weekly-golden-spool.webp",
+  "weekly-emblem-owl-eye": "patch-weekly-owl-eye.webp",
+  "weekly-emblem-pattern-heart": "patch-weekly-pattern-heart.webp",
 };
 
 export function getWorkshopPatchArtFileName(id: string): string | null {
@@ -325,10 +348,14 @@ function normalizeKnownIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return Array.from(
     new Set(
-      value.filter(
-        (id): id is string =>
-          typeof id === "string" && COLLECTIBLE_BY_ID.has(id),
-      ),
+      value.flatMap((id) => {
+        if (typeof id !== "string") return [];
+        if (COLLECTIBLE_BY_ID.has(id)) return [id];
+        const migratedId = resolveWeeklyRouteCollectibleId(id);
+        return migratedId && COLLECTIBLE_BY_ID.has(migratedId)
+          ? [migratedId]
+          : [];
+      }),
     ),
   );
 }
@@ -463,14 +490,15 @@ export function grantWorkshopCollectible(
   state: WorkshopCollectionState,
   collectibleId: string,
 ): WorkshopCollectionState {
-  if (!COLLECTIBLE_BY_ID.has(collectibleId)) return state;
+  const normalizedId = normalizeKnownIds([collectibleId])[0];
+  if (!normalizedId) return state;
   const ownedCollectibleIds = withMilestoneRewards([
     ...state.ownedCollectibleIds,
-    collectibleId,
+    normalizedId,
   ]);
   if (
     ownedCollectibleIds.length === state.ownedCollectibleIds.length &&
-    state.ownedCollectibleIds.includes(collectibleId)
+    state.ownedCollectibleIds.includes(normalizedId)
   ) {
     return state;
   }
@@ -522,7 +550,9 @@ export function getWorkshopCollectionSummary(
   return {
     collectedCount,
     totalCollectibleCount:
-      SEASON_COLLECTIBLES.length + MASTERY_COLLECTIBLES.length,
+      SEASON_COLLECTIBLES.length +
+      MASTERY_COLLECTIBLES.length +
+      WEEKLY_ROUTE_COLLECTIBLES.length,
     workshopLevel: currentLevel.level,
     currentLevel,
     nextLevel,

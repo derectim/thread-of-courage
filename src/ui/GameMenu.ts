@@ -46,6 +46,7 @@ import {
   type SeasonPassTrack,
 } from "../game/SeasonPass";
 import {
+  WORKSHOP_COLLECTIBLE_KINDS,
   WORKSHOP_COLLECTIBLES,
   equipWorkshopCollectible,
   getEquippedWorkshopCollectible,
@@ -86,6 +87,7 @@ import {
   type QuestId,
   type SkillId,
 } from "../game/meta";
+import type { PlatformUserProfile } from "../platform/PlatformAdapter";
 
 export type MenuTab = "home" | "upgrades" | "quests" | "needles" | "bestiary" | "shop";
 
@@ -96,6 +98,7 @@ export interface GameMenuCallbacks {
   readonly onToggleSound: (muted: boolean) => void;
   readonly onFullscreen: () => void;
   readonly onLoadLeaderboard: () => Promise<LeaderboardViewModel>;
+  readonly onLoadProfile?: () => Promise<PlatformUserProfile | null>;
 }
 
 const UPGRADE_NAMES: Readonly<Record<UpgradeId, { name: string; symbol: string }>> = {
@@ -384,6 +387,11 @@ export default class GameMenu {
   private leaderboardOpen = false;
   private leaderboardRequest = 0;
   private leaderboard = createLeaderboardViewModel("idle");
+  private profileOpen = false;
+  private wardrobeOpen = false;
+  private profileRequest = 0;
+  private profile: PlatformUserProfile | null = null;
+  private destroyed = false;
   private readonly frame: HTMLElement | null;
 
   public constructor(
@@ -398,24 +406,33 @@ export default class GameMenu {
   }
 
   public show(state: ProgressionState, tab: MenuTab = "home", notice = ""): void {
+    if (this.destroyed) return;
     this.state = state;
     this.tab = tab;
     this.notice = notice;
     this.guidePage = null;
     this.leaderboardOpen = false;
+    this.profileOpen = false;
+    this.wardrobeOpen = false;
     this.frame?.classList.add("menu-active");
     this.root.classList.remove("is-hidden");
     this.render();
+    if (!this.profile) void this.loadProfile();
   }
 
   public hide(): void {
+    this.profileRequest += 1;
     this.guidePage = null;
     this.leaderboardOpen = false;
+    this.profileOpen = false;
+    this.wardrobeOpen = false;
     this.frame?.classList.remove("menu-active");
     this.root.classList.add("is-hidden");
   }
 
   public destroy(): void {
+    this.destroyed = true;
+    this.profileRequest += 1;
     this.frame?.classList.remove("menu-active");
     this.root.removeEventListener("click", this.handleClick);
     this.root.removeEventListener("keydown", this.handleKeyDown);
@@ -427,6 +444,31 @@ export default class GameMenu {
     if (!target || target.disabled) return;
 
     const action = target.dataset.action;
+    if (action === "profile-open") {
+      this.guidePage = null;
+      this.leaderboardOpen = false;
+      this.profileOpen = true;
+      this.wardrobeOpen = false;
+      this.render();
+      this.focusProfileDialog();
+      return;
+    }
+    if (action === "profile-close") {
+      this.closeProfile();
+      return;
+    }
+    if (action === "wardrobe-open") {
+      this.wardrobeOpen = true;
+      this.render();
+      this.focusProfileDialog();
+      return;
+    }
+    if (action === "wardrobe-back") {
+      this.wardrobeOpen = false;
+      this.render();
+      this.focusProfileDialog();
+      return;
+    }
     if (action === "guide-open") {
       this.guidePage = 0;
       this.render();
@@ -633,12 +675,13 @@ export default class GameMenu {
       this.commit(
         {
           ...this.state,
+          premium: this.state.premium + result.reward.buttonReward,
           weeklyRoute: result.progress,
           ownedSeasonCosmetics: Array.from(
             new Set([...this.state.ownedSeasonCosmetics, result.reward.id]),
           ),
         },
-        `Получено: ${result.reward.name}`,
+        `Получено: ${result.reward.name} · ◆ ${result.reward.buttonReward}`,
       );
       return;
     }
@@ -690,17 +733,28 @@ export default class GameMenu {
   };
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
-    if (this.guidePage === null && !this.leaderboardOpen) return;
+    if (this.guidePage === null && !this.leaderboardOpen && !this.profileOpen) return;
     if (event.key === "Escape") {
       event.preventDefault();
       if (this.leaderboardOpen) this.closeLeaderboard();
+      else if (this.profileOpen) {
+        if (this.wardrobeOpen) {
+          this.wardrobeOpen = false;
+          this.render();
+          this.focusProfileDialog();
+        } else this.closeProfile();
+      }
       else this.closeGuide();
       return;
     }
     if (event.key !== "Tab") return;
 
     const dialog = this.root.querySelector<HTMLElement>(
-      this.leaderboardOpen ? ".leaderboard-dialog" : ".guide-dialog",
+      this.leaderboardOpen
+        ? ".leaderboard-dialog"
+        : this.profileOpen
+          ? ".profile-dialog"
+          : ".guide-dialog",
     );
     if (!dialog) return;
     const focusable = Array.from(
@@ -734,6 +788,34 @@ export default class GameMenu {
     this.guidePage = null;
     this.render();
     this.root.querySelector<HTMLButtonElement>('[data-action="guide-open"]')?.focus({ preventScroll: true });
+  }
+
+  private focusProfileDialog(): void {
+    this.root.querySelector<HTMLElement>(".profile-dialog")?.focus({ preventScroll: true });
+  }
+
+  private closeProfile(): void {
+    this.profileOpen = false;
+    this.wardrobeOpen = false;
+    this.render();
+    this.root.querySelector<HTMLButtonElement>('[data-action="profile-open"]')?.focus({ preventScroll: true });
+  }
+
+  private async loadProfile(): Promise<void> {
+    const loader = this.callbacks.onLoadProfile;
+    if (!loader || this.destroyed) return;
+    const request = ++this.profileRequest;
+    try {
+      const profile = await loader();
+      if (this.destroyed || request !== this.profileRequest || !profile) return;
+      this.profile = profile;
+      this.render();
+      if (this.profileOpen && !this.root.contains(document.activeElement)) {
+        this.focusProfileDialog();
+      }
+    } catch {
+      // The local profile remains fully usable when VK identity is unavailable.
+    }
   }
 
   private async openLeaderboard(): Promise<void> {
@@ -813,6 +895,15 @@ export default class GameMenu {
     const previousScrollTop = activeButton?.dataset.action && activeButton.dataset.action !== "home"
       ? this.root.querySelector<HTMLElement>(".panel-scroll")?.scrollTop
       : undefined;
+    const previousProfileDialog = this.root.querySelector<HTMLElement>(
+      ".profile-dialog",
+    );
+    const previousProfileScrollTop =
+      previousProfileDialog &&
+      previousProfileDialog.classList.contains("is-wardrobe") === this.wardrobeOpen
+        ? previousProfileDialog.querySelector<HTMLElement>(".profile-scroll")
+            ?.scrollTop
+        : undefined;
     const focusKey = activeButton
       ? {
           tab: activeButton.dataset.tab,
@@ -828,6 +919,10 @@ export default class GameMenu {
     if (previousScrollTop !== undefined) {
       const panelScroll = this.root.querySelector<HTMLElement>(".panel-scroll");
       if (panelScroll) panelScroll.scrollTop = previousScrollTop;
+    }
+    if (previousProfileScrollTop !== undefined) {
+      const profileScroll = this.root.querySelector<HTMLElement>(".profile-scroll");
+      if (profileScroll) profileScroll.scrollTop = previousProfileScrollTop;
     }
     if (focusKey) {
       const matchingButton = Array.from(this.root.querySelectorAll<HTMLButtonElement>("button")).find(
@@ -889,7 +984,7 @@ export default class GameMenu {
     const record = this.state.highestStageCleared;
     const campaignStage = this.state.campaignResumeStage;
     const guideIsOpen = this.guidePage !== null;
-    const modalIsOpen = guideIsOpen || this.leaderboardOpen;
+    const modalIsOpen = guideIsOpen || this.leaderboardOpen || this.profileOpen;
     return `
       <div class="menu-home" ${modalIsOpen ? 'aria-hidden="true" inert' : ""}>
         ${this.renderWorld()}
@@ -906,6 +1001,12 @@ export default class GameMenu {
         <button class="menu-leaderboard-trigger" data-action="leaderboard-open" aria-haspopup="dialog" aria-label="Открыть таблицу лидеров">
           <span aria-hidden="true">♛</span><strong>Рейтинг</strong>
         </button>
+        <button class="menu-profile-trigger" data-action="profile-open" aria-haspopup="dialog" aria-label="Открыть профиль и гардероб">
+          ${this.profile?.photoUrl
+            ? `<img class="is-vk-photo" src="${escapeHtml(this.profile.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
+            : `<img class="is-hero-fallback" src="${asset("hero-elya.webp")}" alt="" />`}
+          <strong>Профиль</strong>
+        </button>
         <section class="menu-hero-copy">
           <span class="menu-kicker">ТКАНЕВЫЙ РЕЙД</span>
           <h1>Нитка<br />храбрости</h1>
@@ -920,6 +1021,7 @@ export default class GameMenu {
       </div>
       ${guideIsOpen ? this.renderGuide(this.guidePage!) : ""}
       ${this.leaderboardOpen ? this.renderLeaderboard() : ""}
+      ${this.profileOpen ? this.renderProfileDialog() : ""}
     `;
   }
 
@@ -979,6 +1081,120 @@ export default class GameMenu {
           <footer class="leaderboard-footer">
             <span>Профили не открываются · ваш выбранный образ показан прямо в строке</span>
             ${canRetry ? `<button data-action="leaderboard-retry">Обновить</button>` : ""}
+          </footer>
+        </section>
+      </div>`;
+  }
+
+  private getCollectibleAcquisition(collectible: WorkshopCollectible): string {
+    if (collectible.source === "season") {
+      const [track, tier = "?"] = collectible.sourceId.split("-");
+      return track === "premium"
+        ? `Золотая дорожка · ступень ${tier}`
+        : `Сезонный альбом · ступень ${tier}`;
+    }
+    if (collectible.source === "needle-mastery") {
+      const separator = collectible.sourceId.lastIndexOf("-");
+      const needleId = separator >= 0 ? collectible.sourceId.slice(0, separator) : "";
+      const level = separator >= 0 ? collectible.sourceId.slice(separator + 1) : "?";
+      const needle = NEEDLE_SKINS.find((candidate) => candidate.id === needleId);
+      return `Мастерство ${needle?.name ?? "иглы"} · уровень ${level}`;
+    }
+    if (collectible.source === "weekly-route") {
+      return "Финал недельного маршрута";
+    }
+    const level = collectible.sourceId.match(/\d+/)?.[0] ?? "?";
+    return `Развитие мастерской · уровень ${level}`;
+  }
+
+  private renderProfileDialog(): string {
+    const collection = this.getWorkshopCollection();
+    const collectionSummary = getWorkshopCollectionSummary(collection);
+    const title = getEquippedWorkshopCollectible(collection, "title");
+    const patch = getEquippedWorkshopCollectible(collection, "patch");
+    const frame = getEquippedWorkshopCollectible(collection, "portrait-frame");
+    const glow = getEquippedWorkshopCollectible(collection, "name-glow");
+    const font = getEquippedWorkshopCollectible(collection, "name-font");
+    const patchFile = patch ? getWorkshopPatchArtFileName(patch.id) : null;
+    const profileClass = [
+      frame ? `has-frame frame-v-${collectibleVariant(frame.id)}` : "",
+      glow ? `has-glow glow-v-${collectibleVariant(glow.id)}` : "",
+      font ? `has-font font-v-${collectibleVariant(font.id)}` : "",
+    ].filter(Boolean).join(" ");
+    const fullName = this.profile
+      ? `${this.profile.firstName} ${this.profile.lastName}`.trim()
+      : "Мастер Живой нити";
+    const avatar = this.profile?.photoUrl
+      ? `<img class="profile-avatar-photo" src="${escapeHtml(this.profile.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
+      : `<img class="profile-avatar-hero" src="${asset("hero-elya.webp")}" alt="" />`;
+
+    const kinds = this.wardrobeOpen
+      ? WORKSHOP_COLLECTIBLE_KINDS.map((kind) => {
+          const items = WORKSHOP_COLLECTIBLES.filter((item) => item.kind === kind);
+          const ownedCount = items.filter((item) => collection.ownedCollectibleIds.includes(item.id)).length;
+          return `
+            <section class="wardrobe-group" aria-labelledby="wardrobe-${kind}">
+              <header><div><h3 id="wardrobe-${kind}">${WORKSHOP_KIND_LABELS[kind]}</h3><small>${ownedCount}/${items.length}</small></div></header>
+              <div class="wardrobe-list">${items.map((item) => {
+                const owned = collection.ownedCollectibleIds.includes(item.id);
+                const equipped = collection.equipped[item.kind] === item.id;
+                return `
+                  <article class="wardrobe-item rarity-${item.rarity} ${owned ? "" : "is-locked"}">
+                    ${this.renderCollectiblePreview(item, !owned)}
+                    <div class="wardrobe-copy">
+                      <small>${owned ? WORKSHOP_KIND_LABELS[item.kind] : "ЗАКРЫТО"}</small>
+                      <strong>${escapeHtml(collectibleDisplayName(item.name))}</strong>
+                      <p>${escapeHtml(item.description)}</p>
+                      <em>${escapeHtml(this.getCollectibleAcquisition(item))}</em>
+                    </div>
+                    ${owned
+                      ? this.renderWorkshopToggle(item, collection)
+                      : `<button class="collectible-toggle is-locked" disabled>ПОКА ЗАКРЫТО</button>`}
+                    ${equipped ? `<span class="wardrobe-equipped">В образе</span>` : ""}
+                  </article>`;
+              }).join("")}</div>
+            </section>`;
+        }).join("")
+      : "";
+
+    return `
+      <div class="guide-layer profile-layer">
+        <div class="guide-scrim" aria-hidden="true"></div>
+        <section class="profile-dialog ${this.wardrobeOpen ? "is-wardrobe" : ""}" role="dialog" aria-modal="true" aria-labelledby="profile-title" tabindex="-1">
+          <button class="guide-close" data-action="profile-close" aria-label="Закрыть профиль">×</button>
+          <header class="profile-heading">
+            <span>${this.wardrobeOpen ? "КОЛЛЕКЦИЯ ОБРАЗОВ" : "КАРТОЧКА МАСТЕРА"}</span>
+            <h2 id="profile-title">${this.wardrobeOpen ? "Гардероб" : "Профиль"}</h2>
+            <p>${this.wardrobeOpen ? "Все награды видны заранее — вместе с путём получения." : "Личный образ пока хранится на этом устройстве."}</p>
+          </header>
+          <div class="profile-scroll">
+            ${this.wardrobeOpen
+              ? kinds
+              : `<article class="profile-showcase workshop-profile ${profileClass}">
+                  <div class="workshop-avatar">${avatar}${patchFile ? `<img class="profile-patch" src="${asset(patchFile)}" alt="" />` : ""}</div>
+                  <div class="workshop-profile-name"><small>${this.profile ? "ПРОФИЛЬ VK" : "ЛОКАЛЬНЫЙ ПРОФИЛЬ"}</small><strong>${escapeHtml(fullName)}</strong><span>${title ? escapeHtml(collectibleDisplayName(title.name)) : "Без титула"}</span></div>
+                  <div class="profile-record"><span>Лучший этап</span><strong>${this.state.highestStageCleared || "—"}</strong></div>
+                </article>
+                <div class="profile-stat-row" aria-label="Прогресс профиля">
+                  <div><small>Коллекция</small><strong>${collectionSummary.collectedCount}/${collectionSummary.totalCollectibleCount}</strong></div>
+                  <div><small>Мастерская</small><strong>${collectionSummary.workshopLevel} уровень</strong></div>
+                  <div><small>Пуговицы</small><strong>◆ ${this.state.premium}</strong></div>
+                </div>
+                <div class="profile-slot-grid">
+                  ${[
+                    ["Нашивка", patch?.name],
+                    ["Рамка", frame?.name],
+                    ["Свечение", glow?.name],
+                    ["Почерк", font?.name],
+                    ["Титул", title?.name],
+                  ].map(([label, value]) => `<div><small>${label}</small><strong>${value ? escapeHtml(collectibleDisplayName(value)) : "Не выбрано"}</strong></div>`).join("")}
+                </div>
+                <p class="profile-local-note">После появления сервера этот же гардероб станет публичным. Тестовые и неподтверждённые награды можно будет сбросить отдельно, не затрагивая этапы.</p>`}
+          </div>
+          <footer class="profile-footer">
+            ${this.wardrobeOpen
+              ? `<button data-action="wardrobe-back">← К ПРОФИЛЮ</button>`
+              : `<button data-action="wardrobe-open">ИЗМЕНИТЬ ОБРАЗ</button>`}
           </footer>
         </section>
       </div>`;
@@ -1480,7 +1696,7 @@ export default class GameMenu {
         </div>
         <div class="workshop-progress-copy"><span>${summary.collectedCount}/${summary.totalCollectibleCount} предметов</span><strong>${next ? `До «${next.name}»: ${summary.neededForNextLevel}` : "Мастерская завершена"}</strong></div>
         <div class="workshop-progress" role="progressbar" aria-label="Развитие мастерской" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress)}"><span style="width:${progress}%"></span></div>
-        <p class="workshop-level-copy">${escapeHtml(summary.currentLevel.description)} ${escapeHtml(summary.currentLevel.visualAdditions.join(" · "))}</p>
+        <p class="workshop-level-copy">${escapeHtml(summary.currentLevel.description)}</p>
 
         <article class="workshop-profile ${profileClass}" aria-label="Предпросмотр профиля">
           <div class="workshop-avatar"><img src="${asset("hero-menu-v2.webp")}" alt="" />${patchFile ? `<img class="profile-patch" src="${asset(patchFile)}" alt="" />` : ""}</div>

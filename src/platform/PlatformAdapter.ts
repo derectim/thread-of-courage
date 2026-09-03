@@ -12,6 +12,7 @@ const VK_CHECK_NATIVE_ADS_METHOD = "VKWebAppCheckNativeAds";
 const VK_SHOW_NATIVE_ADS_METHOD = "VKWebAppShowNativeAds";
 const VK_GET_AUTH_TOKEN_METHOD = "VKWebAppGetAuthToken";
 const VK_CALL_API_METHOD = "VKWebAppCallAPIMethod";
+const VK_GET_USER_INFO_METHOD = "VKWebAppGetUserInfo";
 
 type VkBridgeMethod =
   | "VKWebAppInit"
@@ -21,6 +22,7 @@ type VkBridgeMethod =
   | "VKWebAppCheckNativeAds"
   | "VKWebAppShowNativeAds"
   | "VKWebAppGetAuthToken"
+  | "VKWebAppGetUserInfo"
   | "VKWebAppCallAPIMethod"
   | "VKWebAppShowLeaderBoardBox"
   | "VKWebAppShowOrderBox";
@@ -74,6 +76,13 @@ export interface OrderResult {
   readonly orderId?: string;
 }
 
+export interface PlatformUserProfile {
+  readonly id: number;
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly photoUrl: string | null;
+}
+
 export interface PlatformLifecycleHandlers {
   readonly onPause: () => void;
   readonly onResume: () => void;
@@ -104,6 +113,8 @@ export interface PlatformAdapter {
   showLeaderboard(userResult: number): Promise<LeaderboardResult>;
   /** Reads the VK level leaderboard; this never writes or submits a score. */
   loadLeaderboard(): Promise<VkLeaderboardLoadResult>;
+  /** Reads the current player's public VK identity for local profile rendering. */
+  getUserInfo(): Promise<PlatformUserProfile | null>;
   /** Opens a native order dialog; callers must verify purchases server-side. */
   showOrder(itemName: string): Promise<OrderResult>;
   /** Loads the latest serialized cross-device progress for this VK player. */
@@ -132,6 +143,7 @@ export interface VkBridgeLike {
       | "VKWebAppCheckNativeAds"
       | "VKWebAppShowNativeAds"
       | "VKWebAppGetAuthToken"
+      | "VKWebAppGetUserInfo"
       | "VKWebAppCallAPIMethod"
       | "VKWebAppShowLeaderBoardBox"
       | "VKWebAppShowOrderBox",
@@ -324,6 +336,42 @@ class BrowserPlatformAdapter implements PlatformAdapter {
       return isUnsupportedBridgeFailure(error)
         ? { status: "unsupported" }
         : { status: "error" };
+    }
+  }
+
+  public async getUserInfo(): Promise<PlatformUserProfile | null> {
+    if (this.destroyed || this.kind !== "vk" || !this.bridge) return null;
+    if (!(await this.initialize()) || this.destroyed) return null;
+
+    if (this.bridge.supportsAsync) {
+      try {
+        if (!(await this.bridge.supportsAsync(VK_GET_USER_INFO_METHOD))) {
+          return null;
+        }
+      } catch {
+        return null;
+      }
+    }
+
+    try {
+      const response = await Promise.resolve(
+        this.bridge.send(VK_GET_USER_INFO_METHOD),
+      );
+      if (this.destroyed || !isRecord(response)) return null;
+      const id = Number(response.id);
+      const firstName =
+        typeof response.first_name === "string" ? response.first_name.trim() : "";
+      const lastName =
+        typeof response.last_name === "string" ? response.last_name.trim() : "";
+      if (!Number.isSafeInteger(id) || id <= 0 || (!firstName && !lastName)) {
+        return null;
+      }
+      const photoUrl =
+        normalizeProfilePhotoUrl(response.photo_200) ??
+        normalizeProfilePhotoUrl(response.photo_100);
+      return { id, firstName, lastName, photoUrl };
+    } catch {
+      return null;
     }
   }
 
@@ -631,6 +679,20 @@ class BrowserPlatformAdapter implements PlatformAdapter {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeProfilePhotoUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  try {
+    const url = new URL(normalized);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? normalized
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeOrderId(value: unknown): string | undefined {

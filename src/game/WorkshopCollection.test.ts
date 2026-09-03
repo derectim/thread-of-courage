@@ -7,6 +7,10 @@ import {
 } from "./NeedleMastery";
 import { SEASON_PASS_TIERS } from "./SeasonPass";
 import {
+  WEEKLY_ROUTE_REWARD_VARIANTS,
+  createWeeklyRoute,
+} from "./WeeklyRoute";
+import {
   WORKSHOP_COLLECTION_SAVE_KEY,
   WORKSHOP_COLLECTIBLES,
   WORKSHOP_LEVELS,
@@ -54,6 +58,20 @@ describe("WorkshopCollection catalog", () => {
     ).toBe(WORKSHOP_COLLECTIBLES.length);
   });
 
+  it("registers all four stable weekly emblems as equippable patches", () => {
+    for (const reward of WEEKLY_ROUTE_REWARD_VARIANTS) {
+      expect(getWorkshopCollectible(reward.id)).toMatchObject({
+        id: reward.id,
+        kind: "patch",
+        source: "weekly-route",
+        sourceId: reward.variant,
+        name: reward.name,
+        artKey: reward.id,
+        cosmeticOnly: true,
+      });
+    }
+  });
+
   it("gives every previous reward kind an equippable destination", () => {
     const seasonKinds = new Set(
       seasonRewards.map((reward) => getWorkshopCollectible(reward.id)?.kind),
@@ -79,10 +97,23 @@ describe("WorkshopCollection catalog", () => {
 
   it("has an individual generated image for every collectible patch", () => {
     const patches = WORKSHOP_COLLECTIBLES.filter((item) => item.kind === "patch");
-    expect(patches).toHaveLength(12);
+    expect(patches).toHaveLength(16);
     expect(
       patches.every((patch) => getWorkshopPatchArtFileName(patch.id)?.endsWith(".webp")),
     ).toBe(true);
+    expect(
+      Object.fromEntries(
+        WEEKLY_ROUTE_REWARD_VARIANTS.map((reward) => [
+          reward.variant,
+          getWorkshopPatchArtFileName(reward.id),
+        ]),
+      ),
+    ).toEqual({
+      "moon-thimble": "patch-weekly-moon-thimble.webp",
+      "golden-spool": "patch-weekly-golden-spool.webp",
+      "owl-eye": "patch-weekly-owl-eye.webp",
+      "pattern-heart": "patch-weekly-pattern-heart.webp",
+    });
   });
 });
 
@@ -148,6 +179,33 @@ describe("WorkshopCollection progression and equipment", () => {
     expect(state.ownedCollectibleIds).toContain(seasonTitle.id);
     expect(state.ownedCollectibleIds).toContain("silver-mastery-2");
     expect(state.ownedCollectibleIds).not.toContain("silver-mastery-4");
+  });
+
+  it("keeps a weekly emblem entitlement and allows equipping it as a patch", () => {
+    const weeklyId = createWeeklyRoute("2026-W36").finalReward.id;
+    const state = createWorkshopCollectionState({
+      ownedSeasonCosmeticIds: [weeklyId],
+    });
+
+    expect(state.ownedCollectibleIds).toContain(weeklyId);
+    const equipped = equipWorkshopCollectible(state, "patch", weeklyId);
+    expect(getEquippedWorkshopCollectible(equipped, "patch")?.id).toBe(weeklyId);
+  });
+
+  it("migrates old per-week emblem IDs to their stable collectible", () => {
+    const route = createWeeklyRoute("2026-W36");
+    const legacyId = `weekly-emblem-${route.weekId}`;
+    const state = normalizeWorkshopCollectionState(
+      { ownedCollectibleIds: [legacyId] },
+      { ownedSeasonCosmeticIds: [legacyId] },
+    );
+
+    expect(state.ownedCollectibleIds).toContain(route.finalReward.id);
+    expect(state.ownedCollectibleIds).not.toContain(legacyId);
+    expect(
+      grantWorkshopCollectible(createWorkshopCollectionState(), legacyId)
+        .ownedCollectibleIds,
+    ).toContain(route.finalReward.id);
   });
 
   it("normalizes malformed data and migrates old flat equipment fields", () => {

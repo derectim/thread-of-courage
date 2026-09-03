@@ -367,6 +367,7 @@ export class RaidScene extends Phaser.Scene {
       },
       onFullscreen: () => this.requestFullscreen(),
       onLoadLeaderboard: () => this.loadLeaderboardForMenu(),
+      onLoadProfile: () => this.platform.getUserInfo(),
     });
     this.menu.show(this.progression);
 

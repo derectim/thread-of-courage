@@ -2,6 +2,37 @@ import type { RoomId } from "./content";
 
 export const WEEKLY_ROUTE_VERSION = 1 as const;
 export const WEEKLY_ROUTE_NODE_COUNT = 5 as const;
+/** Four weekly finishes in a typical month award 16 buttons; a five-week month awards 20. */
+export const WEEKLY_ROUTE_BUTTON_REWARD = 4 as const;
+export const WEEKLY_ROUTE_REWARD_VARIANTS = [
+  {
+    id: "weekly-emblem-moon-thimble",
+    variant: "moon-thimble",
+    name: "Эмблема «Лунный напёрсток»",
+    description: "Памятный знак за завершение недельного пути.",
+  },
+  {
+    id: "weekly-emblem-golden-spool",
+    variant: "golden-spool",
+    name: "Эмблема «Золотая катушка»",
+    description: "Памятный знак за завершение недельного пути.",
+  },
+  {
+    id: "weekly-emblem-owl-eye",
+    variant: "owl-eye",
+    name: "Эмблема «Око филина»",
+    description: "Памятный знак за завершение недельного пути.",
+  },
+  {
+    id: "weekly-emblem-pattern-heart",
+    variant: "pattern-heart",
+    name: "Эмблема «Сердце выкройки»",
+    description: "Памятный знак за завершение недельного пути.",
+  },
+] as const;
+
+export type WeeklyRouteCollectibleId =
+  (typeof WEEKLY_ROUTE_REWARD_VARIANTS)[number]["id"];
 
 export type WeeklyModifierId =
   | "hurried-mechanism"
@@ -40,11 +71,14 @@ export interface WeeklyRouteNode {
 }
 
 export interface WeeklyCosmeticReward {
-  readonly id: string;
+  readonly id: WeeklyRouteCollectibleId;
   readonly kind: "profile-emblem";
   readonly name: string;
   readonly description: string;
   readonly cosmeticOnly: true;
+  /** Earnable premium currency bundled with the first completed lap each week. */
+  readonly buttonReward: typeof WEEKLY_ROUTE_BUTTON_REWARD;
+  readonly acquisitionLabel: string;
 }
 
 export interface WeeklyRouteDefinition {
@@ -134,13 +168,6 @@ const NODE_NAMES = [
 ] as const;
 
 const ROOMS: readonly RoomId[] = ["attic", "theatre", "machine"];
-const REWARD_VARIANTS = [
-  ["Эмблема «Лунный напёрсток»", "Памятный знак за завершение недельного пути."],
-  ["Эмблема «Золотая катушка»", "Памятный знак за завершение недельного пути."],
-  ["Эмблема «Око филина»", "Памятный знак за завершение недельного пути."],
-  ["Эмблема «Сердце выкройки»", "Памятный знак за завершение недельного пути."],
-] as const;
-
 function hashString(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -196,20 +223,38 @@ export function createWeeklyRoute(input: Date | string): WeeklyRouteDefinition {
       modifierId: modifier.id,
     };
   });
-  const rewardVariant = REWARD_VARIANTS[seed % REWARD_VARIANTS.length];
+  const rewardVariant =
+    WEEKLY_ROUTE_REWARD_VARIANTS[seed % WEEKLY_ROUTE_REWARD_VARIANTS.length];
 
   return {
     weekId,
     name: `Недельный маршрут · ${weekId}`,
     nodes,
     finalReward: {
-      id: `weekly-emblem-${weekId}`,
+      id: rewardVariant.id,
       kind: "profile-emblem",
-      name: rewardVariant[0],
-      description: rewardVariant[1],
+      name: rewardVariant.name,
+      description: rewardVariant.description,
       cosmeticOnly: true,
+      buttonReward: WEEKLY_ROUTE_BUTTON_REWARD,
+      acquisitionLabel: "Завершить все 5 узлов недельного маршрута",
     },
   };
+}
+
+/** Resolves current IDs and migrates the old per-week reward IDs used by early saves. */
+export function resolveWeeklyRouteCollectibleId(
+  value: string,
+): WeeklyRouteCollectibleId | null {
+  const stableReward = WEEKLY_ROUTE_REWARD_VARIANTS.find(
+    (reward) => reward.id === value,
+  );
+  if (stableReward) return stableReward.id;
+
+  const legacy = /^weekly-emblem-(\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3]))$/.exec(
+    value,
+  );
+  return legacy ? createWeeklyRoute(legacy[1]).finalReward.id : null;
 }
 
 export function createWeeklyRouteProgress(

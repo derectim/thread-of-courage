@@ -35,6 +35,7 @@ class FakeBridge implements VkBridgeLike {
   public tapticSupported = true;
   public nativeAdsSupported = true;
   public leaderboardApiSupported = true;
+  public userInfoSupported = true;
   public readonly send = vi.fn(
     (
       _method: BridgeMethod,
@@ -45,6 +46,8 @@ class FakeBridge implements VkBridgeLike {
     async (method: SupportedBridgeMethod) =>
       method === "VKWebAppTapticImpactOccurred"
         ? this.tapticSupported
+        : method === "VKWebAppGetUserInfo"
+          ? this.userInfoSupported
         : method === "VKWebAppGetAuthToken" ||
             method === "VKWebAppCallAPIMethod"
           ? this.leaderboardApiSupported
@@ -124,6 +127,7 @@ describe("platform adapter", () => {
     await expect(adapter.loadLeaderboard()).resolves.toEqual({
       status: "unsupported",
     });
+    await expect(adapter.getUserInfo()).resolves.toBeNull();
     await expect(adapter.showOrder("season_pass")).resolves.toEqual({
       status: "unsupported",
     });
@@ -344,6 +348,109 @@ describe("platform adapter", () => {
       },
     });
     adapter.destroy();
+  });
+
+  it("loads and normalizes the current VK profile for local presentation", async () => {
+    const bridge = new FakeBridge();
+    bridge.send.mockImplementation((method) =>
+      Promise.resolve(
+        method === "VKWebAppGetUserInfo"
+          ? {
+              id: 123,
+              first_name: "  Ива ",
+              last_name: " Ниткина  ",
+              photo_200: " https://example.test/iva.jpg ",
+            }
+          : { result: true },
+      ),
+    );
+    const adapter = createPlatformAdapter({
+      window: fakeWindow(vkSearch()),
+      document: new FakeDocument(),
+      bridge,
+    });
+
+    await expect(adapter.getUserInfo()).resolves.toEqual({
+      id: 123,
+      firstName: "Ива",
+      lastName: "Ниткина",
+      photoUrl: "https://example.test/iva.jpg",
+    });
+    expect(bridge.supportsAsync).toHaveBeenCalledWith("VKWebAppGetUserInfo");
+    expect(bridge.send).toHaveBeenCalledWith("VKWebAppGetUserInfo");
+    adapter.destroy();
+  });
+
+  it("uses a smaller safe VK portrait when the preferred photo is unusable", async () => {
+    const bridge = new FakeBridge();
+    bridge.send.mockImplementation((method) =>
+      Promise.resolve(
+        method === "VKWebAppGetUserInfo"
+          ? {
+              id: 123,
+              first_name: "Ива",
+              last_name: "Ниткина",
+              photo_200: "data:image/svg+xml,unsafe",
+              photo_100: " https://example.test/iva-small.jpg ",
+            }
+          : { result: true },
+      ),
+    );
+    const adapter = createPlatformAdapter({
+      window: fakeWindow(vkSearch()),
+      document: new FakeDocument(),
+      bridge,
+    });
+
+    await expect(adapter.getUserInfo()).resolves.toMatchObject({
+      photoUrl: "https://example.test/iva-small.jpg",
+    });
+    adapter.destroy();
+  });
+
+  it("keeps unavailable or malformed VK profile reads as a safe local fallback", async () => {
+    const unsupportedBridge = new FakeBridge();
+    unsupportedBridge.userInfoSupported = false;
+    const unsupported = createPlatformAdapter({
+      window: fakeWindow(vkSearch()),
+      document: new FakeDocument(),
+      bridge: unsupportedBridge,
+    });
+    await expect(unsupported.getUserInfo()).resolves.toBeNull();
+    expect(unsupportedBridge.send).not.toHaveBeenCalledWith(
+      "VKWebAppGetUserInfo",
+    );
+    unsupported.destroy();
+
+    const malformedBridge = new FakeBridge();
+    malformedBridge.send.mockImplementation((method) =>
+      Promise.resolve(
+        method === "VKWebAppGetUserInfo"
+          ? { id: 0, first_name: " ", last_name: " " }
+          : { result: true },
+      ),
+    );
+    const malformed = createPlatformAdapter({
+      window: fakeWindow(vkSearch()),
+      document: new FakeDocument(),
+      bridge: malformedBridge,
+    });
+    await expect(malformed.getUserInfo()).resolves.toBeNull();
+    malformed.destroy();
+
+    const failingBridge = new FakeBridge();
+    failingBridge.send.mockImplementation((method) =>
+      method === "VKWebAppGetUserInfo"
+        ? Promise.reject(new Error("profile unavailable"))
+        : Promise.resolve({ result: true }),
+    );
+    const failing = createPlatformAdapter({
+      window: fakeWindow(vkSearch()),
+      document: new FakeDocument(),
+      bridge: failingBridge,
+    });
+    await expect(failing.getUserInfo()).resolves.toBeNull();
+    failing.destroy();
   });
 
   it("keeps unsupported and failed VK leaderboard reads safe", async () => {
