@@ -3,8 +3,27 @@ import vkBridge from "@vkontakte/vk-bridge";
 export const VK_APP_ID = 54_751_080;
 export const VK_APP_URL = `https://vk.com/app${VK_APP_ID}`;
 export const HIT_FEEDBACK_DURATION_MS = 25;
+export const VK_CLOUD_PROGRESS_KEY = "thread_of_courage_progress_v1";
+export const VK_CLOUD_CHUNK_SIZE = 3_000;
+export const VK_CLOUD_MAX_CHUNKS = 12;
 
 const VK_TAPTIC_IMPACT_METHOD = "VKWebAppTapticImpactOccurred";
+
+type VkBridgeMethod =
+  | "VKWebAppInit"
+  | "VKWebAppStorageGet"
+  | "VKWebAppStorageSet"
+  | "VKWebAppTapticImpactOccurred";
+
+type VkBridgeParams =
+  | { readonly style: "medium" }
+  | { readonly keys: readonly string[] }
+  | { readonly key: string; readonly value: string };
+
+interface VkCloudChunkManifest {
+  readonly format: "thread-chunks-v1";
+  readonly count: number;
+}
 
 export type PlatformKind = "standalone" | "vk";
 
@@ -30,6 +49,10 @@ export interface PlatformAdapter {
   initialize(): Promise<boolean>;
   /** Provides one short tactile response for a confirmed successful hit. */
   hitFeedback(): void;
+  /** Loads the latest serialized cross-device progress for this VK player. */
+  loadCloudProgress(): Promise<string | null>;
+  /** Stores serialized progress for this VK player. */
+  saveCloudProgress(value: string): Promise<boolean>;
   subscribeLifecycle(handlers: PlatformLifecycleHandlers): () => void;
   destroy(): void;
 }
@@ -45,10 +68,7 @@ export type VkBridgeListener = (event: VkBridgeEvent) => void;
 
 /** Narrow seam used by tests and compatible VK Bridge implementations. */
 export interface VkBridgeLike {
-  send(
-    method: "VKWebAppInit" | "VKWebAppTapticImpactOccurred",
-    params?: { readonly style: "medium" },
-  ): unknown;
+  send(method: VkBridgeMethod, params?: VkBridgeParams): unknown;
   supportsAsync?(
     method: "VKWebAppTapticImpactOccurred",
   ): Promise<boolean>;
@@ -164,6 +184,70 @@ class BrowserPlatformAdapter implements PlatformAdapter {
     }
   }
 
+  public async loadCloudProgress(): Promise<string | null> {
+    if (!(await this.canUseVkStorage())) return null;
+
+    try {
+      const first = await this.readVkStorageValues([VK_CLOUD_PROGRESS_KEY]);
+      const value = first.get(VK_CLOUD_PROGRESS_KEY) || null;
+      const manifest = parseChunkManifest(value);
+      if (!manifest) return value;
+
+      const chunkKeys = Array.from(
+        { length: manifest.count },
+        (_, index) => getCloudChunkKey(index),
+      );
+      const chunks = await this.readVkStorageValues(chunkKeys);
+      const ordered = chunkKeys.map((key) => chunks.get(key));
+      return ordered.every((chunk): chunk is string => typeof chunk === "string")
+        ? ordered.join("")
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  public async saveCloudProgress(value: string): Promise<boolean> {
+    if (!(await this.canUseVkStorage())) return false;
+
+    try {
+      const chunks = splitCloudValue(value);
+      if (chunks.length > 1) {
+        if (chunks.length > VK_CLOUD_MAX_CHUNKS) return false;
+        for (const [index, chunk] of chunks.entries()) {
+          const response = await Promise.resolve(
+            this.bridge!.send("VKWebAppStorageSet", {
+              key: getCloudChunkKey(index),
+              value: chunk,
+            }),
+          );
+          if (!isRecord(response) || response.result !== true) return false;
+        }
+        const manifest: VkCloudChunkManifest = {
+          format: "thread-chunks-v1",
+          count: chunks.length,
+        };
+        const response = await Promise.resolve(
+          this.bridge!.send("VKWebAppStorageSet", {
+            key: VK_CLOUD_PROGRESS_KEY,
+            value: JSON.stringify(manifest),
+          }),
+        );
+        return isRecord(response) && response.result === true;
+      }
+
+      const response = await Promise.resolve(
+        this.bridge!.send("VKWebAppStorageSet", {
+          key: VK_CLOUD_PROGRESS_KEY,
+          value,
+        }),
+      );
+      return isRecord(response) && response.result === true;
+    } catch {
+      return false;
+    }
+  }
+
   public subscribeLifecycle(handlers: PlatformLifecycleHandlers): () => void {
     if (this.destroyed) return () => undefined;
 
@@ -225,6 +309,29 @@ class BrowserPlatformAdapter implements PlatformAdapter {
     }
   }
 
+  private async canUseVkStorage(): Promise<boolean> {
+    if (this.destroyed || this.kind !== "vk" || !this.bridge) return false;
+    return this.initialize();
+  }
+
+  private async readVkStorageValues(keys: readonly string[]): Promise<Map<string, string>> {
+    const response = await Promise.resolve(
+      this.bridge!.send("VKWebAppStorageGet", { keys }),
+    );
+    const values = new Map<string, string>();
+    if (!isRecord(response) || !Array.isArray(response.keys)) return values;
+    for (const candidate of response.keys) {
+      if (
+        isRecord(candidate) &&
+        typeof candidate.key === "string" &&
+        typeof candidate.value === "string"
+      ) {
+        values.set(candidate.key, candidate.value);
+      }
+    }
+    return values;
+  }
+
   private getTapticSupport(): Promise<boolean> {
     if (this.tapticSupportPromise) return this.tapticSupportPromise;
     if (!this.bridge?.supportsAsync) return Promise.resolve(false);
@@ -259,6 +366,52 @@ class BrowserPlatformAdapter implements PlatformAdapter {
       if (isSuspended) handlers.onPause();
       else handlers.onResume();
     }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getCloudChunkKey(index: number): string {
+  return `${VK_CLOUD_PROGRESS_KEY}_${index}`;
+}
+
+function splitCloudValue(value: string): string[] {
+  const encoder = new TextEncoder();
+  const chunks: string[] = [];
+  let chunk = "";
+  let byteLength = 0;
+  for (const character of value) {
+    const characterBytes = encoder.encode(character).length;
+    if (byteLength + characterBytes > VK_CLOUD_CHUNK_SIZE && chunk) {
+      chunks.push(chunk);
+      chunk = "";
+      byteLength = 0;
+    }
+    chunk += character;
+    byteLength += characterBytes;
+  }
+  chunks.push(chunk);
+  return chunks;
+}
+
+function parseChunkManifest(value: string | null): VkCloudChunkManifest | null {
+  if (!value) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (
+      !isRecord(parsed) ||
+      parsed.format !== "thread-chunks-v1" ||
+      !Number.isInteger(parsed.count) ||
+      Number(parsed.count) < 1 ||
+      Number(parsed.count) > VK_CLOUD_MAX_CHUNKS
+    ) {
+      return null;
+    }
+    return { format: "thread-chunks-v1", count: Number(parsed.count) };
+  } catch {
+    return null;
   }
 }
 

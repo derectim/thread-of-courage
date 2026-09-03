@@ -1,7 +1,10 @@
 export {
   HIT_FEEDBACK_DURATION_MS,
+  VK_CLOUD_CHUNK_SIZE,
+  VK_CLOUD_MAX_CHUNKS,
   VK_APP_ID,
   VK_APP_URL,
+  VK_CLOUD_PROGRESS_KEY,
   createPlatformAdapter,
   detectVkLaunchContext,
   type PlatformAdapter,
@@ -16,3 +19,16 @@ export {
   type VkBridgeListener,
   type VkLaunchContext,
 } from "./PlatformAdapter";
+
+export {
+  LOCAL_SYNC_ENVELOPE_KEY,
+  PROGRESS_SYNC_VERSION,
+  chooseProgressEnvelope,
+  createProgressSyncEnvelope,
+  parseProgressSyncEnvelope,
+  pushProgressToCloud,
+  serializeProgressSyncEnvelope,
+  synchronizeProgressOnStartup,
+  type ProgressSyncEnvelope,
+  type ProgressSyncResult,
+} from "./ProgressSync";

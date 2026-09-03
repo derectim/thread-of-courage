@@ -11,6 +11,7 @@ import {
   claimQuest,
   createDefaultState,
   equipNeedle,
+  equipActiveAbility,
   equipSkill,
   getQuestProgress,
   getRandomNeedleUnlockCost,
@@ -18,6 +19,7 @@ import {
   load,
   purchaseUpgrade,
   recordShot,
+  recordChallengeVictory,
   recordVictory,
   save,
   unlockRandomNeedle,
@@ -116,6 +118,7 @@ describe("ProgressionStore v3 persistence", () => {
           upgradesPurchased: 7,
         },
         unlockedSkills: ["steady-hand", "time-seam"],
+        dailySystems: migrated.dailySystems,
       }),
     );
     expect(JSON.parse(storage.getItem(PROGRESSION_SAVE_KEY) ?? "null")).toEqual(
@@ -130,7 +133,8 @@ describe("ProgressionStore v3 persistence", () => {
       JSON.stringify({ bestStage: 9, thread: 123, muted: true }),
     );
 
-    expect(load(storage)).toEqual(
+    const migrated = load(storage);
+    expect(migrated).toEqual(
       createState({
         highestStageCleared: 8,
         thread: 123,
@@ -141,6 +145,7 @@ describe("ProgressionStore v3 persistence", () => {
           bossesDefeated: 1,
           upgradesPurchased: 0,
         },
+        dailySystems: migrated.dailySystems,
       }),
     );
   });
@@ -188,7 +193,8 @@ describe("ProgressionStore v3 persistence", () => {
       }),
     );
 
-    expect(load(storage)).toEqual(
+    const normalized = load(storage);
+    expect(normalized).toEqual(
       createState({
         thread: 18,
         upgrades: { power: 5, precision: 0, speed: 2, ward: 4 },
@@ -201,6 +207,7 @@ describe("ProgressionStore v3 persistence", () => {
         ownedNeedles: ["silver", "bone"],
         ownedBackgrounds: ["auto", "moon-garden"],
         claimedQuestIds: ["first-fifty"],
+        dailySystems: normalized.dailySystems,
       }),
     );
   });
@@ -300,6 +307,16 @@ describe("expensive upgrade economy", () => {
 });
 
 describe("needles, skills and backgrounds", () => {
+  it("equips only active abilities unlocked by campaign progress", () => {
+    const starter = createState();
+    expect(equipActiveAbility(starter, "magnetic-stitch")).toBe(starter);
+
+    const reached = createState({ highestStageCleared: 6 });
+    const equipped = equipActiveAbility(reached, "magnetic-stitch");
+    expect(equipped.equippedActiveAbility).toBe("magnetic-stitch");
+    expect(equipped.highestStageCleared).toBe(6);
+  });
+
   it("unlocks a random needle without repeats and uses escalating prices", () => {
     const firstState = createState({ thread: 1_000 });
     expect(getRandomNeedleUnlockCost(firstState)).toBe(90);
@@ -434,6 +451,16 @@ describe("run records", () => {
 
     expect(victory.highestStageCleared).toBe(12);
     expect(victory.stats.monstersDefeated).toBe(4);
+    expect(victory.stats.bossesDefeated).toBe(1);
+  });
+
+  it("rewards a side-route victory without advancing the campaign checkpoint", () => {
+    const state = createState({ highestStageCleared: 7, thread: 4 });
+    const victory = recordChallengeVictory(state, true, 3);
+
+    expect(victory.highestStageCleared).toBe(7);
+    expect(victory.thread).toBe(7);
+    expect(victory.stats.monstersDefeated).toBe(1);
     expect(victory.stats.bossesDefeated).toBe(1);
   });
 });

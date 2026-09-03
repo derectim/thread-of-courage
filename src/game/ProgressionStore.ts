@@ -11,6 +11,35 @@ import {
   type QuestId,
   type SkillId,
 } from "./meta";
+import {
+  ACTIVE_ABILITIES,
+  DEFAULT_ACTIVE_ABILITY_ID,
+  normalizeActiveAbilityId,
+  type ActiveAbilityId,
+} from "./ActiveAbilities";
+import {
+  createDailySystemsState,
+  normalizeDailySystemsState,
+  type DailySelectionContext,
+  type DailySystemsState,
+} from "./DailySystems";
+import {
+  createNeedleMasteryState,
+  normalizeNeedleMasteryState,
+  type NeedleMasteryState,
+} from "./NeedleMastery";
+import {
+  createSeasonPassState,
+  syncSeasonPassState,
+  type SeasonPassState,
+} from "./SeasonPass";
+import {
+  createWeeklyRoute,
+  createWeeklyRouteProgress,
+  syncWeeklyRouteProgress,
+  type WeeklyRouteProgress,
+} from "./WeeklyRoute";
+import { MONSTERS, ROOMS, getMonsterForStage } from "./content";
 
 export const PROGRESSION_SAVE_KEY = "thread-of-courage-save-v3";
 export const V2_SAVE_KEY = "thread-of-courage-save-v2";
@@ -45,6 +74,13 @@ export interface ProgressionState {
   readonly unlockedSkills: readonly SkillId[];
   readonly equippedSkill: SkillId;
   readonly claimedQuestIds: readonly QuestId[];
+  readonly equippedActiveAbility: ActiveAbilityId;
+  readonly dailySystems: DailySystemsState;
+  readonly cosmeticFragments: number;
+  readonly needleMastery: NeedleMasteryState;
+  readonly weeklyRoute: WeeklyRouteProgress;
+  readonly seasonPass: SeasonPassState;
+  readonly ownedSeasonCosmetics: readonly string[];
 }
 
 export interface ProgressionStorage {
@@ -83,6 +119,7 @@ function createUpgradeLevels(): Record<UpgradeId, UpgradeLevel> {
 }
 
 export function createDefaultState(): ProgressionState {
+  const weeklyRoute = createWeeklyRoute(new Date());
   return {
     version: PROGRESSION_SAVE_VERSION,
     highestStageCleared: 0,
@@ -103,6 +140,19 @@ export function createDefaultState(): ProgressionState {
     unlockedSkills: ["steady-hand"],
     equippedSkill: "steady-hand",
     claimedQuestIds: [],
+    equippedActiveAbility: DEFAULT_ACTIVE_ABILITY_ID,
+    dailySystems: createDailySystemsState(new Date(), {
+      availableNeedleIds: ["silver"],
+      availableRoomIds: ["attic"],
+      availableMonsterIds: [getMonsterForStage(1).id],
+      includeMainBossQuests: false,
+      includeMiniBossQuests: false,
+    }),
+    cosmeticFragments: 0,
+    needleMastery: createNeedleMasteryState(),
+    weeklyRoute: createWeeklyRouteProgress(weeklyRoute),
+    seasonPass: createSeasonPassState(),
+    ownedSeasonCosmetics: [],
   };
 }
 
@@ -141,6 +191,37 @@ function normalizeIdList<T extends string>(value: unknown, allowed: readonly T[]
   );
 }
 
+function normalizeStringList(value: unknown, maximum = 300): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(value.filter((item): item is string => typeof item === "string" && item.length <= 120)),
+  ).slice(0, maximum);
+}
+
+/** Builds a quest pool from content the player has already reached. */
+export function getDailySelectionContext(
+  highestStageCleared: number,
+  ownedNeedles: readonly NeedleSkinId[],
+): DailySelectionContext {
+  const stageCount = Math.max(1, Math.min(200, Math.floor(highestStageCleared)));
+  const reachedMonsters = Array.from(
+    new Set(
+      Array.from({ length: stageCount }, (_, index) => getMonsterForStage(index + 1).id),
+    ),
+  );
+  const reachedMonsterSet = new Set(reachedMonsters);
+  const reachedDefinitions = MONSTERS.filter((monster) => reachedMonsterSet.has(monster.id));
+  const reachedRoomSet = new Set(reachedDefinitions.map((monster) => monster.roomId));
+  const availableRoomIds = ROOMS.map((room) => room.id).filter((id) => reachedRoomSet.has(id));
+  return {
+    availableNeedleIds: ownedNeedles,
+    availableRoomIds: availableRoomIds.length > 0 ? availableRoomIds : ["attic"],
+    availableMonsterIds: reachedMonsters,
+    includeMainBossQuests: reachedDefinitions.some((monster) => monster.isBoss),
+    includeMiniBossQuests: reachedDefinitions.some((monster) => monster.isMiniBoss),
+  };
+}
+
 function normalizeState(value: Record<string, unknown>): ProgressionState {
   const upgrades = isRecord(value.upgrades) ? value.upgrades : {};
   const stats = isRecord(value.stats) ? value.stats : {};
@@ -169,6 +250,17 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
   const requestedSkill = SKILL_IDS.includes(value.equippedSkill as SkillId)
     ? (value.equippedSkill as SkillId)
     : "steady-hand";
+  const requestedActiveAbility = normalizeActiveAbilityId(value.equippedActiveAbility);
+  const activeAbilityDefinition = ACTIVE_ABILITIES.find(
+    (ability) => ability.id === requestedActiveAbility,
+  );
+  const equippedActiveAbility =
+    requestedActiveAbility === DEFAULT_ACTIVE_ABILITY_ID ||
+    (activeAbilityDefinition?.unlockStage ?? Number.POSITIVE_INFINITY) <= highestStageCleared
+      ? requestedActiveAbility
+      : DEFAULT_ACTIVE_ABILITY_ID;
+  const dailyContext = getDailySelectionContext(highestStageCleared, ownedNeedles);
+  const weeklyRouteDefinition = createWeeklyRoute(new Date());
 
   return {
     version: PROGRESSION_SAVE_VERSION,
@@ -197,6 +289,13 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
     unlockedSkills,
     equippedSkill: unlockedSkills.includes(requestedSkill) ? requestedSkill : "steady-hand",
     claimedQuestIds: normalizeIdList(value.claimedQuestIds, QUEST_IDS),
+    equippedActiveAbility,
+    dailySystems: normalizeDailySystemsState(value.dailySystems, new Date(), dailyContext),
+    cosmeticFragments: normalizeInteger(value.cosmeticFragments, 0),
+    needleMastery: normalizeNeedleMasteryState(value.needleMastery),
+    weeklyRoute: syncWeeklyRouteProgress(value.weeklyRoute, weeklyRouteDefinition),
+    seasonPass: syncSeasonPassState(value.seasonPass),
+    ownedSeasonCosmetics: normalizeStringList(value.ownedSeasonCosmetics),
   };
 }
 
@@ -337,6 +436,21 @@ export function equipSkill(state: ProgressionState, id: SkillId): ProgressionSta
   return { ...state, equippedSkill: id };
 }
 
+export function equipActiveAbility(
+  state: ProgressionState,
+  id: ActiveAbilityId,
+): ProgressionState {
+  const definition = ACTIVE_ABILITIES.find((ability) => ability.id === id);
+  if (
+    !definition ||
+    (id !== DEFAULT_ACTIVE_ABILITY_ID && definition.unlockStage > state.highestStageCleared) ||
+    state.equippedActiveAbility === id
+  ) {
+    return state;
+  }
+  return { ...state, equippedActiveAbility: id };
+}
+
 export function unlockBackground(state: ProgressionState, id: BackgroundId): ProgressionState {
   if (state.ownedBackgrounds.includes(id)) return { ...state, equippedBackground: id };
   const definition = getBackground(id);
@@ -377,6 +491,24 @@ export function recordVictory(
     highestStageCleared,
     thread: state.thread + reward,
     unlockedSkills,
+    stats: {
+      ...state.stats,
+      monstersDefeated: state.stats.monstersDefeated + 1,
+      bossesDefeated: state.stats.bossesDefeated + (isBoss ? 1 : 0),
+    },
+  };
+}
+
+/** Awards a side-route victory without moving the player's main campaign checkpoint. */
+export function recordChallengeVictory(
+  state: ProgressionState,
+  isBoss: boolean,
+  reward: number,
+): ProgressionState {
+  const safeReward = normalizeInteger(reward, 0);
+  return {
+    ...state,
+    thread: state.thread + safeReward,
     stats: {
       ...state.stats,
       monstersDefeated: state.stats.monstersDefeated + 1,

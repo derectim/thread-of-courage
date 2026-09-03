@@ -1,7 +1,15 @@
 import Phaser from "phaser";
 
-import RaidScene, { CONFIRMED_HIT_EVENT } from "./game/RaidScene";
-import { createPlatformAdapter } from "./platform";
+import RaidScene, {
+  CONFIRMED_HIT_EVENT,
+  PROGRESSION_SAVED_EVENT,
+} from "./game/RaidScene";
+import type { ProgressionState } from "./game/ProgressionStore";
+import {
+  createPlatformAdapter,
+  pushProgressToCloud,
+  synchronizeProgressOnStartup,
+} from "./platform";
 import "./style.css";
 
 const loading = document.querySelector<HTMLElement>("#loading");
@@ -17,9 +25,34 @@ function showStartupError(reason: unknown): void {
 window.addEventListener("error", (event) => showStartupError(event.error ?? event.message));
 window.addEventListener("unhandledrejection", (event) => showStartupError(event.reason));
 
-let game: Phaser.Game;
+const platform = createPlatformAdapter();
+let game: Phaser.Game | null = null;
+let cloudSaveTimer: number | null = null;
+let pendingCloudState: ProgressionState | null = null;
+let cloudWriteChain: Promise<unknown> = Promise.resolve();
 
-try {
+const flushCloudProgress = (): void => {
+  if (cloudSaveTimer !== null) {
+    window.clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
+  }
+  const state = pendingCloudState;
+  pendingCloudState = null;
+  if (state) {
+    cloudWriteChain = cloudWriteChain.then(() => pushProgressToCloud(platform, state));
+  }
+};
+
+const queueCloudProgress = (state: ProgressionState): void => {
+  pendingCloudState = state;
+  if (cloudSaveTimer !== null) window.clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = window.setTimeout(flushCloudProgress, 700);
+};
+
+async function startGame(): Promise<void> {
+  await platform.initialize();
+  await synchronizeProgressOnStartup(platform);
+
   game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: "game",
@@ -45,31 +78,39 @@ try {
       roundPixels: true,
     },
   });
-} catch (error) {
-  showStartupError(error);
-  throw error;
+
+  const handleConfirmedHit = (): void => platform.hitFeedback();
+  game.events.on(CONFIRMED_HIT_EVENT, handleConfirmedHit);
+  game.events.on(PROGRESSION_SAVED_EVENT, queueCloudProgress);
+  const unsubscribeLifecycle = platform.subscribeLifecycle({
+    onPause: () => {
+      flushCloudProgress();
+      if (!game) return;
+      const raidScene = game.scene.getScene("raid");
+      if (raidScene instanceof RaidScene) raidScene.pauseForPlatform();
+      game.loop.sleep();
+    },
+    onResume: () => {
+      if (!game) return;
+      const raidScene = game.scene.getScene("raid");
+      if (raidScene instanceof RaidScene) raidScene.resumeForPlatform();
+      game.loop.wake();
+    },
+  });
+
+  window.addEventListener("beforeunload", () => {
+    flushCloudProgress();
+    if (!game) return;
+    game.events.off(CONFIRMED_HIT_EVENT, handleConfirmedHit);
+    game.events.off(PROGRESSION_SAVED_EVENT, queueCloudProgress);
+    unsubscribeLifecycle();
+    platform.destroy();
+    game.destroy(true);
+    game = null;
+  });
 }
 
-const platform = createPlatformAdapter();
-const handleConfirmedHit = (): void => platform.hitFeedback();
-game.events.on(CONFIRMED_HIT_EVENT, handleConfirmedHit);
-const unsubscribeLifecycle = platform.subscribeLifecycle({
-  onPause: () => {
-    const raidScene = game.scene.getScene("raid");
-    if (raidScene instanceof RaidScene) raidScene.pauseForPlatform();
-    game.loop.sleep();
-  },
-  onResume: () => {
-    const raidScene = game.scene.getScene("raid");
-    if (raidScene instanceof RaidScene) raidScene.resumeForPlatform();
-    game.loop.wake();
-  },
-});
-void platform.initialize();
-
-window.addEventListener("beforeunload", () => {
-  game.events.off(CONFIRMED_HIT_EVENT, handleConfirmedHit);
-  unsubscribeLifecycle();
+void startGame().catch((error) => {
+  showStartupError(error);
   platform.destroy();
-  game.destroy(true);
 });

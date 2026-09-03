@@ -1967,3 +1967,1079 @@ button {
     display: none;
   }
 }
+
+/* Live meta systems: daily board, mastery, weekly route and season album */
+.nav-reward-badge {
+  position: absolute;
+  z-index: 3;
+  top: 1px;
+  right: calc(50% - 28px);
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0 4px;
+  border: 2px solid #19243a;
+  border-radius: 999px;
+  color: #301c18;
+  background: linear-gradient(180deg, #ffe277, #eda13b);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.42);
+  font-size: 8px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.nav-streak-badge {
+  position: absolute;
+  z-index: 3;
+  top: 3px;
+  left: calc(50% - 31px);
+  min-width: 24px;
+  padding: 2px 4px;
+  border: 1px solid rgba(255, 225, 140, 0.42);
+  border-radius: 999px;
+  color: #ffe9a8;
+  background: rgba(90, 49, 78, 0.94);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.34);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.ability-card {
+  grid-template-columns: 60px minmax(0, 1fr) 106px;
+  min-height: 112px;
+  padding: 11px 12px;
+  background:
+    linear-gradient(145deg, rgba(238, 244, 247, 0.99), rgba(195, 215, 219, 0.92)),
+    repeating-linear-gradient(135deg, rgba(35, 83, 89, 0.05) 0 1px, transparent 1px 5px);
+}
+
+.ability-emblem {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  color: #d7fff3;
+  background: radial-gradient(circle at 34% 27%, #52a498, #315c6c 56%, #273147);
+  box-shadow: 0 5px 0 rgba(32, 46, 51, 0.25), inset 0 0 0 3px rgba(255, 255, 255, 0.08);
+  font-family: Georgia, serif;
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.ability-card.is-equipped {
+  border-color: rgba(34, 139, 119, 0.65);
+  background: linear-gradient(145deg, rgba(232, 251, 237, 0.99), rgba(181, 225, 210, 0.92));
+}
+
+.ability-card.is-equipped .card-kicker > strong {
+  background: #2f806f;
+}
+
+.ability-card.is-locked {
+  filter: saturate(0.48);
+}
+
+.daily-board,
+.season-album {
+  position: relative;
+  margin-bottom: 15px;
+}
+
+.meta-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 3px 8px;
+}
+
+.meta-section-heading > div > span,
+.weekly-copy > span,
+.streak-copy > span,
+.season-hero > div > span,
+.mastery-overview > span {
+  display: block;
+  color: #8a5570;
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.meta-section-heading h3 {
+  margin: 2px 0 0;
+  color: #412d25;
+  font-family: Georgia, serif;
+  font-size: 18px;
+}
+
+.reroll-button {
+  flex: none;
+  min-height: 34px;
+  padding: 5px 9px;
+  border: 1px solid rgba(69, 64, 72, 0.42);
+  border-radius: 10px;
+  color: #edfdf5;
+  background: linear-gradient(180deg, #4d7f80, #31555d);
+  box-shadow: 0 3px 0 #263e45;
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.reroll-button span {
+  margin-right: 2px;
+  font-size: 15px;
+  vertical-align: -1px;
+}
+
+.reroll-button:disabled {
+  color: rgba(63, 55, 51, 0.55);
+  background: linear-gradient(#d9d1c4, #aaa39a);
+  box-shadow: 0 2px 0 #7f776f;
+  cursor: default;
+}
+
+.daily-summary,
+.permanent-summary,
+.season-xp-copy,
+.weekly-reward {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #85634d;
+  font-size: 9px;
+}
+
+.daily-summary {
+  margin: 0 3px 9px;
+  padding: 6px 9px;
+  border: 1px dashed rgba(54, 121, 104, 0.32);
+  border-radius: 9px;
+  background: rgba(206, 233, 215, 0.35);
+}
+
+.daily-summary strong,
+.permanent-summary strong,
+.season-xp-copy strong,
+.weekly-reward strong {
+  color: #65402f;
+  font-size: 9px;
+}
+
+.daily-quest-card {
+  grid-template-columns: 58px minmax(0, 1fr) 98px;
+  min-height: 126px;
+  padding: 12px;
+}
+
+.daily-emblem {
+  background: radial-gradient(circle at 34% 28%, #629789, #3d6866 58%, #293b4d);
+}
+
+.daily-quest-card.is-claimed {
+  filter: saturate(0.65);
+}
+
+.streak-card,
+.weekly-route-card,
+.season-hero,
+.season-premium-box,
+.mastery-overview {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(82, 48, 38, 0.3);
+  border-radius: 18px;
+  box-shadow: 0 6px 17px rgba(65, 38, 29, 0.16), inset 0 1px rgba(255, 255, 255, 0.62);
+}
+
+.streak-card {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  min-height: 150px;
+  align-items: center;
+  gap: 4px;
+  margin: 18px 0;
+  padding: 11px 14px 11px 7px;
+  background:
+    radial-gradient(circle at 14% 50%, rgba(232, 180, 77, 0.2), transparent 35%),
+    linear-gradient(145deg, rgba(246, 231, 218, 0.98), rgba(204, 194, 203, 0.93));
+}
+
+.streak-card::after,
+.weekly-route-card::after,
+.season-hero::after,
+.season-premium-box::after,
+.mastery-overview::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 5px;
+  border: 1px dashed rgba(111, 69, 51, 0.2);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.streak-card > img {
+  display: block;
+  width: 132px;
+  height: 132px;
+  object-fit: contain;
+  filter: drop-shadow(0 7px 8px rgba(50, 28, 37, 0.24));
+}
+
+.streak-card.has-reward {
+  border-color: rgba(204, 133, 37, 0.58);
+  background:
+    radial-gradient(circle at 14% 50%, rgba(255, 210, 87, 0.38), transparent 38%),
+    linear-gradient(145deg, rgba(255, 242, 207, 0.99), rgba(223, 191, 157, 0.94));
+}
+
+.streak-copy {
+  min-width: 0;
+}
+
+.streak-copy h3,
+.weekly-copy h3,
+.season-hero h3 {
+  margin: 3px 0 5px;
+  color: #40291f;
+  font-family: Georgia, serif;
+  font-size: 17px;
+  line-height: 1.05;
+}
+
+.streak-copy p,
+.weekly-copy p,
+.season-hero p,
+.season-premium-box p {
+  margin: 0;
+  color: #795947;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.streak-meter,
+.season-xp-bar,
+.mastery-line > div {
+  height: 9px;
+  padding: 2px;
+  overflow: hidden;
+  border: 1px solid rgba(75, 50, 39, 0.16);
+  border-radius: 999px;
+  background: rgba(61, 46, 45, 0.14);
+  box-shadow: inset 0 1px 2px rgba(49, 33, 29, 0.15);
+}
+
+.streak-meter {
+  margin-top: 9px;
+}
+
+.streak-meter span,
+.season-xp-bar span,
+.mastery-line i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #855071, #edb64b);
+  box-shadow: 0 0 8px rgba(211, 144, 50, 0.3);
+}
+
+.streak-next {
+  display: block;
+  margin-top: 5px;
+  color: #805c48;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.streak-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.streak-claim-button,
+.route-button,
+.route-claim-button,
+.season-premium-box button {
+  display: flex;
+  min-height: 41px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid rgba(81, 44, 28, 0.48);
+  border-radius: 11px;
+  color: #321f18;
+  background: linear-gradient(180deg, #ffcf59, #e39530);
+  box-shadow: 0 3px 0 #95502a;
+  cursor: pointer;
+}
+
+.streak-claim-button span,
+.route-button span,
+.route-claim-button span,
+.season-premium-box button span {
+  font-size: 9px;
+  font-weight: 950;
+}
+
+.streak-claim-button small,
+.route-button small,
+.route-claim-button small,
+.season-premium-box button small {
+  font-size: 7px;
+  font-weight: 850;
+}
+
+.streak-claim-button.is-grand {
+  background: linear-gradient(180deg, #ffe98a, #dc8e34);
+  box-shadow: 0 3px 0 #854026, 0 0 12px rgba(233, 174, 53, 0.36);
+}
+
+.weekly-route-card {
+  display: grid;
+  grid-template-columns: 138px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+  margin: 18px 0 8px;
+  padding: 12px;
+  background:
+    radial-gradient(circle at 12% 34%, rgba(119, 77, 126, 0.2), transparent 30%),
+    linear-gradient(145deg, rgba(238, 229, 237, 0.99), rgba(191, 207, 211, 0.94));
+}
+
+.weekly-art {
+  display: grid;
+  grid-row: 1 / 3;
+  width: 136px;
+  height: 136px;
+  place-items: center;
+}
+
+.weekly-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 7px 8px rgba(45, 29, 46, 0.24));
+}
+
+.weekly-copy {
+  min-width: 0;
+}
+
+.weekly-copy p strong {
+  color: #5c3b35;
+}
+
+.weekly-nodes {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  margin: 3px 0 2px;
+  padding: 0;
+  list-style: none;
+}
+
+.weekly-node {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  gap: 2px;
+  padding: 6px 2px;
+  border: 1px solid rgba(74, 53, 48, 0.2);
+  border-radius: 11px;
+  color: #876b5d;
+  background: rgba(255, 249, 236, 0.48);
+}
+
+.weekly-node:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 18px;
+  left: calc(100% + 1px);
+  width: 7px;
+  border-top: 2px dotted rgba(108, 65, 84, 0.42);
+}
+
+.weekly-node > span {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border: 2px solid rgba(116, 80, 70, 0.23);
+  border-radius: 50%;
+  background: #ded3c5;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.weekly-node small {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 6px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weekly-node.is-done {
+  color: #376e61;
+  background: rgba(195, 228, 208, 0.68);
+}
+
+.weekly-node.is-done > span {
+  color: #f6fff5;
+  border-color: #3e8572;
+  background: #4e9b83;
+}
+
+.weekly-node.is-active {
+  color: #6b3d55;
+  border-color: rgba(129, 65, 96, 0.56);
+  background: rgba(236, 207, 224, 0.76);
+  box-shadow: 0 0 0 2px rgba(127, 60, 94, 0.08);
+}
+
+.weekly-node.is-active > span {
+  color: #fff8dc;
+  border-color: #d7ad55;
+  background: linear-gradient(145deg, #865173, #523c60);
+}
+
+.weekly-node.is-locked {
+  opacity: 0.62;
+}
+
+.weekly-reward {
+  grid-column: 1 / -1;
+  padding: 7px 9px;
+  border: 1px dashed rgba(126, 75, 102, 0.32);
+  border-radius: 9px;
+  background: rgba(255, 247, 231, 0.4);
+}
+
+.weekly-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.route-button,
+.route-claim-button {
+  min-height: 48px;
+}
+
+.route-claim-button {
+  color: #f6fff7;
+  background: linear-gradient(180deg, #619c8d, #397362);
+  box-shadow: 0 3px 0 #285346;
+}
+
+.route-button:disabled,
+.route-claim-button:disabled {
+  color: rgba(55, 48, 45, 0.56);
+  background: linear-gradient(#d8d1c6, #aaa39a);
+  box-shadow: 0 2px 0 #7f776f;
+  cursor: default;
+}
+
+.permanent-summary {
+  margin: 0 3px 9px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: rgba(126, 89, 65, 0.08);
+}
+
+.mastery-overview {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 2px 10px;
+  margin: 0 0 11px;
+  padding: 10px 14px;
+  background:
+    radial-gradient(circle at 10% 50%, rgba(124, 49, 95, 0.14), transparent 24%),
+    linear-gradient(145deg, rgba(245, 232, 243, 0.98), rgba(205, 215, 225, 0.92));
+}
+
+.mastery-overview > span {
+  grid-row: 1 / 3;
+  padding-right: 10px;
+  border-right: 1px dashed rgba(110, 68, 89, 0.28);
+}
+
+.mastery-overview strong {
+  color: #57334c;
+  font-family: Georgia, serif;
+  font-size: 15px;
+}
+
+.mastery-overview small {
+  color: #7c604e;
+  font-size: 8px;
+}
+
+.mastery-line {
+  display: grid;
+  grid-template-columns: auto minmax(60px, 1fr);
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.mastery-line > span {
+  color: #79516a;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.mastery-line > span b {
+  color: #4e3043;
+}
+
+.mastery-line > div {
+  height: 7px;
+}
+
+.mastery-rewards {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.mastery-rewards > span {
+  position: relative;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid rgba(74, 53, 47, 0.2);
+  border-radius: 8px;
+  color: #998b81;
+  background: rgba(88, 72, 64, 0.1);
+  font-size: 11px;
+}
+
+.mastery-rewards > span.is-unlocked {
+  color: #fff0ae;
+  border-color: rgba(146, 94, 47, 0.43);
+  background: linear-gradient(145deg, #81506f, #3b5263);
+  box-shadow: 0 2px 5px rgba(54, 38, 48, 0.24);
+}
+
+.mastery-rewards span small {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  width: 12px;
+  height: 12px;
+  place-items: center;
+  border-radius: 50%;
+  color: #38251e;
+  background: #f0c55e;
+  font-size: 6px;
+  font-weight: 950;
+}
+
+.mastery-next {
+  margin-top: 5px !important;
+  color: #845a6e !important;
+  font-size: 7px !important;
+}
+
+.season-hero {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr) auto;
+  min-height: 130px;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px 9px 5px;
+  background:
+    radial-gradient(circle at 12% 50%, rgba(232, 180, 77, 0.24), transparent 34%),
+    linear-gradient(145deg, rgba(240, 226, 239, 0.99), rgba(187, 204, 215, 0.94));
+}
+
+.season-hero > img {
+  display: block;
+  width: 116px;
+  height: 116px;
+  object-fit: contain;
+  filter: drop-shadow(0 7px 8px rgba(44, 26, 46, 0.25));
+}
+
+.season-hero > b {
+  min-width: 42px;
+  padding: 7px;
+  border: 1px solid rgba(255, 229, 154, 0.58);
+  border-radius: 999px;
+  color: #fff5cf;
+  background: linear-gradient(180deg, #7e4d70, #45364f);
+  box-shadow: 0 3px 0 rgba(45, 28, 41, 0.28);
+  font-size: 10px;
+  text-align: center;
+}
+
+.season-xp-copy {
+  margin: 9px 3px 5px;
+}
+
+.season-xp-bar {
+  height: 11px;
+  margin: 0 3px 10px;
+}
+
+.season-premium-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 11px;
+  padding: 11px 12px;
+  background: linear-gradient(145deg, rgba(255, 241, 204, 0.97), rgba(219, 184, 126, 0.92));
+}
+
+.season-premium-box > div > span {
+  display: block;
+  margin-bottom: 4px;
+  color: #7b4a2f;
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: 0.1em;
+}
+
+.season-premium-box.is-enabled {
+  border-color: rgba(48, 133, 111, 0.52);
+  background: linear-gradient(145deg, rgba(231, 248, 226, 0.98), rgba(186, 220, 195, 0.93));
+}
+
+.season-premium-box button {
+  min-width: 94px;
+}
+
+.season-premium-box button:disabled {
+  color: #315f54;
+  background: linear-gradient(#c9e5d4, #9ebfad);
+  box-shadow: 0 2px 0 #6b8d80;
+  cursor: default;
+}
+
+.season-tasks {
+  margin-bottom: 12px;
+  border: 1px solid rgba(76, 49, 39, 0.2);
+  border-radius: 13px;
+  background: rgba(255, 249, 235, 0.48);
+}
+
+.season-tasks summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  color: #52362c;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.season-tasks summary small {
+  color: #87634d;
+  font-size: 8px;
+}
+
+.season-tasks ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px 8px;
+  list-style: none;
+}
+
+.season-task {
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 7px;
+  border-radius: 8px;
+  background: rgba(99, 74, 58, 0.07);
+}
+
+.season-task > span {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border-radius: 50%;
+  color: #f8e6ad;
+  background: #71506a;
+  font-size: 10px;
+}
+
+.season-task > div strong,
+.season-task > div small {
+  display: block;
+}
+
+.season-task > div strong {
+  color: #52372d;
+  font-size: 9px;
+}
+
+.season-task > div small {
+  margin-top: 2px;
+  color: #856552;
+  font-size: 7px;
+}
+
+.season-task > b {
+  color: #744b37;
+  font-size: 8px;
+}
+
+.season-task.is-complete {
+  background: rgba(173, 218, 190, 0.32);
+}
+
+.season-task.is-complete > span {
+  background: #41816e;
+}
+
+.season-tier-heading {
+  display: grid;
+  grid-template-columns: 58px 1fr 1fr;
+  gap: 6px;
+  align-items: end;
+  margin: 0 3px 6px;
+  color: #805d49;
+  font-size: 7px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.season-tier-heading strong {
+  grid-column: 1;
+  grid-row: 1;
+  color: #634532;
+  font-size: 8px;
+}
+
+.season-tier-heading span:first-child {
+  grid-column: 2;
+}
+
+.season-tier-heading span:last-child {
+  grid-column: 3;
+  color: #966120;
+}
+
+.season-tier-list {
+  display: grid;
+  gap: 7px;
+}
+
+.season-tier {
+  display: grid;
+  grid-template-columns: 58px repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid rgba(81, 51, 41, 0.22);
+  border-radius: 13px;
+  background: rgba(255, 249, 235, 0.62);
+  box-shadow: 0 3px 8px rgba(68, 42, 31, 0.09);
+}
+
+.season-tier.is-locked {
+  filter: saturate(0.5);
+  opacity: 0.78;
+}
+
+.season-tier.is-unlocked {
+  border-color: rgba(123, 71, 102, 0.42);
+  background: linear-gradient(145deg, rgba(249, 239, 246, 0.96), rgba(224, 217, 204, 0.94));
+}
+
+.season-tier.is-complete {
+  border-color: rgba(47, 133, 108, 0.42);
+}
+
+.season-tier-number {
+  display: grid;
+  align-content: center;
+  place-items: center;
+  border: 1px solid rgba(104, 63, 80, 0.28);
+  border-radius: 10px;
+  color: #fff4ce;
+  background: linear-gradient(145deg, #82516f, #394a60);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.06);
+}
+
+.season-tier-number span {
+  font-family: Georgia, serif;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.season-tier-number small {
+  font-size: 6px;
+  font-weight: 850;
+}
+
+.season-track {
+  display: flex;
+  min-width: 0;
+  min-height: 101px;
+  flex-direction: column;
+  padding: 7px;
+  border-radius: 9px;
+  background: rgba(255, 251, 241, 0.68);
+}
+
+.season-track > span {
+  color: #805d48;
+  font-size: 6px;
+  font-weight: 950;
+  letter-spacing: 0.07em;
+}
+
+.season-track > strong {
+  margin-top: 3px;
+  color: #493129;
+  font-size: 8px;
+  line-height: 1.15;
+}
+
+.season-track > small {
+  display: block;
+  margin: 3px 0 6px;
+  color: #866855;
+  font-size: 6px;
+  line-height: 1.2;
+}
+
+.season-track > button {
+  min-height: 25px;
+  margin-top: auto;
+  padding: 4px;
+  border: 1px solid rgba(72, 52, 43, 0.32);
+  border-radius: 7px;
+  color: #273f39;
+  background: linear-gradient(#bfe7d9, #78b8a5);
+  box-shadow: 0 2px 0 #4b7f70;
+  font-size: 7px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.season-track > button:disabled {
+  color: rgba(58, 49, 45, 0.53);
+  background: #ccc4b8;
+  box-shadow: 0 1px 0 #948a7d;
+  cursor: default;
+}
+
+.premium-track {
+  border: 1px solid rgba(191, 132, 43, 0.25);
+  background: rgba(244, 221, 166, 0.34);
+}
+
+.premium-track > span {
+  color: #a26d22;
+}
+
+.premium-track.is-enabled > button:not(:disabled) {
+  color: #3b2513;
+  background: linear-gradient(#ffe58b, #dfa33a);
+  box-shadow: 0 2px 0 #9a6127;
+}
+
+.shop-divider {
+  margin-top: 25px;
+}
+
+@media (orientation: portrait), (max-width: 780px) {
+  .ability-card,
+  .daily-quest-card {
+    grid-template-columns: 48px minmax(0, 1fr) 78px;
+    gap: 7px;
+    padding: 9px;
+  }
+
+  .ability-emblem {
+    width: 45px;
+    height: 45px;
+    font-size: 20px;
+  }
+
+  .streak-card {
+    grid-template-columns: 93px minmax(0, 1fr);
+    min-height: 124px;
+    padding: 9px 10px 9px 4px;
+  }
+
+  .streak-card > img {
+    width: 94px;
+    height: 94px;
+  }
+
+  .weekly-route-card {
+    grid-template-columns: 94px minmax(0, 1fr);
+    gap: 5px 8px;
+    padding: 9px;
+  }
+
+  .weekly-art {
+    width: 92px;
+    height: 92px;
+  }
+
+  .weekly-copy h3,
+  .streak-copy h3 {
+    font-size: 14px;
+  }
+
+  .weekly-copy p,
+  .streak-copy p {
+    font-size: 8px;
+  }
+
+  .weekly-node {
+    padding: 5px 1px;
+  }
+
+  .weekly-node > span {
+    width: 22px;
+    height: 22px;
+  }
+
+  .weekly-node:not(:last-child)::after {
+    top: 16px;
+    width: 5px;
+  }
+
+  .mastery-overview {
+    padding: 9px 10px;
+  }
+
+  .mastery-line {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .mastery-rewards {
+    gap: 3px;
+  }
+
+  .mastery-rewards > span {
+    width: 23px;
+    height: 23px;
+  }
+
+  .needle-card {
+    min-height: 166px;
+  }
+
+  .season-hero {
+    grid-template-columns: 88px minmax(0, 1fr) auto;
+    min-height: 104px;
+    padding: 7px 9px 7px 3px;
+  }
+
+  .season-hero > img {
+    width: 88px;
+    height: 88px;
+  }
+
+  .season-hero h3 {
+    font-size: 15px;
+  }
+
+  .season-hero p {
+    font-size: 8px;
+  }
+
+  .season-hero > b {
+    min-width: 36px;
+    padding: 6px 4px;
+    font-size: 8px;
+  }
+
+  .season-premium-box {
+    padding: 9px;
+  }
+
+  .season-premium-box button {
+    min-width: 77px;
+    padding: 5px 7px;
+  }
+
+  .season-tier,
+  .season-tier-heading {
+    grid-template-columns: 45px repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .season-tier {
+    padding: 5px;
+  }
+
+  .season-tier-number span {
+    font-size: 17px;
+  }
+
+  .season-track {
+    min-height: 106px;
+    padding: 6px;
+  }
+
+  .season-track > strong {
+    font-size: 7px;
+  }
+}
+
+@media (max-width: 360px) {
+  .weekly-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .streak-card {
+    grid-template-columns: 80px minmax(0, 1fr);
+  }
+
+  .streak-card > img {
+    width: 82px;
+    height: 82px;
+  }
+
+  .season-hero {
+    grid-template-columns: 74px minmax(0, 1fr);
+  }
+
+  .season-hero > img {
+    width: 74px;
+    height: 74px;
+  }
+
+  .season-hero > b {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+  }
+}

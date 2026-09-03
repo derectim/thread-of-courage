@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   HIT_FEEDBACK_DURATION_MS,
   VK_APP_ID,
+  VK_CLOUD_CHUNK_SIZE,
+  VK_CLOUD_PROGRESS_KEY,
   createPlatformAdapter,
   detectVkLaunchContext,
   type PlatformDocument,
@@ -27,8 +29,15 @@ class FakeBridge implements VkBridgeLike {
   public tapticSupported = true;
   public readonly send = vi.fn(
     (
-      _method: "VKWebAppInit" | "VKWebAppTapticImpactOccurred",
-      _params?: { readonly style: "medium" },
+      _method:
+        | "VKWebAppInit"
+        | "VKWebAppStorageGet"
+        | "VKWebAppStorageSet"
+        | "VKWebAppTapticImpactOccurred",
+      _params?:
+        | { readonly style: "medium" }
+        | { readonly keys: readonly string[] }
+        | { readonly key: string; readonly value: string },
     ) => this.sendResult,
   );
   public readonly supportsAsync = vi.fn(
@@ -100,7 +109,88 @@ describe("platform adapter", () => {
     expect(adapter.kind).toBe("standalone");
     expect(adapter.launchContext).toBeNull();
     await expect(adapter.initialize()).resolves.toBe(false);
+    await expect(adapter.loadCloudProgress()).resolves.toBeNull();
+    await expect(adapter.saveCloudProgress("save")).resolves.toBe(false);
     expect(bridge.send).not.toHaveBeenCalled();
+
+    adapter.destroy();
+  });
+
+  it("loads and saves VK cloud progress after one initialization", async () => {
+    const bridge = new FakeBridge();
+    bridge.send.mockImplementation((method) => {
+      if (method === "VKWebAppStorageGet") {
+        return Promise.resolve({
+          keys: [{ key: VK_CLOUD_PROGRESS_KEY, value: "cloud-save" }],
+        });
+      }
+      return Promise.resolve({ result: true });
+    });
+    const adapter = createPlatformAdapter({
+      window: fakeWindow(vkSearch()),
+      document: new FakeDocument(),
+      bridge,
+    });
+
+    await expect(adapter.loadCloudProgress()).resolves.toBe("cloud-save");
+    await expect(adapter.saveCloudProgress("next-save")).resolves.toBe(true);
+    expect(bridge.send).toHaveBeenCalledWith("VKWebAppStorageGet", {
+      keys: [VK_CLOUD_PROGRESS_KEY],
+    });
+    expect(bridge.send).toHaveBeenCalledWith("VKWebAppStorageSet", {
+      key: VK_CLOUD_PROGRESS_KEY,
+      value: "next-save",
+    });
+    expect(
+      bridge.send.mock.calls.filter(([method]) => method === "VKWebAppInit"),
+    ).toHaveLength(1);
+
+    adapter.destroy();
+  });
+
+  it("splits a large VK save into safe chunks and joins it on load", async () => {
+    const bridge = new FakeBridge();
+    const storage = new Map<string, string>();
+    bridge.send.mockImplementation((method, params) => {
+      if (method === "VKWebAppStorageSet" && params && "key" in params) {
+        storage.set(params.key, params.value);
+        return Promise.resolve({ result: true });
+      }
+      if (method === "VKWebAppStorageGet" && params && "keys" in params) {
+        return Promise.resolve({
+          keys: params.keys.map((key) => ({ key, value: storage.get(key) ?? "" })),
+        });
+      }
+      return Promise.resolve({ result: true });
+    });
+    const adapter = createPlatformAdapter({
+      window: fakeWindow(vkSearch()),
+      document: new FakeDocument(),
+      bridge,
+    });
+    const progress = "п".repeat(VK_CLOUD_CHUNK_SIZE + 731);
+
+    await expect(adapter.saveCloudProgress(progress)).resolves.toBe(true);
+    await expect(adapter.loadCloudProgress()).resolves.toBe(progress);
+    expect(storage.get(VK_CLOUD_PROGRESS_KEY)).toContain("thread-chunks-v1");
+
+    adapter.destroy();
+  });
+
+  it("keeps cloud failures out of gameplay", async () => {
+    const bridge = new FakeBridge();
+    bridge.send.mockImplementation((method) => {
+      if (method === "VKWebAppInit") return Promise.resolve({ result: true });
+      return Promise.reject(new Error("storage unavailable"));
+    });
+    const adapter = createPlatformAdapter({
+      window: fakeWindow(vkSearch()),
+      document: new FakeDocument(),
+      bridge,
+    });
+
+    await expect(adapter.loadCloudProgress()).resolves.toBeNull();
+    await expect(adapter.saveCloudProgress("save")).resolves.toBe(false);
 
     adapter.destroy();
   });

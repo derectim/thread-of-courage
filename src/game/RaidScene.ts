@@ -8,8 +8,10 @@ import {
   UPGRADE_DEFINITIONS,
   UPGRADE_IDS,
   getUpgradeCost,
+  getDailySelectionContext,
   load as loadProgression,
   purchaseUpgrade,
+  recordChallengeVictory,
   recordShot,
   recordVictory,
   save as saveProgression,
@@ -20,6 +22,7 @@ import {
 import {
   MONSTERS,
   PATTERN_NAMES,
+  ROOMS,
   getExpeditionNumber,
   getMonsterForStage,
   getRequiredHits,
@@ -28,6 +31,7 @@ import {
   type MovementPattern,
   type RoomDefinition,
 } from "./content";
+import { recordDailyGameplayEvent } from "./DailySystems";
 import { isAngleBlocked, normalizeAngle } from "./geometry";
 import {
   HERO_CROSSBOW_FRAMES,
@@ -46,6 +50,38 @@ import {
   type VictoryChoice,
 } from "./raidFlow";
 import {
+  TIME_LOOP_SPEED_MULTIPLIER,
+  activateAbility,
+  canActivateAbility,
+  consumeMagneticStitch,
+  consumeSpareKnot,
+  createActiveAbilityRuntime,
+  findMagneticHitAngle,
+  getActiveAbility,
+  getCooldownRemaining,
+  getRoomEffectState,
+  normalizeActiveAbilityId,
+  type ActiveAbilityId,
+  type ActiveAbilityRuntime,
+  type RoomEffectState,
+} from "./ActiveAbilities";
+import {
+  recordNeedleMasteryHit,
+  recordNeedleMasteryVictory,
+  type NeedleMasteryVictoryKind,
+} from "./NeedleMastery";
+import { recordSeasonPassEvent } from "./SeasonPass";
+import {
+  completeWeeklyRouteNode,
+  createWeeklyRoute,
+  getWeeklyModifier,
+  getWeeklyRouteStatus,
+  syncWeeklyRouteProgress,
+  type WeeklyModifierDefinition,
+  type WeeklyRouteDefinition,
+  type WeeklyRouteNode,
+} from "./WeeklyRoute";
+import {
   BACKGROUNDS,
   NEEDLE_SKINS,
   getBackground,
@@ -63,6 +99,7 @@ const BASE_NEEDLE_GAP = 0.085;
 const BASE_PROJECTILE_DURATION = 175;
 
 export const CONFIRMED_HIT_EVENT = "raid:confirmed-hit";
+export const PROGRESSION_SAVED_EVENT = "progression:saved";
 
 const MONSTER_FALLBACK_SURFACE_RADIUS: Readonly<Record<string, number>> = {
   "grumble-yarn": 93,
@@ -88,6 +125,8 @@ type RaidState =
   | "workshop"
   | "transition";
 
+type RaidMode = "campaign" | "weekly";
+
 interface UpgradePresentation {
   readonly name: string;
   readonly color: number;
@@ -107,6 +146,10 @@ function getWardCharges(level: UpgradeLevel): number {
 export class RaidScene extends Phaser.Scene {
   private state: RaidState = "ready";
   private stage = 1;
+  private raidMode: RaidMode = "campaign";
+  private weeklyRoute: WeeklyRouteDefinition = createWeeklyRoute(new Date());
+  private weeklyNode: WeeklyRouteNode | null = null;
+  private weeklyModifier: WeeklyModifierDefinition | null = null;
   private hits = 0;
   private requiredHits = 7;
   private shieldCharges = 0;
@@ -139,17 +182,30 @@ export class RaidScene extends Phaser.Scene {
   private patternText!: Phaser.GameObjects.Text;
   private tipText!: Phaser.GameObjects.Text;
   private soundButton!: Phaser.GameObjects.Text;
+  private abilityButton!: Phaser.GameObjects.Rectangle;
+  private abilitySymbolText!: Phaser.GameObjects.Text;
+  private abilityNameText!: Phaser.GameObjects.Text;
+  private abilityStateText!: Phaser.GameObjects.Text;
+  private roomEffectText!: Phaser.GameObjects.Text;
   private overlay: Phaser.GameObjects.Container | null = null;
   private patternElapsed = 0;
+  private roomElapsed = 0;
   private patternDirection = 1;
+  private lastRoomReversalEvent = -1;
+  private roomEffectVisualKey = "";
   private rotationSpeed = 0.88;
   private baseRotation = 0;
   private inputCooldownUntil = 0;
   private currentDamageStage = 0;
+  private accurateStreak = 0;
+  private maxAccurateStreak = 0;
+  private stageHadCollision = false;
   private upgradePurchaseLockedUntil = 0;
   private menu!: GameMenu;
   private readonly sfx = new SoundEngine();
   private readonly silhouetteMasks = new Map<string, AlphaMask | null>();
+  private abilityRuntime: ActiveAbilityRuntime =
+    createActiveAbilityRuntime("time-loop");
 
   public constructor() {
     super("raid");
@@ -192,6 +248,9 @@ export class RaidScene extends Phaser.Scene {
     this.inputCooldownUntil = 0;
     this.upgradePurchaseLockedUntil = 0;
     this.progression = loadProgression();
+    this.abilityRuntime = createActiveAbilityRuntime(
+      this.getEquippedActiveAbilityId(),
+    );
     this.shieldCharges = this.getStartingWardCharges();
     this.sfx.setMuted(this.progression.muted);
     this.sfx.setMusicTheme("menu");
@@ -206,6 +265,7 @@ export class RaidScene extends Phaser.Scene {
     if (!menuRoot) throw new Error("Не найден контейнер главного меню");
     this.menu = new GameMenu(menuRoot, this.progression, {
       onStart: () => this.startRaidFromMenu(),
+      onStartWeekly: () => this.startWeeklyRouteFromMenu(),
       onStateChange: (state) => this.applyMenuProgress(state),
       onToggleSound: (muted) => {
         this.sfx.setMuted(muted);
@@ -218,6 +278,7 @@ export class RaidScene extends Phaser.Scene {
 
     this.input.on("pointerdown", this.handlePointerDown, this);
     this.input.keyboard?.on("keydown-SPACE", this.handleKeyboardShot, this);
+    this.input.keyboard?.on("keydown-E", this.handleKeyboardAbility, this);
     this.scale.on(Phaser.Scale.Events.RESIZE, this.layoutExpandedViewport, this);
     this.layoutExpandedViewport();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -243,8 +304,23 @@ export class RaidScene extends Phaser.Scene {
     }
 
     const deltaSeconds = Math.min(delta, 50) / 1000;
-    this.patternElapsed += deltaSeconds;
-    this.updatePattern(this.getActivePattern(), deltaSeconds);
+    this.roomElapsed += deltaSeconds;
+    const roomEffect = getRoomEffectState(
+      this.currentRoom.id,
+      this.roomElapsed,
+    );
+    this.applyRoomEffect(roomEffect);
+
+    const abilityTimeScale =
+      this.abilityRuntime.id === "time-loop" &&
+      this.abilityRuntime.effectUntil > this.time.now
+        ? TIME_LOOP_SPEED_MULTIPLIER
+        : 1;
+    const patternDelta =
+      deltaSeconds * roomEffect.speedMultiplier * abilityTimeScale;
+    this.patternElapsed += patternDelta;
+    this.updatePattern(this.getActivePattern(), patternDelta);
+    this.refreshAbilityHud();
   }
 
   public pauseForPlatform(): void {
@@ -256,6 +332,9 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private startRaidFromMenu(): void {
+    this.raidMode = "campaign";
+    this.weeklyNode = null;
+    this.weeklyModifier = null;
     this.sfx.setMusicTheme("raid");
     this.menu.hide();
     this.closeOverlay();
@@ -265,6 +344,35 @@ export class RaidScene extends Phaser.Scene {
     this.inputCooldownUntil = this.time.now + 260;
     this.createMonster();
     this.beginPlaying("Не дай иглам столкнуться");
+  }
+
+  private startWeeklyRouteFromMenu(): void {
+    this.weeklyRoute = createWeeklyRoute(new Date());
+    const weeklyRoute = syncWeeklyRouteProgress(
+      this.progression.weeklyRoute,
+      this.weeklyRoute,
+    );
+    this.progression = { ...this.progression, weeklyRoute };
+    this.raidMode = "weekly";
+    this.weeklyNode = getWeeklyRouteStatus(weeklyRoute, this.weeklyRoute).nextNode;
+    this.weeklyModifier = getWeeklyModifier(this.weeklyNode.modifierId);
+    this.stage = this.getWeeklyDifficultyStage(this.weeklyNode);
+    this.sfx.setMusicTheme("raid");
+    this.menu.hide();
+    this.closeOverlay();
+    this.state = "transition";
+    this.shieldCharges = this.getStartingWardCharges();
+    this.inputCooldownUntil = this.time.now + 260;
+    this.createMonster();
+    this.persistProgress();
+    this.beginPlaying(
+      `${this.weeklyRoute.name}: ${this.weeklyModifier.name}`,
+    );
+  }
+
+  private getWeeklyDifficultyStage(node: WeeklyRouteNode): number {
+    const campaignAnchor = Math.max(1, this.progression.highestStageCleared + 1);
+    return Math.min(60, campaignAnchor + node.order - 1);
   }
 
   private applyMenuProgress(state: ProgressionState): void {
@@ -278,6 +386,15 @@ export class RaidScene extends Phaser.Scene {
   private getStartingWardCharges(): number {
     const skillBonus = getSkill(this.progression.equippedSkill).modifiers.startingWardBonus ?? 0;
     return getWardCharges(this.progression.upgrades.ward) + skillBonus;
+  }
+
+  private getEquippedActiveAbilityId(): ActiveAbilityId {
+    const progressionWithActiveAbility = this.progression as ProgressionState & {
+      readonly equippedActiveAbility?: unknown;
+    };
+    return normalizeActiveAbilityId(
+      progressionWithActiveAbility.equippedActiveAbility,
+    );
   }
 
   private requestFullscreen(): void {
@@ -384,7 +501,10 @@ export class RaidScene extends Phaser.Scene {
       });
     }
 
-    const shadeAlpha = room.id === "machine" ? 0.38 : 0.28;
+    const weeklyContrast = this.weeklyModifier?.effects.sceneContrastMultiplier ?? 1;
+    const shadeAlpha =
+      (room.id === "machine" ? 0.38 : 0.28) +
+      Math.max(0, 1 - weeklyContrast) * 0.5;
     this.backgroundShade.setFillStyle(0x101a28, shadeAlpha);
   }
 
@@ -520,6 +640,75 @@ export class RaidScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAlpha(0.82)
       .setDepth(20);
+
+    this.roomEffectText = this.add
+      .text(WIDTH / 2, 190, "", {
+        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontSize: "12px",
+        fontStyle: "bold",
+        color: "#fff6db",
+        backgroundColor: "#182033dd",
+        padding: { x: 11, y: 6 },
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setAlpha(0)
+      .setDepth(24);
+
+    this.abilityButton = this.add
+      .rectangle(356, 680, 136, 64, 0x25324a, 0.94)
+      .setStrokeStyle(2, 0x9edfd7, 0.72)
+      .setDepth(27)
+      .setInteractive({ useHandCursor: true });
+    this.abilitySymbolText = this.add
+      .text(307, 676, "◷", {
+        fontFamily: "Georgia, serif",
+        fontSize: "29px",
+        fontStyle: "bold",
+        color: "#9edfd7",
+      })
+      .setOrigin(0.5)
+      .setDepth(28);
+    this.abilityNameText = this.add
+      .text(365, 665, "Петля", {
+        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontSize: "12px",
+        fontStyle: "bold",
+        color: "#fff6db",
+      })
+      .setOrigin(0.5)
+      .setDepth(28);
+    this.abilityStateText = this.add
+      .text(365, 687, "×2 · E", {
+        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontSize: "10px",
+        fontStyle: "bold",
+        color: "#c8d7ca",
+      })
+      .setOrigin(0.5)
+      .setDepth(28);
+
+    this.abilityButton.on("pointerover", () => {
+      if (canActivateAbility(this.abilityRuntime, this.time.now)) {
+        this.abilityButton.setScale(1.025);
+      }
+    });
+    this.abilityButton.on("pointerout", () => this.abilityButton.setScale(1));
+    this.abilityButton.on(
+      "pointerdown",
+      (
+        _pointer: Phaser.Input.Pointer,
+        _localX: number,
+        _localY: number,
+        event: Phaser.Types.Input.EventData,
+      ) => {
+        event.stopPropagation();
+        this.abilityButton.setScale(0.97);
+        this.activateSelectedAbility();
+        this.time.delayedCall(90, () => this.abilityButton?.setScale(1));
+      },
+    );
+    this.setCombatHudVisible(false);
   }
 
   private createHero(): void {
@@ -590,12 +779,41 @@ export class RaidScene extends Phaser.Scene {
     );
   }
 
+  private getWeeklyMonster(node: WeeklyRouteNode): MonsterDefinition {
+    const encounterKind = node.order === 5 ? "boss" : node.order === 3 ? "mini" : "regular";
+    const matchesKind = (monster: MonsterDefinition): boolean =>
+      encounterKind === "boss"
+        ? monster.isBoss === true
+        : encounterKind === "mini"
+          ? monster.isMiniBoss === true
+          : !monster.isBoss && !monster.isMiniBoss;
+    const roomPool = MONSTERS.filter(
+      (monster) => monster.roomId === node.roomId && matchesKind(monster),
+    );
+    const fallbackPool = MONSTERS.filter(matchesKind);
+    const pool = roomPool.length > 0 ? roomPool : fallbackPool;
+    const seed = Array.from(node.id).reduce(
+      (total, character) => total + character.charCodeAt(0),
+      0,
+    );
+    return pool[seed % pool.length] ?? getMonsterForStage(this.stage);
+  }
+
   private createMonster(): void {
     if (this.monster?.active) this.monster.destroy(true);
     if (this.monsterShadow?.active) this.monsterShadow.destroy();
 
-    this.currentMonster = getMonsterForStage(this.stage);
-    this.currentRoom = getRoomForStage(this.stage);
+    if (this.raidMode === "weekly" && this.weeklyNode) {
+      this.currentMonster = this.getWeeklyMonster(this.weeklyNode);
+      this.currentRoom =
+        ROOMS.find((room) => room.id === this.weeklyNode?.roomId) ??
+        getRoomForStage(this.stage);
+      this.weeklyModifier = getWeeklyModifier(this.weeklyNode.modifierId);
+    } else {
+      this.currentMonster = getMonsterForStage(this.stage);
+      this.currentRoom = getRoomForStage(this.stage);
+      this.weeklyModifier = null;
+    }
     if (this.state !== "menu") {
       this.sfx.setMusicTheme(
         this.currentMonster.isBoss || this.currentMonster.isMiniBoss
@@ -604,12 +822,23 @@ export class RaidScene extends Phaser.Scene {
       );
     }
     this.updateRoomBackground(this.currentRoom);
-    this.requiredHits = getRequiredHits(this.currentMonster, this.stage);
+    this.requiredHits = Math.max(
+      4,
+      getRequiredHits(this.currentMonster, this.stage) +
+        (this.weeklyModifier?.effects.requiredHitsDelta ?? 0),
+    );
     this.hits = 0;
     this.hitAngles = [];
     this.shotInFlight = false;
     this.patternElapsed = 0;
+    this.roomElapsed = 0;
     this.patternDirection = Math.random() > 0.5 ? 1 : -1;
+    this.lastRoomReversalEvent = -1;
+    this.roomEffectVisualKey = "";
+    this.roomEffectText?.setText("").setAlpha(0);
+    this.abilityRuntime = createActiveAbilityRuntime(
+      this.getEquippedActiveAbilityId(),
+    );
     const skillSpeed = getSkill(
       this.progression.equippedSkill,
     ).modifiers.rotationSpeedMultiplier ?? 1;
@@ -620,9 +849,14 @@ export class RaidScene extends Phaser.Scene {
         0.72 + Math.log2(this.stage + 1) * 0.22 + Math.floor(this.stage / 5) * 0.025,
       ) *
       skillSpeed *
-      mothPressure;
+      mothPressure *
+      (this.weeklyModifier?.effects.rotationSpeedMultiplier ?? 1);
+    if (this.weeklyModifier?.effects.reverseRotation) this.patternDirection *= -1;
     this.baseRotation = 0;
     this.currentDamageStage = 0;
+    this.accurateStreak = 0;
+    this.maxAccurateStreak = 0;
+    this.stageHadCollision = false;
     this.monsterArtwork = null;
 
     this.monsterShadow = this.add
@@ -642,10 +876,12 @@ export class RaidScene extends Phaser.Scene {
     this.warmMonsterSilhouetteMasks();
 
     this.stageText.setText(
-      "СТЕЖОК " +
-        this.stage +
-        " · ПОХОД " +
-        getExpeditionNumber(this.stage),
+      this.raidMode === "weekly" && this.weeklyNode
+        ? `НЕДЕЛЯ · УЗЕЛ ${this.weeklyNode.order}/5`
+        : "СТЕЖОК " +
+            this.stage +
+            " · ПОХОД " +
+            getExpeditionNumber(this.stage),
     );
     this.threadText.setText("✦ " + this.progression.thread + " нитей");
     this.roomText.setText(this.currentRoom.name);
@@ -658,6 +894,7 @@ export class RaidScene extends Phaser.Scene {
     );
     this.refreshPatternLabel();
     this.refreshShieldText();
+    this.refreshAbilityHud();
     this.updateHealth();
 
     if (this.currentMonster.isBoss || this.currentMonster.isMiniBoss) {
@@ -770,7 +1007,10 @@ export class RaidScene extends Phaser.Scene {
         ? " · ФАЗА II"
         : "";
     this.patternText.setText(
-      "Узор: " + PATTERN_NAMES[this.getActivePattern()] + bossPhase,
+      "Узор: " +
+        PATTERN_NAMES[this.getActivePattern()] +
+        bossPhase +
+        (this.weeklyModifier ? ` · ${this.weeklyModifier.name}` : ""),
     );
   }
 
@@ -791,7 +1031,8 @@ export class RaidScene extends Phaser.Scene {
               (1.25 + this.stage * 0.025) *
               pendulumSpeed,
           ) *
-            1.55;
+            1.55 *
+            this.patternDirection;
         break;
       }
       case "stitches": {
@@ -814,6 +1055,172 @@ export class RaidScene extends Phaser.Scene {
           this.patternDirection * this.rotationSpeed * deltaSeconds;
         break;
     }
+  }
+
+  private applyRoomEffect(effect: RoomEffectState): void {
+    if (
+      effect.shouldReverse &&
+      effect.eventIndex !== this.lastRoomReversalEvent
+    ) {
+      this.lastRoomReversalEvent = effect.eventIndex;
+      if (this.getActivePattern() === "pendulum") {
+        this.baseRotation = this.monster.rotation;
+        this.patternElapsed = 0;
+      }
+      this.patternDirection *= -1;
+      this.sfx.ui();
+      this.cameras.main.shake(90, 0.0018);
+    }
+
+    const visualKey = `${effect.phase}:${effect.eventIndex}`;
+    if (visualKey === this.roomEffectVisualKey) return;
+    this.roomEffectVisualKey = visualKey;
+
+    this.tweens.killTweensOf(this.roomEffectText);
+    if (effect.phase === "calm") {
+      this.tweens.add({
+        targets: this.roomEffectText,
+        alpha: 0,
+        duration: 180,
+      });
+      return;
+    }
+
+    const active = effect.phase === "active";
+    const color = active
+      ? this.currentRoom.id === "machine"
+        ? "#9edfd7"
+        : "#ffd777"
+      : "#fff6db";
+    this.roomEffectText
+      .setText(effect.warningText)
+      .setColor(color)
+      .setAlpha(active ? 1 : 0.88)
+      .setScale(active ? 1.06 : 1);
+    this.tweens.add({
+      targets: this.roomEffectText,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 180,
+      ease: "Back.Out",
+    });
+    if (active && this.currentRoom.id !== "theatre") {
+      this.sfx.ui();
+      this.cameras.main.shake(80, 0.0012);
+    }
+  }
+
+  private handleKeyboardAbility(event: KeyboardEvent): void {
+    if (event.repeat) return;
+    this.activateSelectedAbility();
+  }
+
+  private activateSelectedAbility(): void {
+    if (this.state !== "playing" || this.shotInFlight) return;
+
+    const result = activateAbility(
+      this.abilityRuntime,
+      this.time.now,
+      this.shieldCharges,
+      this.getStartingWardCharges(),
+    );
+    if (!result) return;
+
+    this.abilityRuntime = result.runtime;
+    this.shieldCharges = result.wardCharges;
+    this.sfx.upgrade();
+
+    switch (result.effect) {
+      case "time-loop":
+        this.tipText.setText("Петля времени: узор замедлен!");
+        this.cameras.main.flash(150, 90, 170, 190, false);
+        this.spawnAbilityGlyph("◷", 0x9edfd7);
+        break;
+      case "magnetic-armed":
+        this.tipText.setText("Магнитный стежок готовит следующую иглу");
+        this.spawnAbilityGlyph("⌁", 0xe8b44d);
+        break;
+      case "ward-restored":
+        this.tipText.setText("Запасной узел восстановил один оберег");
+        this.refreshShieldText();
+        this.spawnAbilityGlyph("◇", 0x9edfd7);
+        break;
+      case "knot-armed":
+        this.tipText.setText("Запасной узел завязан и спасёт при столкновении");
+        this.spawnAbilityGlyph("◇", 0xf2e3c6);
+        break;
+    }
+
+    this.refreshAbilityHud();
+  }
+
+  private spawnAbilityGlyph(symbol: string, color: number): void {
+    const glyph = this.add
+      .text(MONSTER_X, MONSTER_Y, symbol, {
+        fontFamily: "Georgia, serif",
+        fontSize: "52px",
+        fontStyle: "bold",
+        color: Phaser.Display.Color.IntegerToColor(color).rgba,
+        stroke: "#182033",
+        strokeThickness: 5,
+      })
+      .setOrigin(0.5)
+      .setDepth(14)
+      .setAlpha(0.95);
+    this.tweens.add({
+      targets: glyph,
+      y: glyph.y - 36,
+      scale: 1.22,
+      alpha: 0,
+      duration: 620,
+      ease: "Quad.Out",
+      onComplete: () => glyph.destroy(),
+    });
+  }
+
+  private setCombatHudVisible(visible: boolean): void {
+    this.abilityButton?.setVisible(visible);
+    this.abilitySymbolText?.setVisible(visible);
+    this.abilityNameText?.setVisible(visible);
+    this.abilityStateText?.setVisible(visible);
+    if (!visible) this.roomEffectText?.setAlpha(0);
+  }
+
+  private refreshAbilityHud(): void {
+    if (!this.abilityButton?.active) return;
+
+    const visible = this.state === "playing";
+    this.setCombatHudVisible(visible);
+    if (!visible) return;
+
+    const ability = getActiveAbility(this.abilityRuntime.id);
+    const cooldown = getCooldownRemaining(this.abilityRuntime, this.time.now);
+    const timeRemaining = Math.max(
+      0,
+      this.abilityRuntime.effectUntil - this.time.now,
+    );
+    const armed =
+      this.abilityRuntime.magneticArmed || this.abilityRuntime.spareKnotArmed;
+    const available = canActivateAbility(this.abilityRuntime, this.time.now);
+
+    let stateText = `×${this.abilityRuntime.charges} · E`;
+    if (timeRemaining > 0) {
+      stateText = `АКТИВНО ${(timeRemaining / 1000).toFixed(1)}с`;
+    } else if (armed) {
+      stateText = "ЗАРЯЖЕНО";
+    } else if (cooldown > 0) {
+      stateText = `${Math.ceil(cooldown / 1000)}с · ×${this.abilityRuntime.charges}`;
+    } else if (this.abilityRuntime.charges <= 0) {
+      stateText = "ИСТРАЧЕНО";
+    }
+
+    this.abilitySymbolText.setText(ability.symbol);
+    this.abilityNameText.setText(ability.shortName);
+    this.abilityStateText.setText(stateText);
+    this.abilityButton
+      .setFillStyle(available ? 0x29485a : armed ? 0x554263 : 0x25324a, 0.96)
+      .setStrokeStyle(2, available || armed ? 0x9edfd7 : 0x6d7885, 0.72)
+      .setAlpha(available || armed || timeRemaining > 0 ? 1 : 0.68);
   }
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
@@ -868,7 +1275,9 @@ export class RaidScene extends Phaser.Scene {
     const skinSpeed = needleSkin.modifiers.projectileSpeedMultiplier ?? 1;
     const duration = Math.max(
       105,
-      (BASE_PROJECTILE_DURATION - speedLevel * 12) / skinSpeed,
+      (BASE_PROJECTILE_DURATION - speedLevel * 12) /
+        skinSpeed /
+        (this.weeklyModifier?.effects.projectileSpeedMultiplier ?? 1),
     );
     this.tweens.add({
       targets: flight,
@@ -894,23 +1303,43 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private resolveHit(): void {
-    const localAngle = normalizeAngle(WORLD_HIT_ANGLE - this.monster.rotation);
+    let localAngle = normalizeAngle(WORLD_HIT_ANGLE - this.monster.rotation);
     const precisionLevel = this.progression.upgrades.precision;
     const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
     const needleModifiers = needleSkin.modifiers;
     const skillModifiers = getSkill(this.progression.equippedSkill).modifiers;
     const needleGap = Math.max(
       0.045,
-      BASE_NEEDLE_GAP -
-        precisionLevel * 0.005 -
-        (needleModifiers.needleGapReduction ?? 0) -
-        (skillModifiers.needleGapReduction ?? 0) +
-        (needleModifiers.needleGapPenalty ?? 0),
+      (BASE_NEEDLE_GAP -
+          precisionLevel * 0.005 -
+          (needleModifiers.needleGapReduction ?? 0) -
+          (skillModifiers.needleGapReduction ?? 0) +
+          (needleModifiers.needleGapPenalty ?? 0)) *
+        (this.weeklyModifier?.effects.collisionToleranceMultiplier ?? 1),
     );
+
+    let magneticCorrection = false;
+    if (this.abilityRuntime.magneticArmed) {
+      const magneticHit = findMagneticHitAngle(
+        localAngle,
+        this.hitAngles,
+        needleGap,
+      );
+      this.abilityRuntime = consumeMagneticStitch(this.abilityRuntime);
+      this.refreshAbilityHud();
+      if (magneticHit) {
+        localAngle = magneticHit.angle;
+        magneticCorrection = magneticHit.corrected;
+      }
+    }
 
     if (isAngleBlocked(localAngle, this.hitAngles, needleGap)) {
       this.shotInFlight = false;
-      if (this.shieldCharges > 0) {
+      this.stageHadCollision = true;
+      this.accurateStreak = 0;
+      if (this.abilityRuntime.spareKnotArmed) {
+        this.absorbCollisionWithSpareKnot();
+      } else if (this.shieldCharges > 0) {
         this.absorbCollision();
       } else {
         this.failRaid();
@@ -936,16 +1365,58 @@ export class RaidScene extends Phaser.Scene {
     const isEmpowered = stitchPower > 1;
 
     this.hitAngles.push(localAngle);
+    this.accurateStreak += 1;
+    this.maxAccurateStreak = Math.max(this.maxAccurateStreak, this.accurateStreak);
     this.attachNeedle(localAngle);
     this.hits = Math.min(this.requiredHits, this.hits + stitchPower);
     this.shotInFlight = false;
     this.sfx.hit();
     this.game.events.emit(CONFIRMED_HIT_EVENT);
+    this.progression = {
+      ...this.progression,
+      dailySystems: recordDailyGameplayEvent(
+        this.progression.dailySystems,
+        { type: "accurate-streak", length: this.accurateStreak },
+        new Date(),
+        getDailySelectionContext(
+          this.progression.highestStageCleared,
+          this.progression.ownedNeedles,
+        ),
+      ),
+      needleMastery: recordNeedleMasteryHit(
+        this.progression.needleMastery,
+        this.progression.equippedNeedle,
+      ),
+      seasonPass: recordSeasonPassEvent(
+        this.progression.seasonPass,
+        "successful-hit",
+      ),
+    };
+    this.persistProgress();
     this.cameras.main.shake(isEmpowered ? 100 : 65, isEmpowered ? 0.004 : 0.0025);
+
+    if (magneticCorrection) {
+      this.tipText.setText("Магнит поправил иглу и нашёл свободный стежок!");
+    }
 
     if (this.getActivePattern() === "recoil") {
       this.patternDirection *= -1;
       this.rotationSpeed = Math.min(2.65, this.rotationSpeed + 0.08);
+    }
+
+    const weeklyEffects = this.weeklyModifier?.effects;
+    if (weeklyEffects?.rotationAcceleration) {
+      this.rotationSpeed = Math.min(
+        3,
+        this.rotationSpeed + weeklyEffects.rotationAcceleration,
+      );
+    }
+    if (
+      weeklyEffects?.directionChangeEveryHits &&
+      this.hitAngles.length % weeklyEffects.directionChangeEveryHits === 0
+    ) {
+      this.patternDirection *= -1;
+      this.tipText.setText("Эхо пуговиц сменило направление!");
     }
 
     this.flashMonster(isEmpowered ? needleSkin.headColor : 0xf2e3c6);
@@ -973,6 +1444,43 @@ export class RaidScene extends Phaser.Scene {
       scale: 1.28,
       duration: 360,
       onComplete: () => ring.destroy(),
+    });
+  }
+
+  private absorbCollisionWithSpareKnot(): void {
+    this.abilityRuntime = consumeSpareKnot(this.abilityRuntime);
+    this.refreshAbilityHud();
+    this.sfx.upgrade();
+    this.cameras.main.flash(170, 232, 180, 77, false);
+    this.tipText.setText("Запасной узел удержал разорванную нить!");
+
+    const stitch = this.add.graphics().setDepth(13);
+    stitch.lineStyle(4, 0x182033, 0.86);
+    stitch.strokePoints(
+      [
+        new Phaser.Math.Vector2(MONSTER_X, MONSTER_Y - 40),
+        new Phaser.Math.Vector2(MONSTER_X + 40, MONSTER_Y),
+        new Phaser.Math.Vector2(MONSTER_X, MONSTER_Y + 40),
+        new Phaser.Math.Vector2(MONSTER_X - 40, MONSTER_Y),
+      ],
+      true,
+    );
+    stitch.lineStyle(2, 0xe8b44d, 1);
+    stitch.strokePoints(
+      [
+        new Phaser.Math.Vector2(MONSTER_X, MONSTER_Y - 36),
+        new Phaser.Math.Vector2(MONSTER_X + 36, MONSTER_Y),
+        new Phaser.Math.Vector2(MONSTER_X, MONSTER_Y + 36),
+        new Phaser.Math.Vector2(MONSTER_X - 36, MONSTER_Y),
+      ],
+      true,
+    );
+    this.tweens.add({
+      targets: stitch,
+      alpha: 0,
+      scale: 1.24,
+      duration: 380,
+      onComplete: () => stitch.destroy(),
     });
   }
 
@@ -1230,19 +1738,106 @@ export class RaidScene extends Phaser.Scene {
     if (this.state !== "playing") return;
 
     this.state = "won";
-    const reward = getStageReward(this.stage);
-    this.progression = recordVictory(
-      this.progression,
-      this.stage,
-      this.currentMonster.isBoss === true,
-      reward,
+    this.setCombatHudVisible(false);
+    this.roomEffectText.setAlpha(0);
+    const firstWeeklyClear =
+      this.raidMode === "weekly" && this.weeklyNode
+        ? (this.progression.weeklyRoute.clearsByNode[this.weeklyNode.id] ?? 0) === 0
+        : false;
+    const reward =
+      this.raidMode === "campaign"
+        ? getStageReward(this.stage)
+        : firstWeeklyClear
+          ? this.currentMonster.isBoss || this.currentMonster.isMiniBoss
+            ? 3
+            : 2
+          : 0;
+    let nextProgression =
+      this.raidMode === "campaign"
+        ? recordVictory(
+            this.progression,
+            this.stage,
+            this.currentMonster.isBoss === true,
+            reward,
+          )
+        : recordChallengeVictory(
+            this.progression,
+            this.currentMonster.isBoss === true,
+            reward,
+          );
+    const victoryKind: NeedleMasteryVictoryKind = this.currentMonster.isBoss
+      ? "boss"
+      : this.currentMonster.isMiniBoss
+        ? "mini-boss"
+        : "regular";
+    const dailyContext = getDailySelectionContext(
+      nextProgression.highestStageCleared,
+      nextProgression.ownedNeedles,
     );
+    nextProgression = {
+      ...nextProgression,
+      needleMastery: recordNeedleMasteryVictory(
+        nextProgression.needleMastery,
+        nextProgression.equippedNeedle,
+        victoryKind,
+      ),
+      dailySystems: recordDailyGameplayEvent(
+        nextProgression.dailySystems,
+        {
+          type: "victory",
+          needleId: nextProgression.equippedNeedle,
+          roomId: this.currentRoom.id,
+          monsterId: this.currentMonster.id,
+          isBoss: this.currentMonster.isBoss,
+          isMiniBoss: this.currentMonster.isMiniBoss,
+          perfect: !this.stageHadCollision,
+          maxAccurateStreak: this.maxAccurateStreak,
+        },
+        new Date(),
+        dailyContext,
+      ),
+      seasonPass: recordSeasonPassEvent(
+        nextProgression.seasonPass,
+        "stage-victory",
+      ),
+    };
+    if (this.currentMonster.isBoss) {
+      nextProgression = {
+        ...nextProgression,
+        seasonPass: recordSeasonPassEvent(
+          nextProgression.seasonPass,
+          "boss-victory",
+        ),
+      };
+    }
+    if (this.raidMode === "weekly" && this.weeklyNode) {
+      const weeklySeasonPass = firstWeeklyClear
+        ? recordSeasonPassEvent(
+            nextProgression.seasonPass,
+            "weekly-node-completed",
+          )
+        : nextProgression.seasonPass;
+      nextProgression = {
+        ...nextProgression,
+        weeklyRoute: completeWeeklyRouteNode(
+          nextProgression.weeklyRoute,
+          this.weeklyRoute,
+          this.weeklyNode.id,
+        ),
+        seasonPass: weeklySeasonPass,
+      };
+    }
+    this.progression = nextProgression;
     this.threadText.setText("✦ " + this.progression.thread + " нитей");
     this.persistProgress();
     this.sfx.win();
 
     this.cameras.main.flash(240, 232, 180, 77, false);
     this.time.delayedCall(420, () => {
+      const weeklyProgress =
+        this.raidMode === "weekly" && this.weeklyNode
+          ? `\nУзел ${this.weeklyNode.order}/5 завершён.`
+          : "";
       this.showVictoryOverlay(
         this.currentMonster.isBoss
           ? "Босс распорот!"
@@ -1250,9 +1845,11 @@ export class RaidScene extends Phaser.Scene {
             ? "Мини-босс зашит!"
             : "Кошмар зашит!",
         this.currentMonster.name +
-          " больше не тревожит комнату.\nНаграда: " +
-          reward +
-          " нитей",
+          " больше не тревожит комнату.\n" +
+          (reward > 0
+            ? `Награда: ${reward} нитей`
+            : "Повторный узел: без дополнительных нитей") +
+          weeklyProgress,
         this.currentRoom.accentColor,
         this.currentMonster.isBoss
           ? "КОМНАТА ОЧИЩЕНА"
@@ -1267,6 +1864,21 @@ export class RaidScene extends Phaser.Scene {
     if (this.state !== "playing") return;
 
     this.state = "failed";
+    this.setCombatHudVisible(false);
+    this.roomEffectText.setAlpha(0);
+    this.progression = {
+      ...this.progression,
+      dailySystems: recordDailyGameplayEvent(
+        this.progression.dailySystems,
+        { type: "defeat" },
+        new Date(),
+        getDailySelectionContext(
+          this.progression.highestStageCleared,
+          this.progression.ownedNeedles,
+        ),
+      ),
+    };
+    this.persistProgress();
     this.sfx.fail();
     this.cameras.main.shake(240, 0.009);
     this.flashMonster(0xe56b6f);
@@ -1283,8 +1895,10 @@ export class RaidScene extends Phaser.Scene {
       this.sfx.setMusicTheme("menu");
       this.menu.show(
         this.progression,
-        "home",
-        `Рейд окончен: этап ${this.stage}`,
+        this.raidMode === "weekly" ? "quests" : "home",
+        this.raidMode === "weekly"
+          ? `Недельный путь оборвался на узле ${this.weeklyNode?.order ?? 1}`
+          : `Рейд окончен: этап ${this.stage}`,
       );
     });
   }
@@ -1294,7 +1908,17 @@ export class RaidScene extends Phaser.Scene {
     this.closeOverlay();
     this.state = "transition";
     this.inputCooldownUntil = this.time.now + 240;
-    this.stage += 1;
+    if (this.raidMode === "weekly") {
+      const status = getWeeklyRouteStatus(
+        this.progression.weeklyRoute,
+        this.weeklyRoute,
+      );
+      this.weeklyNode = status.nextNode;
+      this.weeklyModifier = getWeeklyModifier(this.weeklyNode.modifierId);
+      this.stage = this.getWeeklyDifficultyStage(this.weeklyNode);
+    } else {
+      this.stage += 1;
+    }
     this.createMonster();
     this.beginPlaying(
       getNextStageTip(
@@ -1306,6 +1930,29 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private resolveVictory(choice: VictoryChoice): void {
+    if (this.raidMode === "weekly") {
+      const finishedFirstLap = this.weeklyNode?.order === 5;
+      if (choice === "continue" && !finishedFirstLap) {
+        this.advanceStage();
+        return;
+      }
+
+      this.persistProgress();
+      this.closeOverlay();
+      this.state = "menu";
+      this.setCombatHudVisible(false);
+      this.sfx.ui();
+      this.sfx.setMusicTheme("menu");
+      this.menu.show(
+        this.progression,
+        "quests",
+        finishedFirstLap
+          ? "Недельный маршрут завершён — забери эмблему"
+          : `Недельный путь сохранён · следующий узел ${getWeeklyRouteStatus(this.progression.weeklyRoute, this.weeklyRoute).nextNode.order}/5`,
+      );
+      return;
+    }
+
     const destination = resolveVictoryChoice(choice);
     if (destination.kind === "next-stage") {
       this.advanceStage();
@@ -1315,6 +1962,7 @@ export class RaidScene extends Phaser.Scene {
     if (destination.persistProgress) this.persistProgress();
     this.closeOverlay();
     this.state = "menu";
+    this.setCombatHudVisible(false);
     this.tipText.setText(`Путь сохранён после этапа ${this.stage}`);
     this.sfx.ui();
     this.sfx.setMusicTheme("menu");
@@ -1329,6 +1977,8 @@ export class RaidScene extends Phaser.Scene {
     this.closeOverlay();
     this.inputCooldownUntil = this.time.now + 240;
     this.state = "playing";
+    this.setCombatHudVisible(true);
+    this.refreshAbilityHud();
     this.tipText.setText(tip);
     this.sfx.ui();
   }
@@ -1340,6 +1990,7 @@ export class RaidScene extends Phaser.Scene {
   ): void {
     this.closeOverlay();
     this.state = "workshop";
+    this.setCombatHudVisible(false);
 
     const overlay = this.add.container(0, 0).setDepth(100);
     const shade = this.add
@@ -1600,12 +2251,19 @@ export class RaidScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xf2e3c6, 0.3)
       .setInteractive({ useHandCursor: true });
     const continueText = this.add
-      .text(WIDTH / 2, 469, "Продолжить путь", {
+      .text(
+        WIDTH / 2,
+        469,
+        this.raidMode === "weekly" && this.weeklyNode?.order === 5
+          ? "Завершить маршрут"
+          : "Продолжить путь",
+        {
         fontFamily: "Inter, Segoe UI, sans-serif",
         fontSize: "16px",
         fontStyle: "bold",
         color: "#182033",
-      })
+        },
+      )
       .setOrigin(0.5);
     const menuButton = this.add
       .rectangle(WIDTH / 2, 539, 284, 50, 0x182033, 0.92)
@@ -1682,6 +2340,7 @@ export class RaidScene extends Phaser.Scene {
 
   private persistProgress(): void {
     saveProgression(this.progression);
+    this.game.events.emit(PROGRESSION_SAVED_EVENT, this.progression);
   }
 }
 
