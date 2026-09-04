@@ -79,7 +79,9 @@ import {
   type NeedleMasteryVictoryKind,
 } from "./NeedleMastery";
 import {
+  WORKSHOP_IMPACT_ART,
   getWorkshopCollectible,
+  getWorkshopImpactArtFileName,
   type WorkshopCollectible,
   type WorkshopCollectibleKind,
 } from "./WorkshopCollection";
@@ -130,6 +132,10 @@ type NeedleCosmeticKind = Extract<
 
 function getActiveAbilityTextureKey(id: ActiveAbilityId): string {
   return `ability-${id}`;
+}
+
+function getWorkshopImpactTextureKey(fileName: string): string {
+  return `workshop-impact-${fileName}`;
 }
 
 interface NeedleCosmeticPalette {
@@ -343,6 +349,10 @@ export class RaidScene extends Phaser.Scene {
         art + ability.iconFileName,
       );
     }
+
+    for (const fileName of new Set(Object.values(WORKSHOP_IMPACT_ART))) {
+      this.load.image(getWorkshopImpactTextureKey(fileName), art + fileName);
+    }
   }
 
   public create(): void {
@@ -468,8 +478,18 @@ export class RaidScene extends Phaser.Scene {
       this.weeklyRoute,
     );
     this.progression = { ...this.progression, weeklyRoute };
+    const weeklyStatus = getWeeklyRouteStatus(weeklyRoute, this.weeklyRoute);
+    if (!weeklyStatus.canPlay) {
+      this.persistProgress();
+      this.menu.show(
+        this.progression,
+        "quests",
+        "Маршрут этой недели уже пройден · новый откроется в пятницу, 03:00 МСК",
+      );
+      return;
+    }
     this.raidMode = "weekly";
-    this.weeklyNode = getWeeklyRouteStatus(weeklyRoute, this.weeklyRoute).nextNode;
+    this.weeklyNode = weeklyStatus.nextNode;
     this.weeklyModifier = getWeeklyModifier(this.weeklyNode.modifierId);
     this.stage = this.getWeeklyDifficultyStage(this.weeklyNode);
     this.sfx.setMusicTheme("raid");
@@ -1779,7 +1799,7 @@ export class RaidScene extends Phaser.Scene {
     }
 
     this.flashMonster(isEmpowered ? needleSkin.headColor : 0xf2e3c6);
-    this.spawnEquippedNeedleImpact(localAngle);
+    this.spawnEquippedNeedleImpact(localAngle, isEmpowered);
     this.spawnHitText(isEmpowered, stitchPower);
     this.updateMonsterDamageVisual();
     this.updateHealth();
@@ -2129,9 +2149,23 @@ export class RaidScene extends Phaser.Scene {
     });
   }
 
-  private spawnEquippedNeedleImpact(localAngle: number): void {
+  private spawnEquippedNeedleImpact(
+    localAngle: number,
+    isEmpowered = false,
+  ): void {
     const collectible = this.getEquippedNeedleCosmetic("needle-impact");
     if (!collectible) return;
+
+    const artFileName = getWorkshopImpactArtFileName(collectible.id);
+    if (artFileName) {
+      this.spawnWorkshopImpactArt(
+        localAngle,
+        collectible,
+        artFileName,
+        isEmpowered,
+      );
+      return;
+    }
 
     const palette = getNeedleCosmeticPalette(collectible.id);
     const motif = getNeedleImpactMotif(collectible.id);
@@ -2264,6 +2298,114 @@ export class RaidScene extends Phaser.Scene {
       ease: "Quad.Out",
       onComplete: () => impact.destroy(),
     });
+  }
+
+  private spawnWorkshopImpactArt(
+    localAngle: number,
+    collectible: WorkshopCollectible,
+    artFileName: string,
+    isEmpowered: boolean,
+  ): void {
+    const palette = getNeedleCosmeticPalette(collectible.id);
+    const motif = getNeedleImpactMotif(collectible.id);
+    const worldAngle = localAngle + this.monster.rotation;
+    const surface = this.getMonsterSurfaceRadius(localAngle);
+    const impactX = this.monster.x + Math.cos(worldAngle) * surface;
+    const impactY = this.monster.y + Math.sin(worldAngle) * surface;
+    const displaySize = isEmpowered ? 96 : motif === "crown" ? 90 : 82;
+    const duration = motif === "lightning" ? 210 : motif === "crown" ? 330 : 270;
+
+    const artwork = this.add
+      .image(
+        impactX,
+        impactY,
+        getWorkshopImpactTextureKey(artFileName),
+      )
+      .setDepth(15)
+      .setRotation(worldAngle - Math.PI / 2)
+      .setDisplaySize(displaySize, displaySize)
+      .setAlpha(0.34);
+    const finalScaleX = artwork.scaleX;
+    const finalScaleY = artwork.scaleY;
+    artwork.setScale(finalScaleX * 0.28, finalScaleY * 0.28);
+
+    const contact = this.add
+      .circle(impactX, impactY, isEmpowered ? 7 : 5, palette.secondary, 0.96)
+      .setDepth(16)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const ring = this.add
+      .circle(impactX, impactY, 7, palette.primary, 0.08)
+      .setStrokeStyle(isEmpowered ? 3 : 2, palette.secondary, 0.92)
+      .setDepth(14)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    this.tweens.add({
+      targets: contact,
+      alpha: 0,
+      scale: isEmpowered ? 4.2 : 3.2,
+      duration: 140,
+      ease: "Quad.Out",
+      onComplete: () => contact.destroy(),
+    });
+    this.tweens.add({
+      targets: ring,
+      alpha: 0,
+      scale: isEmpowered ? 3.4 : 2.7,
+      duration: 210,
+      ease: "Cubic.Out",
+      onComplete: () => ring.destroy(),
+    });
+    this.tweens.add({
+      targets: artwork,
+      alpha: 1,
+      scaleX: finalScaleX,
+      scaleY: finalScaleY,
+      duration: 78,
+      ease: "Back.Out",
+      onComplete: () => {
+        this.tweens.add({
+          targets: artwork,
+          alpha: 0,
+          scaleX: finalScaleX * (isEmpowered ? 1.34 : 1.2),
+          scaleY: finalScaleY * (isEmpowered ? 1.34 : 1.2),
+          rotation: artwork.rotation + (motif === "lightning" ? 0.04 : 0.12),
+          duration,
+          ease: "Quad.Out",
+          onComplete: () => artwork.destroy(),
+        });
+      },
+    });
+
+    const fragmentCount = isEmpowered ? 8 : 5;
+    for (let index = 0; index < fragmentCount; index += 1) {
+      const spread = index / (fragmentCount - 1) - 0.5;
+      const fragmentAngle =
+        worldAngle + spread * Math.PI * 1.45 + Phaser.Math.FloatBetween(-0.16, 0.16);
+      const distance = Phaser.Math.Between(isEmpowered ? 26 : 20, isEmpowered ? 44 : 34);
+      const fragment = this.add
+        .ellipse(
+          impactX,
+          impactY,
+          Phaser.Math.Between(2, 4),
+          Phaser.Math.Between(5, 9),
+          index % 2 === 0 ? palette.primary : palette.secondary,
+          0.9,
+        )
+        .setDepth(14)
+        .setRotation(fragmentAngle);
+      this.tweens.add({
+        targets: fragment,
+        x: impactX + Math.cos(fragmentAngle) * distance,
+        y: impactY + Math.sin(fragmentAngle) * distance,
+        alpha: 0,
+        scaleX: 0.35,
+        scaleY: 0.35,
+        rotation: fragment.rotation + Phaser.Math.FloatBetween(-0.7, 0.7),
+        duration: Phaser.Math.Between(180, isEmpowered ? 300 : 250),
+        ease: "Cubic.Out",
+        onComplete: () => fragment.destroy(),
+      });
+    }
   }
 
   private spawnHitText(isEmpowered: boolean, stitchPower: number): void {

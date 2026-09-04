@@ -1,7 +1,9 @@
 import type { RoomId } from "./content";
 
-export const WEEKLY_ROUTE_VERSION = 1 as const;
+export const WEEKLY_ROUTE_VERSION = 2 as const;
 export const WEEKLY_ROUTE_NODE_COUNT = 5 as const;
+export const WEEKLY_RESET_WEEKDAY_UTC = 5 as const;
+const DAY_MS = 86_400_000;
 /** Four weekly finishes in a typical month award 16 buttons; a five-week month awards 20. */
 export const WEEKLY_ROUTE_BUTTON_REWARD = 4 as const;
 export const WEEKLY_ROUTE_REWARD_VARIANTS = [
@@ -100,6 +102,7 @@ export interface WeeklyRouteStatus {
   readonly completedLaps: number;
   readonly completedNodesThisLap: number;
   readonly nextNode: WeeklyRouteNode;
+  readonly canPlay: boolean;
   readonly canClaimFinalReward: boolean;
 }
 
@@ -184,10 +187,12 @@ function normalizeCount(value: unknown): number {
 }
 
 function getWeekId(input: Date | string): string {
-  if (typeof input !== "string") return getIsoWeekId(input);
+  if (typeof input !== "string") return getWeeklyCycleId(input);
   if (/^\d{4}-W\d{2}$/.test(input)) return input;
   const parsed = new Date(input);
-  return Number.isNaN(parsed.getTime()) ? getIsoWeekId(new Date(0)) : getIsoWeekId(parsed);
+  return Number.isNaN(parsed.getTime())
+    ? getWeeklyCycleId(new Date(0))
+    : getWeeklyCycleId(parsed);
 }
 
 /** Returns an ISO-8601 week such as `2026-W36`, using UTC to avoid device timezone drift. */
@@ -206,7 +211,30 @@ export function getIsoWeekId(date: Date): string {
   return `${isoYear}-W${String(week).padStart(2, "0")}`;
 }
 
-/** Builds the same five-node route for every player in the same ISO week. */
+/**
+ * Returns the shared Friday-to-Thursday cycle ID. The four-day shift maps
+ * Friday 00:00 UTC onto the start of an ISO week without using device locale.
+ */
+export function getWeeklyCycleId(date: Date): string {
+  if (Number.isNaN(date.getTime())) return getIsoWeekId(new Date(0));
+  return getIsoWeekId(new Date(date.getTime() - 4 * DAY_MS));
+}
+
+/** Returns the first Friday 00:00 UTC strictly after the supplied instant. */
+export function getNextWeeklyResetAt(date: Date): Date {
+  if (Number.isNaN(date.getTime())) return new Date(0);
+  const daysUntilFriday =
+    (WEEKLY_RESET_WEEKDAY_UTC - date.getUTCDay() + 7) % 7;
+  let resetAt = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate() + daysUntilFriday,
+  );
+  if (resetAt <= date.getTime()) resetAt += 7 * DAY_MS;
+  return new Date(resetAt);
+}
+
+/** Builds the same five-node route for every player in the same Friday cycle. */
 export function createWeeklyRoute(input: Date | string): WeeklyRouteDefinition {
   const weekId = getWeekId(input);
   const seed = hashString(weekId);
@@ -268,7 +296,7 @@ export function createWeeklyRouteProgress(
   };
 }
 
-/** Starts fresh when the ISO week changes and sanitizes partial save data. */
+/** Starts fresh when the Friday cycle changes and sanitizes partial save data. */
 export function syncWeeklyRouteProgress(
   value: unknown,
   route: WeeklyRouteDefinition,
@@ -277,6 +305,9 @@ export function syncWeeklyRouteProgress(
     return createWeeklyRouteProgress(route);
   }
   const record = value as Record<string, unknown>;
+  if (record.version !== WEEKLY_ROUTE_VERSION) {
+    return createWeeklyRouteProgress(route);
+  }
   if (record.weekId !== route.weekId) return createWeeklyRouteProgress(route);
   const rawClears =
     typeof record.clearsByNode === "object" &&
@@ -285,13 +316,22 @@ export function syncWeeklyRouteProgress(
       ? (record.clearsByNode as Record<string, unknown>)
       : {};
 
+  const clearsByNode = Object.fromEntries(
+    route.nodes.map((node) => [
+      node.id,
+      Math.min(1, normalizeCount(rawClears[node.id])),
+    ]),
+  );
+  const completedFirstLap = route.nodes.every(
+    (node) => (clearsByNode[node.id] ?? 0) >= 1,
+  );
+
   return {
     version: WEEKLY_ROUTE_VERSION,
     weekId: route.weekId,
-    clearsByNode: Object.fromEntries(
-      route.nodes.map((node) => [node.id, normalizeCount(rawClears[node.id])]),
-    ),
-    finalRewardClaimed: record.finalRewardClaimed === true,
+    clearsByNode,
+    finalRewardClaimed:
+      completedFirstLap && record.finalRewardClaimed === true,
   };
 }
 
@@ -311,11 +351,12 @@ export function getWeeklyRouteStatus(
     completedLaps,
     completedNodesThisLap,
     nextNode: route.nodes[Math.max(0, nextIndex)],
+    canPlay: !completedFirstLap,
     canClaimFinalReward: completedFirstLap && !synced.finalRewardClaimed,
   };
 }
 
-/** Clears only the currently unlocked node; after node five the same route loops. */
+/** Clears only the currently unlocked node and locks the route after node five. */
 export function completeWeeklyRouteNode(
   progress: WeeklyRouteProgress,
   route: WeeklyRouteDefinition,
@@ -323,7 +364,7 @@ export function completeWeeklyRouteNode(
 ): WeeklyRouteProgress {
   const synced = syncWeeklyRouteProgress(progress, route);
   const status = getWeeklyRouteStatus(synced, route);
-  if (status.nextNode.id !== nodeId) return synced;
+  if (!status.canPlay || status.nextNode.id !== nodeId) return synced;
   return {
     ...synced,
     clearsByNode: {
@@ -333,7 +374,7 @@ export function completeWeeklyRouteNode(
   };
 }
 
-/** Grants the weekly cosmetic once; repeated laps never duplicate it. */
+/** Grants the weekly cosmetic once after the single available route clear. */
 export function claimWeeklyRouteReward(
   progress: WeeklyRouteProgress,
   route: WeeklyRouteDefinition,

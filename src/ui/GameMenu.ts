@@ -51,6 +51,7 @@ import {
   equipWorkshopCollectible,
   getEquippedWorkshopCollectible,
   getWorkshopFrameArtFileName,
+  getWorkshopImpactArtFileName,
   getWorkshopCollectionSummary,
   getWorkshopCollectible,
   getWorkshopOrnamentArtFileName,
@@ -64,6 +65,7 @@ import {
 import {
   claimWeeklyRouteReward,
   createWeeklyRoute,
+  getNextWeeklyResetAt,
   getWeeklyModifier,
   getWeeklyRouteStatus,
   syncWeeklyRouteProgress,
@@ -176,6 +178,16 @@ const MASTERY_REWARD_SYMBOLS: Readonly<Record<NeedleMasteryRewardKind, string>> 
 };
 
 const SEASON_PREMIUM_COST = 60;
+
+function getWeeklyResetLabel(now: Date): string {
+  const resetAt = getNextWeeklyResetAt(now);
+  const dateLabel = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "numeric",
+    month: "long",
+  }).format(resetAt);
+  return `в пятницу, ${dateLabel} · 03:00 МСК`;
+}
 
 const WORKSHOP_KIND_LABELS: Readonly<Record<WorkshopCollectibleKind, string>> = {
   title: "Титул",
@@ -903,6 +915,15 @@ export default class GameMenu {
       return;
     }
     if (action === "weekly-start") {
+      const now = new Date();
+      const route = createWeeklyRoute(now);
+      const progress = syncWeeklyRouteProgress(this.state.weeklyRoute, route);
+      if (!getWeeklyRouteStatus(progress, route).canPlay) {
+        this.showNotice(
+          `Маршрут этой недели уже пройден · новый откроется ${getWeeklyResetLabel(now)}`,
+        );
+        return;
+      }
       this.callbacks.onStartWeekly();
       return;
     }
@@ -1836,14 +1857,16 @@ export default class GameMenu {
         <small>✦ ${chest.reward.thread} · ◈ ${chest.reward.cosmeticFragments}</small>
       </button>`).join("");
 
-    const route = createWeeklyRoute(new Date());
+    const weeklyNow = new Date();
+    const route = createWeeklyRoute(weeklyNow);
     const routeProgress = syncWeeklyRouteProgress(this.state.weeklyRoute, route);
     const routeStatus = getWeeklyRouteStatus(routeProgress, route);
     const currentModifier = getWeeklyModifier(routeStatus.nextNode.modifierId);
+    const weeklyResetLabel = getWeeklyResetLabel(weeklyNow);
     const routeNodes = route.nodes.map((node) => {
       const clearCount = routeProgress.clearsByNode[node.id] ?? 0;
-      const completedThisLap = routeStatus.canClaimFinalReward || clearCount > routeStatus.completedLaps;
-      const active = !routeStatus.canClaimFinalReward && node.id === routeStatus.nextNode.id;
+      const completedThisLap = clearCount >= 1;
+      const active = routeStatus.canPlay && node.id === routeStatus.nextNode.id;
       return `
         <li class="weekly-node ${completedThisLap ? "is-done" : ""} ${active ? "is-active" : ""} ${!completedThisLap && !active ? "is-locked" : ""}" title="${node.name}">
           <span>${completedThisLap ? "✓" : node.order}</span><small>${node.order === 5 ? "ФИНАЛ" : `УЗЕЛ ${node.order}`}</small>
@@ -1901,12 +1924,13 @@ export default class GameMenu {
     const weeklyContent = `
       <section class="weekly-route-card" aria-labelledby="weekly-route-title">
         <div class="weekly-art"><img src="${asset("ui-weekly-route-map.webp")}" alt="" aria-hidden="true" draggable="false" /></div>
-        <div class="weekly-copy"><span>МАРШРУТ НЕДЕЛИ · ${route.weekId}</span><h3 id="weekly-route-title">${routeStatus.nextNode.name}</h3><p><strong>${currentModifier.name}:</strong> ${currentModifier.description}</p></div>
+        <div class="weekly-copy"><span>МАРШРУТ НЕДЕЛИ · ${route.weekId}</span><h3 id="weekly-route-title">${routeStatus.completedFirstLap ? "Маршрут недели пройден" : routeStatus.nextNode.name}</h3><p>${routeStatus.completedFirstLap ? routeProgress.finalRewardClaimed ? `Все пять узлов завершены. Новый путь откроется ${weeklyResetLabel}.` : `<strong>Финал готов.</strong> Забери эмблему; новый путь откроется ${weeklyResetLabel}.` : `<strong>${currentModifier.name}:</strong> ${currentModifier.description}`}</p></div>
         <ol class="weekly-nodes" aria-label="Пять узлов недельного маршрута">${routeNodes}</ol>
         <div class="weekly-reward"><span>Финальная награда</span><strong>${route.finalReward.name}</strong></div>
+        <div class="weekly-reset-note"><span>ЕДИНЫЙ СБРОС</span><strong>${weeklyResetLabel}</strong><small>После прохождения маршрут закрыт до следующей пятницы.</small></div>
         <div class="weekly-actions">
-          <button class="route-button" data-action="weekly-start" ${routeStatus.canClaimFinalReward ? "disabled" : ""}><span>${routeStatus.canClaimFinalReward ? "МАРШРУТ ЗАВЕРШЁН" : routeStatus.completedNodesThisLap === 0 ? "НАЧАТЬ ПУТЬ" : "ИГРАТЬ СЛЕДУЮЩИЙ УЗЕЛ"}</span><small>${routeStatus.canClaimFinalReward ? "ЗАБЕРИ ЭМБЛЕМУ" : `${routeStatus.nextNode.order}/5 · ${currentModifier.name}`}</small></button>
-          <button class="route-claim-button" data-action="weekly-claim" ${!routeStatus.canClaimFinalReward ? "disabled" : ""}><span>${routeProgress.finalRewardClaimed ? "ПОЛУЧЕНО" : "ЗАБРАТЬ ФИНАЛ"}</span><small>${routeProgress.finalRewardClaimed ? "ЭМБЛЕМА В КОЛЛЕКЦИИ" : "ПОСЛЕ 5 УЗЛОВ"}</small></button>
+          <button class="route-button" data-action="weekly-start" ${!routeStatus.canPlay ? "disabled" : ""}><span>${routeStatus.completedFirstLap ? routeProgress.finalRewardClaimed ? "МАРШРУТ ПРОЙДЕН" : "МАРШРУТ ЗАВЕРШЁН" : routeStatus.completedNodesThisLap === 0 ? "НАЧАТЬ ПУТЬ" : "ИГРАТЬ СЛЕДУЮЩИЙ УЗЕЛ"}</span><small>${routeStatus.completedFirstLap ? routeProgress.finalRewardClaimed ? "ДО ПЯТНИЦЫ · 03:00 МСК" : "ЗАБЕРИ ЭМБЛЕМУ" : `${routeStatus.nextNode.order}/5 · ${currentModifier.name}`}</small></button>
+          <button class="route-claim-button" data-action="weekly-claim" ${!routeStatus.canClaimFinalReward ? "disabled" : ""}><span>${routeProgress.finalRewardClaimed ? "ПОЛУЧЕНО" : "ЗАБРАТЬ ФИНАЛ"}</span><small>${routeProgress.finalRewardClaimed ? "НОВЫЙ ПУТЬ В ПЯТНИЦУ" : "ПОСЛЕ 5 УЗЛОВ"}</small></button>
         </div>
       </section>`;
 
@@ -2031,6 +2055,7 @@ export default class GameMenu {
   ): string {
     const patchFile = getWorkshopPatchArtFileName(collectible.id);
     const frameFile = getWorkshopFrameArtFileName(collectible.id);
+    const impactFile = getWorkshopImpactArtFileName(collectible.id);
     const ornamentFile = getWorkshopOrnamentArtFileName(collectible.id);
     const variant = collectibleVariant(collectible.id);
     const stateClass = locked ? " is-locked" : "";
@@ -2042,6 +2067,10 @@ export default class GameMenu {
     }
     if (ornamentFile) {
       return `<span class="collectible-preview is-workshop-ornament v-${variant}${stateClass}" aria-hidden="true"><img src="${asset(ornamentFile)}" alt="" draggable="false" /></span>`;
+    }
+    if (impactFile) {
+      const presentation = getNeedlePreviewPresentation(collectible.id);
+      return `<span class="collectible-preview is-needle-impact has-impact-art has-cosmetic-palette motif-${presentation.impactMotif} v-${variant}${stateClass}" style="--preview-primary:${presentation.primary};--preview-secondary:${presentation.secondary}" aria-hidden="true"><img class="preview-impact-art" src="${asset(impactFile)}" alt="" draggable="false" /></span>`;
     }
 
     const previewNeedle = NEEDLE_SKINS.find((needle) =>
@@ -2056,15 +2085,6 @@ export default class GameMenu {
     const needlePreviewClass = needlePresentation
       ? ` has-cosmetic-palette motif-${collectible.kind === "needle-impact" ? needlePresentation.impactMotif : needlePresentation.trailMotif}`
       : "";
-    const impactSymbols: Readonly<Record<NeedlePreviewPresentation["impactMotif"], string>> = {
-      stitches: "×",
-      stars: "✦",
-      shards: "◆",
-      lightning: "ϟ",
-      petals: "✤",
-      crown: "♛",
-    };
-
     const contents: Readonly<Record<WorkshopCollectibleKind, string>> = {
       title: `<b class="preview-title">${escapeHtml(collectibleDisplayName(collectible.name))}</b><i>✦</i>`,
       patch: `<b>◆</b>`,
@@ -2072,7 +2092,7 @@ export default class GameMenu {
       "name-glow": `<b class="preview-name">Эля</b><i>✧</i>`,
       "name-font": `<b class="preview-name">Эля</b>`,
       "needle-trail": `<img class="preview-needle-art" src="${asset(previewNeedle.iconFileName)}" alt="" /><i class="preview-thread"></i><i class="preview-trail-accent">${needlePresentation?.trailMotif === "lightning" ? "ϟ" : needlePresentation?.trailMotif === "spark" ? "✦" : "·"}</i>`,
-      "needle-impact": `<b class="preview-impact-motif">${impactSymbols[needlePresentation?.impactMotif ?? "stitches"]}</b><i>·</i><i>✧</i>`,
+      "needle-impact": "",
       "needle-aura": `<img class="preview-needle-art" src="${asset(previewNeedle.iconFileName)}" alt="" /><i class="preview-aura"></i><i class="preview-aura-orbit"></i>`,
       "workshop-ornament": `<b>${this.getOrnamentSymbol(collectible.name)}</b>`,
     };

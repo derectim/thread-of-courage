@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .tools/
+# Local, unlicensed visual references; never include them in a release.
+/Free/
 assets/source-art/boss-madam-marionette.png
 assets/source-art/boss-ripper.png
 assets/source-art/hero-elya-action-v2.png

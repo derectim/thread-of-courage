@@ -343,6 +343,20 @@ export const WORKSHOP_ORNAMENT_ART: Readonly<Record<string, string>> = {
   "living-thread-01-premium-18": "ornament-golden-machine-heart.webp",
 };
 
+/** Runtime art for every collectible needle impact in the season and mastery tracks. */
+export const WORKSHOP_IMPACT_ART: Readonly<Record<string, string>> = {
+  "living-thread-01-free-3": "impact-wool-puff.webp",
+  "living-thread-01-free-11": "impact-button-spark.webp",
+  "living-thread-01-free-17": "impact-golden-knot.webp",
+  "living-thread-01-premium-4": "impact-silk-stars.webp",
+  "living-thread-01-premium-10": "impact-scattered-gems.webp",
+  "living-thread-01-premium-16": "impact-stitch-crown.webp",
+  "silver-mastery-4": "impact-moon-sparks.webp",
+  "bone-mastery-4": "impact-runic-shard.webp",
+  "storm-mastery-4": "impact-thunder-knot.webp",
+  "sunrise-mastery-4": "impact-dawn-petals.webp",
+};
+
 export function getWorkshopPatchArtFileName(id: string): string | null {
   return WORKSHOP_PATCH_ART[id] ?? null;
 }
@@ -353,6 +367,10 @@ export function getWorkshopFrameArtFileName(id: string): string | null {
 
 export function getWorkshopOrnamentArtFileName(id: string): string | null {
   return WORKSHOP_ORNAMENT_ART[id] ?? null;
+}
+
+export function getWorkshopImpactArtFileName(id: string): string | null {
+  return WORKSHOP_IMPACT_ART[id] ?? null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

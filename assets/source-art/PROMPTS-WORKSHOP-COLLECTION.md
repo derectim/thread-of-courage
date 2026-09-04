@@ -127,3 +127,39 @@
 требовались один предмет, щедрые прозрачные поля, читаемость при 56–80 px и
 отсутствие комнаты, карточки, текста и водяного знака. Игровые WebP имеют
 максимальную сторону 320 px и сохраняют alpha-канал.
+
+## Оригинальные эффекты попадания — 2026-09-04
+
+Десять эффектов созданы встроенной генерацией изображений Codex отдельным
+вызовом для каждого ассета. Нелицензированные материалы из `Free/` не
+использовались как входные изображения и ни один их пиксель не переносился.
+Из примеров были взяты только общие принципы игрового движения: короткий
+контактный блик, быстрое раскрытие силуэта, разлёт частиц и затухание.
+
+Общая часть промптов:
+
+> Use case: stylized-concept. Asset type: original 2D mobile-game hit VFX
+> cutout. One centered compact impact burst at peak bloom, fully visible with
+> generous transparent padding. Premium hand-painted tactile felt, satin
+> embroidery and luminous fibers in a cozy enchanted tailoring aesthetic,
+> readable at 56–80 px, not pixel art. Genuinely transparent RGBA background;
+> no UI icon, medallion, card, border, text, character, weapon, scene,
+> checkerboard or watermark. Do not copy any existing VFX pack; avoid generic
+> neon fire, perfect geometric mandalas and heavy smoke.
+
+| Файл | Уникальная тема промпта |
+| --- | --- |
+| `impact-wool-puff.png` | Кремово-золотой хлопок шерстинок, центральный крестик и короткие обрывки нити. |
+| `impact-button-spark.png` | Бирюзовая четырёхдырочная пуговица, прошитая ударная рябь и золотые искры. |
+| `impact-golden-knot.png` | Светящийся объёмный золотой узел, петли металлической нити и войлочные частицы. |
+| `impact-silk-stars.png` | Пять асимметричных шёлковых звёзд, серебряно-лиловые нити и мягкое лунное сияние. |
+| `impact-scattered-gems.png` | Разлёт малиновых, бирюзовых и фиолетовых самоцветов из золотой оправы. |
+| `impact-stitch-crown.png` | Корона из переплетённых золотых стежков и игольных ушек с бордовыми лоскутками. |
+| `impact-moon-sparks.png` | Серебряный полумесяц-стежок, жемчужные искры и холодные голубые волокна. |
+| `impact-runic-shard.png` | Расколотая янтарная руна из костяных пластинок, льняная пыль и тёмные стежки. |
+| `impact-thunder-knot.png` | Бирюзово-фиолетовый грозовой узел с двумя вышитыми молниями. |
+| `impact-dawn-petals.png` | Пять тёплых шёлково-войлочных лепестков рассвета и золотые нити. |
+
+Игровые WebP уменьшены до 256×256, сохраняют alpha-канал и находятся в
+`../../public/assets/art/`. В бою они анимируются отдельными слоями: контактная
+вспышка, раскрытие изображения и 5–8 разлетающихся нитяных фрагментов.

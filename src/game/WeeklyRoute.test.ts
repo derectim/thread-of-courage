@@ -9,6 +9,8 @@ import {
   createWeeklyRoute,
   createWeeklyRouteProgress,
   getIsoWeekId,
+  getNextWeeklyResetAt,
+  getWeeklyCycleId,
   getWeeklyModifier,
   getWeeklyRouteStatus,
   resolveWeeklyRouteCollectibleId,
@@ -22,9 +24,48 @@ describe("weekly route", () => {
     expect(getIsoWeekId(new Date("2026-09-03T09:00:00Z"))).toBe("2026-W36");
   });
 
+  it("uses one global Friday-to-Thursday cycle with a 00:00 UTC reset", () => {
+    expect(getWeeklyCycleId(new Date("2026-09-03T23:59:59.999Z"))).toBe(
+      "2026-W35",
+    );
+    expect(getWeeklyCycleId(new Date("2026-09-04T00:00:00.000Z"))).toBe(
+      "2026-W36",
+    );
+    expect(getWeeklyCycleId(new Date("2026-09-10T23:59:59.999Z"))).toBe(
+      "2026-W36",
+    );
+    expect(getWeeklyCycleId(new Date("2026-09-11T00:00:00.000Z"))).toBe(
+      "2026-W37",
+    );
+  });
+
+  it("returns the next Friday reset, including when called exactly at reset", () => {
+    expect(
+      getNextWeeklyResetAt(new Date("2026-09-03T23:59:59.999Z")).toISOString(),
+    ).toBe("2026-09-04T00:00:00.000Z");
+    expect(
+      getNextWeeklyResetAt(new Date("2026-09-04T00:00:00.000Z")).toISOString(),
+    ).toBe("2026-09-11T00:00:00.000Z");
+    expect(
+      getNextWeeklyResetAt(new Date("2026-09-04T21:15:00.000Z")).toISOString(),
+    ).toBe("2026-09-11T00:00:00.000Z");
+  });
+
+  it("keeps the Friday cycle stable across the ISO year boundary", () => {
+    expect(getWeeklyCycleId(new Date("2021-01-01T00:00:00.000Z"))).toBe(
+      "2020-W53",
+    );
+    expect(getWeeklyCycleId(new Date("2021-01-07T23:59:59.999Z"))).toBe(
+      "2020-W53",
+    );
+    expect(getWeeklyCycleId(new Date("2021-01-08T00:00:00.000Z"))).toBe(
+      "2021-W01",
+    );
+  });
+
   it("creates five deterministic, fully known nodes for an ISO week", () => {
     const first = createWeeklyRoute("2026-W36");
-    const again = createWeeklyRoute(new Date("2026-09-03T23:59:00Z"));
+    const again = createWeeklyRoute(new Date("2026-09-04T00:00:00Z"));
 
     expect(again).toEqual(first);
     expect(first.nodes).toHaveLength(5);
@@ -90,11 +131,12 @@ describe("weekly route", () => {
       completedFirstLap: true,
       completedLaps: 1,
       completedNodesThisLap: 0,
+      canPlay: false,
       canClaimFinalReward: true,
     });
   });
 
-  it("allows replaying the route but grants its emblem and four buttons only once", () => {
+  it("locks the route after one clear and claiming the reward never unlocks it", () => {
     const route = createWeeklyRoute("2026-W36");
     let progress = createWeeklyRouteProgress(route);
     for (const node of route.nodes) {
@@ -107,10 +149,14 @@ describe("weekly route", () => {
     expect(firstClaim.reward?.buttonReward).toBe(4);
 
     progress = firstClaim.progress;
-    for (const node of route.nodes) {
-      progress = completeWeeklyRouteNode(progress, route, node.id);
-    }
-    expect(getWeeklyRouteStatus(progress, route).completedLaps).toBe(2);
+    const replayAttempt = completeWeeklyRouteNode(progress, route, route.nodes[0].id);
+    expect(replayAttempt).toEqual(progress);
+    expect(getWeeklyRouteStatus(progress, route)).toMatchObject({
+      completedFirstLap: true,
+      completedLaps: 1,
+      canPlay: false,
+      canClaimFinalReward: false,
+    });
     const repeatedClaim = claimWeeklyRouteReward(progress, route);
     expect(repeatedClaim.reward).toBeNull();
     expect(repeatedClaim.progress).toEqual(progress);
@@ -149,7 +195,7 @@ describe("weekly route", () => {
     expect(claim.progress.finalRewardClaimed).toBe(false);
   });
 
-  it("resets progress for a new week and sanitizes current-week values", () => {
+  it("resets progress for a new Friday cycle and sanitizes current-cycle values", () => {
     const oldRoute = createWeeklyRoute("2026-W36");
     const nextRoute = createWeeklyRoute("2026-W37");
     const oldProgress = {
@@ -158,11 +204,49 @@ describe("weekly route", () => {
       finalRewardClaimed: true,
     };
 
-    expect(syncWeeklyRouteProgress(oldProgress, oldRoute).clearsByNode).toMatchObject({
-      [oldRoute.nodes[0].id]: 2,
+    expect(syncWeeklyRouteProgress(oldProgress, oldRoute)).toMatchObject({
+      clearsByNode: { [oldRoute.nodes[0].id]: 1 },
+      finalRewardClaimed: false,
     });
     expect(syncWeeklyRouteProgress(oldProgress, nextRoute)).toEqual(
       createWeeklyRouteProgress(nextRoute),
     );
+  });
+
+  it("starts fresh when migrating a save from the old Monday-based cycle", () => {
+    const route = createWeeklyRoute("2026-W36");
+    const mondayCycleProgress = {
+      ...createWeeklyRouteProgress(route),
+      version: 1,
+      clearsByNode: Object.fromEntries(
+        route.nodes.map((node) => [node.id, 1]),
+      ),
+      finalRewardClaimed: true,
+    };
+
+    expect(syncWeeklyRouteProgress(mondayCycleProgress, route)).toEqual(
+      createWeeklyRouteProgress(route),
+    );
+  });
+
+  it("migrates old replay counters to one completed and locked route", () => {
+    const route = createWeeklyRoute("2026-W36");
+    const legacyReplayProgress = {
+      ...createWeeklyRouteProgress(route),
+      clearsByNode: Object.fromEntries(
+        route.nodes.map((node) => [node.id, 3.9]),
+      ),
+      finalRewardClaimed: true,
+    };
+
+    const migrated = syncWeeklyRouteProgress(legacyReplayProgress, route);
+    expect(Object.values(migrated.clearsByNode)).toEqual([1, 1, 1, 1, 1]);
+    expect(migrated.finalRewardClaimed).toBe(true);
+    expect(getWeeklyRouteStatus(migrated, route)).toMatchObject({
+      completedFirstLap: true,
+      completedLaps: 1,
+      canPlay: false,
+      canClaimFinalReward: false,
+    });
   });
 });

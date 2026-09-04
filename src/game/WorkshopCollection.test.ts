@@ -14,9 +14,11 @@ import {
   WORKSHOP_COLLECTION_SAVE_KEY,
   WORKSHOP_COLLECTIBLES,
   WORKSHOP_FRAME_ART,
+  WORKSHOP_IMPACT_ART,
   WORKSHOP_LEVELS,
   WORKSHOP_ORNAMENT_ART,
   getWorkshopFrameArtFileName,
+  getWorkshopImpactArtFileName,
   getWorkshopOrnamentArtFileName,
   getWorkshopPatchArtFileName,
   createWorkshopCollectionState,
@@ -170,7 +172,38 @@ describe("WorkshopCollection catalog", () => {
     ).toBe(true);
   });
 
-  it("returns no frame or ornament art for other collectible kinds or unknown ids", () => {
+  it("maps every collectible needle impact to its runtime art", () => {
+    const impacts = WORKSHOP_COLLECTIBLES.filter(
+      (item) => item.kind === "needle-impact",
+    );
+    expect(
+      Object.fromEntries(
+        impacts.map((impact) => [
+          impact.id,
+          getWorkshopImpactArtFileName(impact.id),
+        ]),
+      ),
+    ).toEqual({
+      "living-thread-01-free-3": "impact-wool-puff.webp",
+      "living-thread-01-free-11": "impact-button-spark.webp",
+      "living-thread-01-free-17": "impact-golden-knot.webp",
+      "living-thread-01-premium-4": "impact-silk-stars.webp",
+      "living-thread-01-premium-10": "impact-scattered-gems.webp",
+      "living-thread-01-premium-16": "impact-stitch-crown.webp",
+      "silver-mastery-4": "impact-moon-sparks.webp",
+      "bone-mastery-4": "impact-runic-shard.webp",
+      "storm-mastery-4": "impact-thunder-knot.webp",
+      "sunrise-mastery-4": "impact-dawn-petals.webp",
+    });
+    expect(Object.keys(WORKSHOP_IMPACT_ART)).toHaveLength(impacts.length);
+    expect(
+      impacts.every((impact) =>
+        Boolean(getWorkshopImpactArtFileName(impact.id)?.trim()),
+      ),
+    ).toBe(true);
+  });
+
+  it("returns no frame, ornament or impact art for other kinds and unknown ids", () => {
     for (const collectible of WORKSHOP_COLLECTIBLES) {
       if (collectible.kind !== "portrait-frame") {
         expect(getWorkshopFrameArtFileName(collectible.id)).toBeNull();
@@ -178,9 +211,13 @@ describe("WorkshopCollection catalog", () => {
       if (collectible.kind !== "workshop-ornament") {
         expect(getWorkshopOrnamentArtFileName(collectible.id)).toBeNull();
       }
+      if (collectible.kind !== "needle-impact") {
+        expect(getWorkshopImpactArtFileName(collectible.id)).toBeNull();
+      }
     }
     expect(getWorkshopFrameArtFileName("unknown-collectible")).toBeNull();
     expect(getWorkshopOrnamentArtFileName("unknown-collectible")).toBeNull();
+    expect(getWorkshopImpactArtFileName("unknown-collectible")).toBeNull();
   });
 });
 

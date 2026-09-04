@@ -4668,6 +4668,39 @@ button {
   background: rgba(255, 247, 231, 0.4);
 }
 
+.weekly-reset-note {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid rgba(73, 93, 109, 0.24);
+  border-radius: 9px;
+  color: #4b4850;
+  background: rgba(239, 246, 243, 0.58);
+}
+
+.weekly-reset-note > span {
+  color: #765368;
+  font-size: 7px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}
+
+.weekly-reset-note > strong {
+  justify-self: end;
+  color: #315f58;
+  font-size: 10px;
+  text-align: right;
+}
+
+.weekly-reset-note > small {
+  grid-column: 1 / -1;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
 .weekly-actions {
   grid-column: 1 / -1;
   display: grid;
