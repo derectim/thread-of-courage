@@ -2,14 +2,21 @@ import { describe, expect, it } from "vitest";
 
 import {
   QUEST_PAGE_LABELS,
+  LOCKED_REWARD_ART_FILE_NAME,
+  LOCKED_REWARD_DESCRIPTION,
+  LOCKED_REWARD_NAME,
   UPGRADE_PAGE_LABELS,
   WORKSHOP_PAGE_KINDS,
   WORKSHOP_PAGE_LABELS,
+  getCollectibleRewardPresentation,
   getBestiaryThreatLabel,
   resolvePanelScrollRestoration,
   TAB_LABELS,
 } from "./GameMenu";
-import { WORKSHOP_COLLECTIBLE_KINDS } from "../game/WorkshopCollection";
+import {
+  WORKSHOP_COLLECTIBLE_KINDS,
+  WORKSHOP_COLLECTIBLES,
+} from "../game/WorkshopCollection";
 
 describe("menu tab artwork", () => {
   it("maps every menu section to a unique published icon", () => {
@@ -48,6 +55,31 @@ describe("compact menu sections", () => {
     const kinds = Object.values(WORKSHOP_PAGE_KINDS).flat();
     expect(kinds).toHaveLength(WORKSHOP_COLLECTIBLE_KINDS.length);
     expect(new Set(kinds)).toEqual(new Set(WORKSHOP_COLLECTIBLE_KINDS));
+  });
+});
+
+describe("mystery reward presentation", () => {
+  it("never exposes the name or description of an unowned collectible", () => {
+    expect(LOCKED_REWARD_ART_FILE_NAME).toBe(
+      "ui-reward-mystery-parcel.webp",
+    );
+    for (const collectible of WORKSHOP_COLLECTIBLES) {
+      expect(getCollectibleRewardPresentation(collectible, false)).toEqual({
+        name: LOCKED_REWARD_NAME,
+        description: LOCKED_REWARD_DESCRIPTION,
+        revealed: false,
+      });
+    }
+  });
+
+  it("reveals the real collectible copy only after it is owned", () => {
+    for (const collectible of WORKSHOP_COLLECTIBLES) {
+      expect(getCollectibleRewardPresentation(collectible, true)).toEqual({
+        name: collectible.name.replace(/^Титул «|»$/g, ""),
+        description: collectible.description,
+        revealed: true,
+      });
+    }
   });
 });
 
