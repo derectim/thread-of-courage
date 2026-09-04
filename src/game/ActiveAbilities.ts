@@ -15,6 +15,7 @@ export interface ActiveAbilityDefinition {
   readonly shortName: string;
   readonly description: string;
   readonly symbol: string;
+  readonly iconFileName: string;
   readonly unlockStage: number;
   readonly chargesPerStage: number;
   readonly cooldownMs: number;
@@ -28,6 +29,7 @@ export const ACTIVE_ABILITIES: readonly ActiveAbilityDefinition[] = [
     shortName: "Петля",
     description: "Один раз за поход после видео сильно замедляет узор противника.",
     symbol: "◷",
+    iconFileName: "ability-time-loop.webp",
     unlockStage: 1,
     chargesPerStage: 1,
     cooldownMs: 0,
@@ -39,6 +41,7 @@ export const ACTIVE_ABILITIES: readonly ActiveAbilityDefinition[] = [
     shortName: "Магнит",
     description: "Один раз за поход после видео следующая игла найдёт свободное место.",
     symbol: "⌁",
+    iconFileName: "ability-magnetic-stitch.webp",
     unlockStage: 6,
     chargesPerStage: 1,
     cooldownMs: 0,
@@ -49,6 +52,7 @@ export const ACTIVE_ABILITIES: readonly ActiveAbilityDefinition[] = [
     shortName: "Узел",
     description: "Один раз за поход после видео возвращает щит или спасает от столкновения.",
     symbol: "◇",
+    iconFileName: "ability-spare-knot.webp",
     unlockStage: 12,
     chargesPerStage: 1,
     cooldownMs: 0,

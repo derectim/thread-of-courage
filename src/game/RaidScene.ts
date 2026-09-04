@@ -57,6 +57,7 @@ import {
   type VictoryChoice,
 } from "./raidFlow";
 import {
+  ACTIVE_ABILITIES,
   TIME_LOOP_SPEED_MULTIPLIER,
   activateAbility,
   canActivateAbility,
@@ -126,6 +127,10 @@ type NeedleCosmeticKind = Extract<
   WorkshopCollectibleKind,
   "needle-trail" | "needle-impact" | "needle-aura"
 >;
+
+function getActiveAbilityTextureKey(id: ActiveAbilityId): string {
+  return `ability-${id}`;
+}
 
 interface NeedleCosmeticPalette {
   readonly primary: number;
@@ -270,8 +275,10 @@ export class RaidScene extends Phaser.Scene {
   private patternText!: Phaser.GameObjects.Text;
   private tipText!: Phaser.GameObjects.Text;
   private soundButton!: Phaser.GameObjects.Text;
-  private abilityButton!: Phaser.GameObjects.Rectangle;
-  private abilitySymbolText!: Phaser.GameObjects.Text;
+  private abilityButton!: Phaser.GameObjects.Container;
+  private abilityMedallion!: Phaser.GameObjects.Arc;
+  private abilityMedallionInner!: Phaser.GameObjects.Arc;
+  private abilityIcon!: Phaser.GameObjects.Image;
   private abilityNameText!: Phaser.GameObjects.Text;
   private abilityStateText!: Phaser.GameObjects.Text;
   private roomEffectText!: Phaser.GameObjects.Text;
@@ -328,6 +335,13 @@ export class RaidScene extends Phaser.Scene {
 
     for (const needle of NEEDLE_SKINS) {
       this.load.image(needle.textureKey, art + needle.iconFileName);
+    }
+
+    for (const ability of ACTIVE_ABILITIES) {
+      this.load.image(
+        getActiveAbilityTextureKey(ability.id),
+        art + ability.iconFileName,
+      );
     }
   }
 
@@ -819,38 +833,49 @@ export class RaidScene extends Phaser.Scene {
       .setAlpha(0)
       .setDepth(24);
 
-    this.abilityButton = this.add
-      .rectangle(356, 680, 136, 64, 0x25324a, 0.94)
-      .setStrokeStyle(2, 0x9edfd7, 0.72)
-      .setDepth(27)
-      .setInteractive({ useHandCursor: true });
-    this.abilitySymbolText = this.add
-      .text(307, 676, "◷", {
-        fontFamily: "Georgia, serif",
-        fontSize: "29px",
-        fontStyle: "bold",
-        color: "#9edfd7",
-      })
-      .setOrigin(0.5)
-      .setDepth(28);
+    const ability = getActiveAbility(this.abilityRuntime.id);
+    const abilityShadow = this.add.circle(-38, 3, 29, 0x101522, 0.68);
+    this.abilityMedallion = this.add
+      .circle(-38, 0, 28, 0x29485a, 0.98)
+      .setStrokeStyle(3, 0x9edfd7, 0.9);
+    this.abilityMedallionInner = this.add
+      .circle(-38, 0, 23, 0x17283b, 0.94)
+      .setStrokeStyle(1, 0xfff0bd, 0.28);
+    this.abilityIcon = this.add
+      .image(-38, 0, getActiveAbilityTextureKey(ability.id))
+      .setDisplaySize(43, 43);
     this.abilityNameText = this.add
-      .text(365, 665, "Петля", {
+      .text(-3, -11, ability.shortName, {
         fontFamily: "Inter, Segoe UI, sans-serif",
         fontSize: "12px",
         fontStyle: "bold",
         color: "#fff6db",
+        stroke: "#182033",
+        strokeThickness: 3,
       })
-      .setOrigin(0.5)
-      .setDepth(28);
+      .setOrigin(0, 0.5);
     this.abilityStateText = this.add
-      .text(365, 687, "×1 · E", {
+      .text(-3, 11, "×1 · E", {
         fontFamily: "Inter, Segoe UI, sans-serif",
         fontSize: "10px",
         fontStyle: "bold",
         color: "#c8d7ca",
+        stroke: "#182033",
+        strokeThickness: 3,
       })
-      .setOrigin(0.5)
-      .setDepth(28);
+      .setOrigin(0, 0.5);
+    this.abilityButton = this.add
+      .container(356, 680, [
+        abilityShadow,
+        this.abilityMedallion,
+        this.abilityMedallionInner,
+        this.abilityIcon,
+        this.abilityNameText,
+        this.abilityStateText,
+      ])
+      .setSize(136, 64)
+      .setDepth(27)
+      .setInteractive({ useHandCursor: true });
 
     this.abilityButton.on("pointerover", () => {
       if (canActivateAbility(this.abilityRuntime, this.time.now)) {
@@ -1393,9 +1418,6 @@ export class RaidScene extends Phaser.Scene {
 
   private setCombatHudVisible(visible: boolean): void {
     this.abilityButton?.setVisible(visible);
-    this.abilitySymbolText?.setVisible(visible);
-    this.abilityNameText?.setVisible(visible);
-    this.abilityStateText?.setVisible(visible);
     if (!visible) this.roomEffectText?.setAlpha(0);
   }
 
@@ -1432,13 +1454,24 @@ export class RaidScene extends Phaser.Scene {
       stateText = "ИСТРАЧЕНО";
     }
 
-    this.abilitySymbolText.setText(ability.symbol);
+    this.abilityIcon.setTexture(getActiveAbilityTextureKey(ability.id));
     this.abilityNameText.setText(ability.shortName);
     this.abilityStateText.setText(stateText);
-    this.abilityButton
-      .setFillStyle(available ? 0x29485a : armed ? 0x554263 : 0x25324a, 0.96)
-      .setStrokeStyle(2, available || armed ? 0x9edfd7 : 0x6d7885, 0.72)
-      .setAlpha(available || armed || timeRemaining > 0 ? 1 : 0.68);
+    const highlighted = available || armed || timeRemaining > 0;
+    const rimColor = armed || timeRemaining > 0
+      ? 0xe8b44d
+      : available
+        ? 0x9edfd7
+        : 0x6d7885;
+    this.abilityMedallion
+      .setFillStyle(armed ? 0x554263 : available ? 0x29485a : 0x25324a, 0.98)
+      .setStrokeStyle(3, rimColor, highlighted ? 0.96 : 0.72);
+    this.abilityMedallionInner
+      .setFillStyle(armed ? 0x35283f : available ? 0x172f40 : 0x202936, 0.96)
+      .setStrokeStyle(1, rimColor, highlighted ? 0.42 : 0.24);
+    if (highlighted) this.abilityIcon.clearTint();
+    else this.abilityIcon.setTint(0x9aa4ad);
+    this.abilityButton.setAlpha(highlighted ? 1 : 0.68);
   }
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {

@@ -50,8 +50,10 @@ import {
   WORKSHOP_COLLECTIBLES,
   equipWorkshopCollectible,
   getEquippedWorkshopCollectible,
+  getWorkshopFrameArtFileName,
   getWorkshopCollectionSummary,
   getWorkshopCollectible,
+  getWorkshopOrnamentArtFileName,
   getWorkshopPatchArtFileName,
   grantWorkshopCollectible,
   normalizeWorkshopCollectionState,
@@ -91,6 +93,10 @@ import type { PlatformUserProfile } from "../platform/PlatformAdapter";
 
 export type MenuTab = "home" | "upgrades" | "quests" | "needles" | "bestiary" | "shop";
 
+export type UpgradePage = "permanent" | "active" | "passive";
+export type QuestPage = "daily" | "weekly" | "chronicle";
+export type WorkshopPage = "profile" | "needle" | "room";
+
 interface HiddenPanelView {
   readonly tab: Exclude<MenuTab, "home">;
   readonly scrollTop: number;
@@ -114,11 +120,35 @@ export interface GameMenuCallbacks {
   readonly onLoadProfile?: () => Promise<PlatformUserProfile | null>;
 }
 
-const UPGRADE_NAMES: Readonly<Record<UpgradeId, { name: string; symbol: string }>> = {
-  power: { name: "Двойная нить", symbol: "✦" },
-  precision: { name: "Точный напёрсток", symbol: "◎" },
-  speed: { name: "Быстрый челнок", symbol: "➶" },
-  ward: { name: "Оберег лоскутницы", symbol: "◇" },
+const UPGRADE_NAMES: Readonly<Record<UpgradeId, { name: string; iconFileName: string }>> = {
+  power: { name: "Двойная нить", iconFileName: "upgrade-power.webp" },
+  precision: { name: "Точный напёрсток", iconFileName: "upgrade-precision.webp" },
+  speed: { name: "Быстрый челнок", iconFileName: "upgrade-speed.webp" },
+  ward: { name: "Оберег лоскутницы", iconFileName: "upgrade-ward.webp" },
+};
+
+const SKILL_ICON_FILES: Readonly<Record<SkillId, string>> = {
+  "steady-hand": "skill-steady-hand.webp",
+  "time-seam": "skill-time-seam.webp",
+  "guardian-knot": "skill-guardian-knot.webp",
+};
+
+export const UPGRADE_PAGE_LABELS: Readonly<Record<UpgradePage, string>> = {
+  permanent: "Постоянные",
+  active: "Приёмы",
+  passive: "Таланты",
+};
+
+export const QUEST_PAGE_LABELS: Readonly<Record<QuestPage, string>> = {
+  daily: "Сегодня",
+  weekly: "Неделя",
+  chronicle: "Летопись",
+};
+
+export const WORKSHOP_PAGE_LABELS: Readonly<Record<WorkshopPage, string>> = {
+  profile: "Профиль",
+  needle: "Игла",
+  room: "Комната",
 };
 
 const QUEST_EMBLEMS: Readonly<Record<QuestId, string>> = {
@@ -173,8 +203,101 @@ const NEEDLE_COLLECTIBLE_KINDS: readonly WorkshopCollectibleKind[] = [
   "needle-aura",
 ];
 
+export const WORKSHOP_PAGE_KINDS: Readonly<
+  Record<WorkshopPage, readonly WorkshopCollectibleKind[]>
+> = {
+  profile: PROFILE_COLLECTIBLE_KINDS,
+  needle: NEEDLE_COLLECTIBLE_KINDS,
+  room: ["workshop-ornament"],
+};
+
+const WARDROBE_TAB_LABELS: Readonly<Record<WorkshopCollectibleKind, string>> = {
+  title: "Титулы",
+  patch: "Нашивки",
+  "portrait-frame": "Рамки",
+  "name-glow": "Свечение",
+  "name-font": "Почерк",
+  "needle-trail": "След",
+  "needle-impact": "Попадание",
+  "needle-aura": "Сияние",
+  "workshop-ornament": "Комната",
+};
+
 function collectibleVariant(id: string): number {
+  const exactProfileVariants: Readonly<Record<string, number>> = {
+    "workshop-glow-warm-thread": 2,
+    "workshop-glow-moon-silk": 1,
+    "workshop-glow-living-thread": 0,
+    "workshop-font-hand-stitch": 2,
+    "workshop-font-storybook": 0,
+  };
+  if (id in exactProfileVariants) return exactProfileVariants[id];
   return Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 5;
+}
+
+interface NeedlePreviewPresentation {
+  readonly primary: string;
+  readonly secondary: string;
+  readonly impactMotif: "stitches" | "stars" | "shards" | "lightning" | "petals" | "crown";
+  readonly trailMotif: "plain" | "spark" | "lightning";
+}
+
+const NEEDLE_PREVIEW_PALETTES: readonly (readonly [string, string])[] = [
+  ["#f8f1d9", "#bad9ff"],
+  ["#e8b44d", "#ffefad"],
+  ["#c768aa", "#f4a7d8"],
+  ["#50d7cf", "#a8fff5"],
+  ["#a78bfa", "#e4d8ff"],
+  ["#ff8d58", "#ffd46c"],
+];
+
+function getNeedlePreviewPresentation(id: string): NeedlePreviewPresentation {
+  let palette: readonly [string, string];
+  if (id.includes("silver") || id.endsWith("free-7")) {
+    palette = ["#f8f1d9", "#bad9ff"];
+  } else if (id.includes("bone")) {
+    palette = ["#d9a968", "#ffe0a3"];
+  } else if (id.includes("storm") || id.endsWith("premium-14")) {
+    palette = ["#50d7cf", "#a78bfa"];
+  } else if (id.includes("sunrise") || id.endsWith("free-17")) {
+    palette = ["#ffb83d", "#ffef9a"];
+  } else if (id.endsWith("free-14")) {
+    palette = ["#9b62c7", "#e09be2"];
+  } else if (id.endsWith("premium-8")) {
+    palette = ["#e34f91", "#ff9dc5"];
+  } else {
+    let hash = 0;
+    for (let index = 0; index < id.length; index += 1) {
+      hash = (hash * 31 + id.charCodeAt(index)) >>> 0;
+    }
+    palette = NEEDLE_PREVIEW_PALETTES[hash % NEEDLE_PREVIEW_PALETTES.length];
+  }
+
+  const impactMotif = id.includes("storm")
+    ? "lightning"
+    : id.includes("sunrise")
+      ? "petals"
+      : id.includes("bone")
+        ? "shards"
+        : id.endsWith("premium-16")
+          ? "crown"
+          : id.endsWith("premium-4") || id.endsWith("free-17")
+            ? "stars"
+            : id.endsWith("premium-10")
+              ? "shards"
+              : "stitches";
+  const trailMotif = id.includes("storm") || id.endsWith("premium-14")
+    ? "lightning"
+    : id.endsWith("premium-2") || id.includes("sunrise")
+      ? "spark"
+      : "plain";
+
+  return {
+    primary: palette[0],
+    secondary: palette[1],
+    impactMotif,
+    trailMotif,
+  };
 }
 
 function collectibleDisplayName(name: string): string {
@@ -402,6 +525,12 @@ export default class GameMenu {
   private leaderboard = createLeaderboardViewModel("idle");
   private profileOpen = false;
   private wardrobeOpen = false;
+  private workshopOpen = false;
+  private workshopPage: WorkshopPage = "profile";
+  private wardrobeKind: WorkshopCollectibleKind = "patch";
+  private upgradePage: UpgradePage = "permanent";
+  private questPage: QuestPage = "daily";
+  private needlePreviewId: NeedleSkinId;
   private profileRequest = 0;
   private profile: PlatformUserProfile | null = null;
   private hiddenPanelView: HiddenPanelView | null = null;
@@ -414,6 +543,7 @@ export default class GameMenu {
     private readonly callbacks: GameMenuCallbacks,
   ) {
     this.state = initialState;
+    this.needlePreviewId = initialState.equippedNeedle;
     this.frame = this.root.closest<HTMLElement>(".game-frame");
     this.root.addEventListener("click", this.handleClick);
     this.root.addEventListener("keydown", this.handleKeyDown);
@@ -434,6 +564,8 @@ export default class GameMenu {
     this.leaderboardOpen = false;
     this.profileOpen = false;
     this.wardrobeOpen = false;
+    this.workshopOpen = false;
+    this.needlePreviewId = state.equippedNeedle;
     this.frame?.classList.add("menu-active");
     this.root.classList.remove("is-hidden");
     this.render();
@@ -455,6 +587,7 @@ export default class GameMenu {
     this.leaderboardOpen = false;
     this.profileOpen = false;
     this.wardrobeOpen = false;
+    this.workshopOpen = false;
     this.frame?.classList.remove("menu-active");
     this.root.classList.add("is-hidden");
   }
@@ -476,6 +609,7 @@ export default class GameMenu {
     if (action === "profile-open") {
       this.guidePage = null;
       this.leaderboardOpen = false;
+      this.workshopOpen = false;
       this.profileOpen = true;
       this.wardrobeOpen = false;
       this.render();
@@ -490,6 +624,42 @@ export default class GameMenu {
       this.wardrobeOpen = true;
       this.render();
       this.focusProfileDialog();
+      return;
+    }
+    if (action === "wardrobe-kind") {
+      const kind = target.dataset.kind as WorkshopCollectibleKind;
+      if (WORKSHOP_COLLECTIBLE_KINDS.includes(kind)) {
+        this.wardrobeKind = kind;
+        this.render();
+        this.root
+          .querySelector<HTMLButtonElement>(`[data-action="wardrobe-kind"][data-kind="${kind}"]`)
+          ?.focus({ preventScroll: true });
+      }
+      return;
+    }
+    if (action === "workshop-open") {
+      this.guidePage = null;
+      this.leaderboardOpen = false;
+      this.profileOpen = false;
+      this.wardrobeOpen = false;
+      this.workshopOpen = true;
+      this.render();
+      this.focusWorkshopDialog();
+      return;
+    }
+    if (action === "workshop-close") {
+      this.closeWorkshop();
+      return;
+    }
+    if (action === "workshop-page") {
+      const page = target.dataset.page as WorkshopPage;
+      if (page in WORKSHOP_PAGE_LABELS) {
+        this.workshopPage = page;
+        this.render();
+        this.root
+          .querySelector<HTMLButtonElement>(`[data-action="workshop-page"][data-page="${page}"]`)
+          ?.focus({ preventScroll: true });
+      }
       return;
     }
     if (action === "wardrobe-back") {
@@ -563,6 +733,25 @@ export default class GameMenu {
       return;
     }
 
+    if (action === "upgrade-page") {
+      const page = target.dataset.page as UpgradePage;
+      if (page in UPGRADE_PAGE_LABELS) {
+        this.upgradePage = page;
+        this.notice = "";
+        this.render();
+      }
+      return;
+    }
+    if (action === "quest-page") {
+      const page = target.dataset.page as QuestPage;
+      if (page in QUEST_PAGE_LABELS) {
+        this.questPage = page;
+        this.notice = "";
+        this.render();
+      }
+      return;
+    }
+
     if (action === "upgrade") {
       const id = target.dataset.id as UpgradeId;
       this.commit(purchaseUpgrade(this.state, id));
@@ -580,7 +769,16 @@ export default class GameMenu {
     }
     if (action === "needle") {
       const id = target.dataset.id as NeedleSkinId;
+      this.needlePreviewId = id;
       this.commit(equipNeedle(this.state, id));
+      return;
+    }
+    if (action === "needle-preview") {
+      const id = target.dataset.id as NeedleSkinId;
+      if (NEEDLE_SKINS.some((skin) => skin.id === id)) {
+        this.needlePreviewId = id;
+        this.render();
+      }
       return;
     }
     if (action === "random-needle") {
@@ -588,6 +786,7 @@ export default class GameMenu {
       const next = unlockRandomNeedle(this.state);
       const unlockedId = next.ownedNeedles.find((id) => !previousIds.has(id));
       const unlocked = NEEDLE_SKINS.find((skin) => skin.id === unlockedId);
+      if (unlockedId) this.needlePreviewId = unlockedId;
       this.commit(next, unlocked ? `Открыто: ${unlocked.name}` : "Сохранено");
       return;
     }
@@ -599,6 +798,19 @@ export default class GameMenu {
     if (action === "background") {
       const id = target.dataset.id as BackgroundId;
       this.commit(unlockBackground(this.state, id));
+      return;
+    }
+    if (action === "workshop-clear") {
+      const kind = target.dataset.kind as WorkshopCollectibleKind;
+      if (!WORKSHOP_COLLECTIBLE_KINDS.includes(kind)) return;
+      const collection = this.getWorkshopCollection();
+      this.commit(
+        {
+          ...this.state,
+          workshopCollection: equipWorkshopCollectible(collection, kind, null),
+        },
+        `${WORKSHOP_KIND_LABELS[kind]}: снято`,
+      );
       return;
     }
     if (action === "workshop-toggle") {
@@ -762,10 +974,16 @@ export default class GameMenu {
   };
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
-    if (this.guidePage === null && !this.leaderboardOpen && !this.profileOpen) return;
+    if (
+      this.guidePage === null &&
+      !this.leaderboardOpen &&
+      !this.profileOpen &&
+      !this.workshopOpen
+    ) return;
     if (event.key === "Escape") {
       event.preventDefault();
       if (this.leaderboardOpen) this.closeLeaderboard();
+      else if (this.workshopOpen) this.closeWorkshop();
       else if (this.profileOpen) {
         if (this.wardrobeOpen) {
           this.wardrobeOpen = false;
@@ -781,6 +999,8 @@ export default class GameMenu {
     const dialog = this.root.querySelector<HTMLElement>(
       this.leaderboardOpen
         ? ".leaderboard-dialog"
+        : this.workshopOpen
+          ? ".workshop-dialog"
         : this.profileOpen
           ? ".profile-dialog"
           : ".guide-dialog",
@@ -828,6 +1048,20 @@ export default class GameMenu {
     this.wardrobeOpen = false;
     this.render();
     this.root.querySelector<HTMLButtonElement>('[data-action="profile-open"]')?.focus({ preventScroll: true });
+  }
+
+  private focusWorkshopDialog(): void {
+    this.root
+      .querySelector<HTMLElement>(".workshop-dialog")
+      ?.focus({ preventScroll: true });
+  }
+
+  private closeWorkshop(): void {
+    this.workshopOpen = false;
+    this.render();
+    this.root
+      .querySelector<HTMLButtonElement>('[data-action="workshop-open"]')
+      ?.focus({ preventScroll: true });
   }
 
   private async loadProfile(): Promise<void> {
@@ -917,23 +1151,38 @@ export default class GameMenu {
     this.render();
   }
 
+  private getPanelKey(): string {
+    if (this.tab === "upgrades") return `upgrades:${this.upgradePage}`;
+    if (this.tab === "quests") return `quests:${this.questPage}`;
+    if (this.tab === "needles") return `needles:${this.needlePreviewId}`;
+    return this.tab;
+  }
+
   private render(): void {
     const activeButton = this.root.contains(document.activeElement) && document.activeElement instanceof HTMLButtonElement
       ? document.activeElement
       : null;
     const renderedPanel = this.root.querySelector<HTMLElement>(".menu-panel");
-    const previousScrollTop = resolvePanelScrollRestoration(
-      renderedPanel?.dataset.menuTab as MenuTab | undefined,
-      this.tab,
-      renderedPanel?.querySelector<HTMLElement>(".panel-scroll")?.scrollTop,
-    );
+    const previousScrollTop =
+      renderedPanel?.dataset.panelKey === this.getPanelKey()
+        ? renderedPanel.querySelector<HTMLElement>(".panel-scroll")?.scrollTop
+        : undefined;
     const previousProfileDialog = this.root.querySelector<HTMLElement>(
       ".profile-dialog",
     );
     const previousProfileScrollTop =
       previousProfileDialog &&
-      previousProfileDialog.classList.contains("is-wardrobe") === this.wardrobeOpen
+      previousProfileDialog.classList.contains("is-wardrobe") === this.wardrobeOpen &&
+      (!this.wardrobeOpen || previousProfileDialog.dataset.wardrobeKind === this.wardrobeKind)
         ? previousProfileDialog.querySelector<HTMLElement>(".profile-scroll")
+            ?.scrollTop
+        : undefined;
+    const previousWorkshopDialog = this.root.querySelector<HTMLElement>(
+      ".workshop-dialog",
+    );
+    const previousWorkshopScrollTop =
+      previousWorkshopDialog?.dataset.workshopPage === this.workshopPage
+        ? previousWorkshopDialog.querySelector<HTMLElement>(".workshop-scroll")
             ?.scrollTop
         : undefined;
     const focusKey = activeButton
@@ -945,6 +1194,7 @@ export default class GameMenu {
           tier: activeButton.dataset.tier,
           track: activeButton.dataset.track,
           page: activeButton.dataset.page,
+          kind: activeButton.dataset.kind,
         }
       : null;
     this.root.innerHTML = this.tab === "home" ? this.renderHome() : this.renderPanel();
@@ -956,6 +1206,10 @@ export default class GameMenu {
       const profileScroll = this.root.querySelector<HTMLElement>(".profile-scroll");
       if (profileScroll) profileScroll.scrollTop = previousProfileScrollTop;
     }
+    if (previousWorkshopScrollTop !== undefined) {
+      const workshopScroll = this.root.querySelector<HTMLElement>(".workshop-scroll");
+      if (workshopScroll) workshopScroll.scrollTop = previousWorkshopScrollTop;
+    }
     if (focusKey) {
       const matchingButton = Array.from(this.root.querySelectorAll<HTMLButtonElement>("button")).find(
         (button) =>
@@ -965,7 +1219,8 @@ export default class GameMenu {
           button.dataset.chestId === focusKey.chestId &&
           button.dataset.tier === focusKey.tier &&
           button.dataset.track === focusKey.track &&
-          button.dataset.page === focusKey.page,
+          button.dataset.page === focusKey.page &&
+          button.dataset.kind === focusKey.kind,
       );
       matchingButton?.focus({ preventScroll: true });
     }
@@ -1016,15 +1271,15 @@ export default class GameMenu {
     const record = this.state.highestStageCleared;
     const campaignStage = this.state.campaignResumeStage;
     const guideIsOpen = this.guidePage !== null;
-    const modalIsOpen = guideIsOpen || this.leaderboardOpen || this.profileOpen;
+    const modalIsOpen = guideIsOpen || this.leaderboardOpen || this.profileOpen || this.workshopOpen;
     return `
       <div class="menu-home" ${modalIsOpen ? 'aria-hidden="true" inert' : ""}>
         ${this.renderWorld()}
         <div class="menu-vignette" aria-hidden="true"></div>
         <header class="menu-topbar">
           <button class="round-tool" data-action="fullscreen" aria-label="На весь экран">⛶</button>
-          <div class="currency-chip"><span>✦</span><strong>${this.state.thread}</strong><small>нити</small></div>
-          <div class="currency-chip premium"><span>◆</span><strong>${this.state.premium}</strong><small>пуговицы</small></div>
+          <div class="currency-chip"><img src="${asset("currency-thread-spool.webp")}" alt="" aria-hidden="true" /><strong>${this.state.thread}</strong><small>нити</small></div>
+          <div class="currency-chip premium"><img src="${asset("currency-moon-button.webp")}" alt="" aria-hidden="true" /><strong>${this.state.premium}</strong><small>пуговицы</small></div>
           <button class="round-tool" data-action="sound" aria-label="${this.state.muted ? "Включить звук и музыку" : "Выключить звук и музыку"}">${this.state.muted ? "🔇" : "♪"}</button>
         </header>
         <button class="menu-guide-trigger" data-action="guide-open" aria-haspopup="dialog" aria-label="Открыть мини-гайд «Как играть»">
@@ -1032,6 +1287,9 @@ export default class GameMenu {
         </button>
         <button class="menu-leaderboard-trigger" data-action="leaderboard-open" aria-haspopup="dialog" aria-label="Открыть таблицу лидеров">
           <span aria-hidden="true">♛</span><strong>Рейтинг</strong>
+        </button>
+        <button class="menu-workshop-trigger" data-action="workshop-open" aria-haspopup="dialog" aria-label="Открыть Книгу мастерской">
+          <img src="${asset("ui-workshop-book.webp")}" alt="" aria-hidden="true" draggable="false" /><strong>Награды</strong>
         </button>
         <button class="menu-profile-trigger" data-action="profile-open" aria-haspopup="dialog" aria-label="Открыть профиль и гардероб">
           ${this.profile?.photoUrl
@@ -1054,6 +1312,7 @@ export default class GameMenu {
       ${guideIsOpen ? this.renderGuide(this.guidePage!) : ""}
       ${this.leaderboardOpen ? this.renderLeaderboard() : ""}
       ${this.profileOpen ? this.renderProfileDialog() : ""}
+      ${this.workshopOpen ? this.renderWorkshopDialog() : ""}
     `;
   }
 
@@ -1066,6 +1325,9 @@ export default class GameMenu {
     const profileFont = getEquippedWorkshopCollectible(collection, "name-font");
     const profilePatchFile = profilePatch
       ? getWorkshopPatchArtFileName(profilePatch.id)
+      : null;
+    const profileFrameFile = profileFrame
+      ? getWorkshopFrameArtFileName(profileFrame.id)
       : null;
     let rankedPosition = 0;
     const rows = this.leaderboard.rows.map((row) => {
@@ -1087,6 +1349,7 @@ export default class GameMenu {
               ? `<img class="leaderboard-avatar" src="${escapeHtml(row.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
               : `<span class="leaderboard-avatar is-placeholder" aria-hidden="true">${escapeHtml(initials)}</span>`}
             ${row.isCurrentUser && profilePatchFile ? `<img class="leaderboard-profile-patch" src="${asset(profilePatchFile)}" alt="" aria-hidden="true" />` : ""}
+            ${row.isCurrentUser && profileFrameFile ? `<img class="leaderboard-profile-frame" src="${asset(profileFrameFile)}" alt="" aria-hidden="true" />` : ""}
           </span>
           <span class="leaderboard-name"><span><strong>${escapeHtml(fullName)}</strong>${row.isLocalOnly ? "<small>ЛОКАЛЬНО</small>" : row.isCurrentUser ? "<small>ВЫ</small>" : ""}</span>${row.isCurrentUser && profileTitle ? `<em>${escapeHtml(collectibleDisplayName(profileTitle.name))}</em>` : ""}</span>
           <span class="leaderboard-level"><small>ЭТАП</small><strong>${row.level}</strong></span>
@@ -1148,6 +1411,7 @@ export default class GameMenu {
     const glow = getEquippedWorkshopCollectible(collection, "name-glow");
     const font = getEquippedWorkshopCollectible(collection, "name-font");
     const patchFile = patch ? getWorkshopPatchArtFileName(patch.id) : null;
+    const frameFile = frame ? getWorkshopFrameArtFileName(frame.id) : null;
     const profileClass = [
       frame ? `has-frame frame-v-${collectibleVariant(frame.id)}` : "",
       glow ? `has-glow glow-v-${collectibleVariant(glow.id)}` : "",
@@ -1160,50 +1424,71 @@ export default class GameMenu {
       ? `<img class="profile-avatar-photo" src="${escapeHtml(this.profile.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
       : `<img class="profile-avatar-hero" src="${asset("hero-elya.webp")}" alt="" />`;
 
-    const kinds = this.wardrobeOpen
-      ? WORKSHOP_COLLECTIBLE_KINDS.map((kind) => {
-          const items = WORKSHOP_COLLECTIBLES.filter((item) => item.kind === kind);
-          const ownedCount = items.filter((item) => collection.ownedCollectibleIds.includes(item.id)).length;
-          return `
-            <section class="wardrobe-group" aria-labelledby="wardrobe-${kind}">
-              <header><div><h3 id="wardrobe-${kind}">${WORKSHOP_KIND_LABELS[kind]}</h3><small>${ownedCount}/${items.length}</small></div></header>
-              <div class="wardrobe-list">${items.map((item) => {
-                const owned = collection.ownedCollectibleIds.includes(item.id);
-                const equipped = collection.equipped[item.kind] === item.id;
-                return `
-                  <article class="wardrobe-item rarity-${item.rarity} ${owned ? "" : "is-locked"}">
-                    ${this.renderCollectiblePreview(item, !owned)}
-                    <div class="wardrobe-copy">
-                      <small>${owned ? WORKSHOP_KIND_LABELS[item.kind] : "ЗАКРЫТО"}</small>
-                      <strong>${escapeHtml(collectibleDisplayName(item.name))}</strong>
-                      <p>${escapeHtml(item.description)}</p>
-                      <em>${escapeHtml(this.getCollectibleAcquisition(item))}</em>
-                    </div>
-                    ${owned
-                      ? this.renderWorkshopToggle(item, collection)
-                      : `<button class="collectible-toggle is-locked" disabled>ПОКА ЗАКРЫТО</button>`}
-                    ${equipped ? `<span class="wardrobe-equipped">В образе</span>` : ""}
-                  </article>`;
-              }).join("")}</div>
-            </section>`;
-        }).join("")
-      : "";
+    const wardrobeItems = WORKSHOP_COLLECTIBLES.filter(
+      (item) => item.kind === this.wardrobeKind,
+    );
+    const wardrobeOwnedCount = wardrobeItems.filter((item) =>
+      collection.ownedCollectibleIds.includes(item.id),
+    ).length;
+    const wardrobeTabs = WORKSHOP_COLLECTIBLE_KINDS.map((kind) => {
+      const items = WORKSHOP_COLLECTIBLES.filter((item) => item.kind === kind);
+      const ownedCount = items.filter((item) =>
+        collection.ownedCollectibleIds.includes(item.id),
+      ).length;
+      return `<button role="tab" data-action="wardrobe-kind" data-kind="${kind}" class="${this.wardrobeKind === kind ? "is-active" : ""}" aria-selected="${this.wardrobeKind === kind}"><span>${WARDROBE_TAB_LABELS[kind]}</span><small>${ownedCount}/${items.length}</small></button>`;
+    }).join("");
+    const wardrobeCards = wardrobeItems.map((item) => {
+      const owned = collection.ownedCollectibleIds.includes(item.id);
+      const equipped = collection.equipped[item.kind] === item.id;
+      return `
+        <article class="wardrobe-tile rarity-${item.rarity} ${owned ? "" : "is-locked"} ${equipped ? "is-equipped" : ""}">
+          ${this.renderCollectiblePreview(item, !owned)}
+          <div class="wardrobe-tile-copy">
+            <small>${owned ? WORKSHOP_KIND_LABELS[item.kind] : "ЗАКРЫТО"}</small>
+            <strong>${escapeHtml(collectibleDisplayName(item.name))}</strong>
+            <p>${escapeHtml(item.description)}</p>
+            <em>${escapeHtml(this.getCollectibleAcquisition(item))}</em>
+          </div>
+          ${owned
+            ? this.renderWorkshopToggle(item, collection)
+            : `<button class="collectible-toggle is-locked" disabled>ПОКА ЗАКРЫТО</button>`}
+          ${equipped ? `<span class="wardrobe-equipped">НАДЕТО</span>` : ""}
+        </article>`;
+    }).join("");
+    const livePreview = `
+      <article class="wardrobe-live-preview workshop-profile ${profileClass}">
+        <div class="workshop-avatar">${avatar}${patchFile ? `<img class="profile-patch" src="${asset(patchFile)}" alt="" />` : ""}${frameFile ? `<img class="profile-frame-art" src="${asset(frameFile)}" alt="" />` : ""}</div>
+        <div class="workshop-profile-name"><small>ТАК БУДЕТ В ИГРЕ</small><strong>${escapeHtml(fullName)}</strong><span>${title ? escapeHtml(collectibleDisplayName(title.name)) : "Без титула"}</span></div>
+        <p>Выбранный эффект показан прямо на портрете. Нажми карточку ниже, чтобы сразу сравнить результат.</p>
+      </article>`;
 
     return `
       <div class="guide-layer profile-layer">
         <div class="guide-scrim" aria-hidden="true"></div>
-        <section class="profile-dialog ${this.wardrobeOpen ? "is-wardrobe" : ""}" role="dialog" aria-modal="true" aria-labelledby="profile-title" tabindex="-1">
+        <section class="profile-dialog ${this.wardrobeOpen ? "is-wardrobe" : ""}" data-wardrobe-kind="${this.wardrobeKind}" role="dialog" aria-modal="true" aria-labelledby="profile-title" tabindex="-1">
           <button class="guide-close" data-action="profile-close" aria-label="Закрыть профиль">×</button>
           <header class="profile-heading">
             <span>${this.wardrobeOpen ? "КОЛЛЕКЦИЯ ОБРАЗОВ" : "КАРТОЧКА МАСТЕРА"}</span>
             <h2 id="profile-title">${this.wardrobeOpen ? "Гардероб" : "Профиль"}</h2>
             <p>${this.wardrobeOpen ? "Все награды видны заранее — вместе с путём получения." : "Личный образ пока хранится на этом устройстве."}</p>
           </header>
+          ${this.wardrobeOpen ? `<nav class="wardrobe-tabs" role="tablist" aria-label="Категории гардероба">${wardrobeTabs}</nav>` : ""}
           <div class="profile-scroll">
             ${this.wardrobeOpen
-              ? kinds
+              ? `${livePreview}
+                <section class="wardrobe-current-group" aria-labelledby="wardrobe-current-title">
+                  <header><div><span>КАТЕГОРИЯ</span><h3 id="wardrobe-current-title">${WARDROBE_TAB_LABELS[this.wardrobeKind]}</h3></div><strong>${wardrobeOwnedCount}/${wardrobeItems.length}</strong></header>
+                  <div class="wardrobe-grid">
+                    <article class="wardrobe-tile is-empty ${collection.equipped[this.wardrobeKind] === null ? "is-equipped" : ""}">
+                      <span class="collectible-preview is-empty" aria-hidden="true">×</span>
+                      <div class="wardrobe-tile-copy"><small>БЕЗ ЭФФЕКТА</small><strong>Обычный вид</strong><p>Снять выбранную награду этой категории.</p></div>
+                      <button class="collectible-toggle" data-action="workshop-clear" data-kind="${this.wardrobeKind}" ${collection.equipped[this.wardrobeKind] === null ? "disabled" : ""}>${collection.equipped[this.wardrobeKind] === null ? "ВЫБРАНО" : "СНЯТЬ"}</button>
+                    </article>
+                    ${wardrobeCards}
+                  </div>
+                </section>`
               : `<article class="profile-showcase workshop-profile ${profileClass}">
-                  <div class="workshop-avatar">${avatar}${patchFile ? `<img class="profile-patch" src="${asset(patchFile)}" alt="" />` : ""}</div>
+                  <div class="workshop-avatar">${avatar}${patchFile ? `<img class="profile-patch" src="${asset(patchFile)}" alt="" />` : ""}${frameFile ? `<img class="profile-frame-art" src="${asset(frameFile)}" alt="" />` : ""}</div>
                   <div class="workshop-profile-name"><small>${this.profile ? "ПРОФИЛЬ VK" : "ЛОКАЛЬНЫЙ ПРОФИЛЬ"}</small><strong>${escapeHtml(fullName)}</strong><span>${title ? escapeHtml(collectibleDisplayName(title.name)) : "Без титула"}</span></div>
                   <div class="profile-record"><span>Лучший этап</span><strong>${this.state.highestStageCleared || "—"}</strong></div>
                 </article>
@@ -1228,6 +1513,96 @@ export default class GameMenu {
               ? `<button data-action="wardrobe-back">← К ПРОФИЛЮ</button>`
               : `<button data-action="wardrobe-open">ИЗМЕНИТЬ ОБРАЗ</button>`}
           </footer>
+        </section>
+      </div>`;
+  }
+
+  private renderWorkshopDialog(): string {
+    const collection = this.getWorkshopCollection();
+    const summary = getWorkshopCollectionSummary(collection);
+    const pageKinds = WORKSHOP_PAGE_KINDS[this.workshopPage];
+    const pageItems = WORKSHOP_COLLECTIBLES.filter((item) =>
+      pageKinds.includes(item.kind),
+    );
+    const ownedCount = pageItems.filter((item) =>
+      collection.ownedCollectibleIds.includes(item.id),
+    ).length;
+    const ornament = getEquippedWorkshopCollectible(
+      collection,
+      "workshop-ornament",
+    );
+    const ornamentFile = ornament
+      ? getWorkshopOrnamentArtFileName(ornament.id)
+      : null;
+    const next = summary.nextLevel;
+    const progress = next
+      ? Math.min(
+          100,
+          (summary.collectedTowardNextLevel /
+            Math.max(
+              1,
+              next.requiredCollectionCount -
+                summary.currentLevel.requiredCollectionCount,
+            )) *
+            100,
+        )
+      : 100;
+    const tabs = (Object.keys(WORKSHOP_PAGE_LABELS) as WorkshopPage[])
+      .map((page) => {
+        const kinds = WORKSHOP_PAGE_KINDS[page];
+        const all = WORKSHOP_COLLECTIBLES.filter((item) =>
+          kinds.includes(item.kind),
+        );
+        const owned = all.filter((item) =>
+          collection.ownedCollectibleIds.includes(item.id),
+        ).length;
+        return `<button role="tab" data-action="workshop-page" data-page="${page}" class="${this.workshopPage === page ? "is-active" : ""}" aria-selected="${this.workshopPage === page}"><span>${WORKSHOP_PAGE_LABELS[page]}</span><small>${owned}/${all.length}</small></button>`;
+      })
+      .join("");
+    const cards = pageItems
+      .map((item) => {
+        const owned = collection.ownedCollectibleIds.includes(item.id);
+        const equipped = collection.equipped[item.kind] === item.id;
+        return `
+          <article class="workshop-reward-card rarity-${item.rarity} ${owned ? "" : "is-locked"} ${equipped ? "is-equipped" : ""}">
+            ${this.renderCollectiblePreview(item, !owned)}
+            <div><small>${owned ? WORKSHOP_KIND_LABELS[item.kind] : "ГДЕ НАЙТИ"}</small><strong>${escapeHtml(collectibleDisplayName(item.name))}</strong><p>${owned ? escapeHtml(item.description) : escapeHtml(this.getCollectibleAcquisition(item))}</p></div>
+            ${owned
+              ? this.renderWorkshopToggle(item, collection)
+              : `<button class="collectible-toggle is-locked" disabled>ЗАКРЫТО</button>`}
+            ${equipped ? `<span class="workshop-reward-equipped">ИСПОЛЬЗУЕТСЯ</span>` : ""}
+          </article>`;
+      })
+      .join("");
+
+    return `
+      <div class="guide-layer workshop-layer">
+        <div class="guide-scrim" aria-hidden="true"></div>
+        <section class="workshop-dialog" data-workshop-page="${this.workshopPage}" role="dialog" aria-modal="true" aria-labelledby="workshop-dialog-title" tabindex="-1">
+          <button class="guide-close" data-action="workshop-close" aria-label="Закрыть Книгу мастерской">×</button>
+          <header class="workshop-dialog-heading">
+            <div><span>КОЛЛЕКЦИЯ НАГРАД</span><h2 id="workshop-dialog-title">Книга мастерской</h2><p>Открой страницу и выбери награду — результат сразу появится в игре.</p></div>
+            <b>УР. ${summary.workshopLevel}</b>
+          </header>
+          <nav class="workshop-page-tabs" role="tablist" aria-label="Страницы Книги мастерской">${tabs}</nav>
+          <div class="workshop-scroll">
+            <section class="workshop-book-overview">
+              <div class="workshop-book-visual">
+                <img src="${asset("ui-workshop-book.webp")}" alt="Открытая Книга мастерской" draggable="false" />
+                ${ornamentFile ? `<img class="workshop-selected-ornament" src="${asset(ornamentFile)}" alt="${escapeHtml(ornament?.name ?? "")}" />` : ""}
+                <strong>${escapeHtml(summary.currentLevel.name)}</strong>
+              </div>
+              <div class="workshop-book-status">
+                <span>${summary.collectedCount}/${summary.totalCollectibleCount} наград собрано</span>
+                <strong>${next ? `До «${escapeHtml(next.name)}»: ${summary.neededForNextLevel}` : "Книга заполнена"}</strong>
+                <div class="workshop-progress" role="progressbar" aria-label="Развитие мастерской" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress)}"><span style="width:${progress}%"></span></div>
+                <p>${escapeHtml(summary.currentLevel.description)}</p>
+              </div>
+            </section>
+            <header class="workshop-page-copy"><div><span>СТРАНИЦА</span><h3>${WORKSHOP_PAGE_LABELS[this.workshopPage]}</h3></div><strong>${ownedCount}/${pageItems.length}</strong></header>
+            <div class="workshop-reward-grid">${cards}</div>
+          </div>
+          <footer class="workshop-dialog-footer"><span>Открытые награды сохраняются автоматически.</span><button data-action="workshop-close">ГОТОВО</button></footer>
         </section>
       </div>`;
   }
@@ -1300,20 +1675,35 @@ export default class GameMenu {
       ${this.renderWorld(true)}
       <div class="menu-vignette is-heavy" aria-hidden="true"></div>
       <header class="menu-topbar panel-wallet">
-        <div class="currency-chip"><span>✦</span><strong>${this.state.thread}</strong><small>нити</small></div>
-        <div class="currency-chip premium"><span>◆</span><strong>${this.state.premium}</strong><small>пуговицы</small></div>
+        <div class="currency-chip"><img src="${asset("currency-thread-spool.webp")}" alt="" aria-hidden="true" /><strong>${this.state.thread}</strong><small>нити</small></div>
+        <div class="currency-chip premium"><img src="${asset("currency-moon-button.webp")}" alt="" aria-hidden="true" /><strong>${this.state.premium}</strong><small>пуговицы</small></div>
       </header>
-      <section class="menu-panel" data-menu-tab="${tab}" aria-label="${TAB_LABELS[tab].label}">
+      <section class="menu-panel" data-menu-tab="${tab}" data-panel-key="${this.getPanelKey()}" aria-label="${TAB_LABELS[tab].label}">
         <header class="panel-heading">
           <img class="panel-tab-icon" src="${asset(TAB_LABELS[tab].iconFileName)}" width="38" height="38" alt="" aria-hidden="true" draggable="false" />
           <h2>${TAB_LABELS[tab].label}</h2>
           <button data-action="home" aria-label="Закрыть">×</button>
-        </header>
+      </header>
       ${this.notice ? `<div class="panel-notice" role="status" aria-live="polite">${this.notice}</div>` : ""}
+        ${this.renderPanelTabs(tab)}
         <div class="panel-scroll">${this.renderTabContent(tab)}</div>
       </section>
       ${this.renderNav()}
     `;
+  }
+
+  private renderPanelTabs(tab: Exclude<MenuTab, "home">): string {
+    if (tab === "upgrades") {
+      return `<nav class="panel-tabs" role="tablist" aria-label="Виды усилений">${(
+        Object.keys(UPGRADE_PAGE_LABELS) as UpgradePage[]
+      ).map((page) => `<button role="tab" data-action="upgrade-page" data-page="${page}" class="${this.upgradePage === page ? "is-active" : ""}" aria-selected="${this.upgradePage === page}">${UPGRADE_PAGE_LABELS[page]}</button>`).join("")}</nav>`;
+    }
+    if (tab === "quests") {
+      return `<nav class="panel-tabs" role="tablist" aria-label="Виды поручений">${(
+        Object.keys(QUEST_PAGE_LABELS) as QuestPage[]
+      ).map((page) => `<button role="tab" data-action="quest-page" data-page="${page}" class="${this.questPage === page ? "is-active" : ""}" aria-selected="${this.questPage === page}">${QUEST_PAGE_LABELS[page]}</button>`).join("")}</nav>`;
+    }
+    return "";
   }
 
   private renderTabContent(tab: Exclude<MenuTab, "home">): string {
@@ -1339,7 +1729,7 @@ export default class GameMenu {
       const maxed = cost === null;
       return `
         <article class="meta-card upgrade-card ${affordable ? "is-affordable" : ""} ${maxed ? "is-maxed" : ""}">
-          <div class="item-symbol upgrade-emblem" aria-hidden="true"><span>${UPGRADE_NAMES[id].symbol}</span></div>
+          <div class="item-symbol upgrade-emblem has-icon" aria-hidden="true"><img src="${asset(UPGRADE_NAMES[id].iconFileName)}" alt="" draggable="false" /></div>
           <div class="item-copy">
             <div class="card-kicker"><span>Усиление</span><strong>ур. ${level}/${MAX_UPGRADE_LEVEL}</strong></div>
             <h3>${UPGRADE_NAMES[id].name}</h3>
@@ -1359,7 +1749,7 @@ export default class GameMenu {
       const equipped = this.state.equippedActiveAbility === ability.id;
       return `
         <article class="meta-card ability-card ${equipped ? "is-equipped" : ""} ${unlocked ? "" : "is-locked"}">
-          <div class="item-symbol ability-emblem" aria-hidden="true"><span>${ability.symbol}</span></div>
+          <div class="item-symbol ability-emblem has-icon" aria-hidden="true"><img src="${asset(ability.iconFileName)}" alt="" draggable="false" /></div>
           <div class="item-copy">
             <div class="card-kicker"><span>Активный приём</span><strong>${equipped ? "выбран" : unlocked ? "1 видео" : `этап ${ability.unlockStage}`}</strong></div>
             <h3>${ability.name}</h3>
@@ -1377,7 +1767,7 @@ export default class GameMenu {
       const equipped = this.state.equippedSkill === skill.id;
       return `
         <article class="meta-card skill-card ${equipped ? "is-equipped" : ""} ${unlocked ? "" : "is-locked"}">
-          <div class="item-symbol skill-emblem" aria-hidden="true"><span>${skill.symbol}</span></div>
+          <div class="item-symbol skill-emblem has-icon" aria-hidden="true"><img src="${asset(SKILL_ICON_FILES[skill.id])}" alt="" draggable="false" /></div>
           <div class="item-copy">
             <div class="card-kicker"><span>Боевой навык</span><strong>${equipped ? "активен" : unlocked ? "открыт" : `этап ${skill.unlockStage}`}</strong></div>
             <h3>${skill.name}</h3><p>${skill.description}</p>
@@ -1388,16 +1778,22 @@ export default class GameMenu {
         </article>`;
     }).join("");
 
+    const pageCopy: Readonly<Record<UpgradePage, readonly [string, string]>> = {
+      permanent: ["Постоянные усиления", "Вкладывай нити в силу, точность, скорость и защиту."],
+      active: ["Боевые приёмы", "Выбери один круглый приём для рейда: одно видео — одно применение за поход."],
+      passive: ["Пассивные таланты", "Одновременно действует один талант, открытый этапами пути."],
+    };
+    const pageContent: Readonly<Record<UpgradePage, string>> = {
+      permanent: `<div class="compact-card-grid upgrade-stack">${upgrades}</div>`,
+      active: `<div class="compact-card-grid ability-stack">${activeAbilities}</div>`,
+      passive: `<div class="compact-card-grid skill-stack">${skills}</div>`,
+    };
     return `
-      <div class="panel-intro panel-intro-upgrades">
-        <span class="panel-intro-emblem" aria-hidden="true">✦</span>
-        <div><strong>Мастерская усилений</strong><p>Вкладывай нити в постоянную силу. Чем выше уровень, тем дороже следующий стежок.</p></div>
+      <div class="panel-intro panel-intro-upgrades is-compact">
+        <img class="panel-intro-icon" src="${asset(this.upgradePage === "permanent" ? "upgrade-power.webp" : this.upgradePage === "active" ? "ability-time-loop.webp" : "skill-steady-hand.webp")}" alt="" aria-hidden="true" />
+        <div><strong>${pageCopy[this.upgradePage][0]}</strong><p>${pageCopy[this.upgradePage][1]}</p></div>
       </div>
-      <div class="card-stack upgrade-stack">${upgrades}</div>
-      <div class="section-divider"><span>Активные приёмы</span><small>После видео · один раз за поход</small></div>
-      <div class="card-stack ability-stack">${activeAbilities}</div>
-      <div class="section-divider"><span>Пассивные таланты</span><small>Одновременно действует один талант</small></div>
-      <div class="card-stack skill-stack">${skills}</div>`;
+      ${pageContent[this.upgradePage]}`;
   }
 
   private renderQuests(): string {
@@ -1480,12 +1876,7 @@ export default class GameMenu {
         </article>`;
     }).join("");
 
-    return `
-      <div class="panel-intro panel-intro-quests">
-        <span class="panel-intro-emblem" aria-hidden="true">✓</span>
-        <div><strong>Книга живых поручений</strong><p>Три новых задания каждый день, недельный путь и награды за победную серию.</p></div>
-        <b>◈ ${this.state.cosmeticFragments}</b>
-      </div>
+    const dailyContent = `
       <section class="daily-board" aria-labelledby="daily-board-title">
         <header class="meta-section-heading">
           <div><span>ОБНОВЛЯЕТСЯ ЕЖЕДНЕВНО</span><h3 id="daily-board-title">Сегодняшние поручения</h3></div>
@@ -1494,53 +1885,80 @@ export default class GameMenu {
         <div class="daily-summary"><span>${dailyClaimed}/3 получено</span><strong>${dailyReady ? `${dailyReady} ${dailyReady === 1 ? "награда ждёт" : "награды ждут"}` : "Продолжай рейд"}</strong></div>
         <div class="card-stack daily-stack">${dailyQuests}</div>
       </section>
-
       <section class="streak-card ${streak.pendingChests.length ? "has-reward" : ""}" aria-labelledby="streak-title">
-        <div
-          class="streak-chest-visual ${streak.pendingChests.length ? "is-ready" : ""}"
-          role="img"
-          aria-label="${streak.pendingChests.length ? "Открывающийся сундук с наградой" : "Закрытый сундук серии побед"}"
-        >
+        <div class="streak-chest-visual ${streak.pendingChests.length ? "is-ready" : ""}" role="img" aria-label="${streak.pendingChests.length ? "Открывающийся сундук с наградой" : "Закрытый сундук серии побед"}">
           ${[1, 2, 3].map((frame) => `<img class="streak-chest-frame frame-${frame}" src="${asset(`ui-streak-chest-frame-${frame}.webp`)}" alt="" aria-hidden="true" draggable="false" />`).join("")}
         </div>
         <div class="streak-copy">
-          <span>СЕРИЯ ПОБЕД</span><h3 id="streak-title">${streak.current} подряд · рекорд ${streak.best}</h3>
-          <p>${streak.pendingChests.length ? "Сундук уже ждёт — забери награду." : `До сундука осталось ${nextMilestone - streak.current}. Поражение обнулит текущую серию.`}</p>
-          <div class="streak-meter" role="progressbar" aria-label="Прогресс до следующего сундука" aria-valuemin="0" aria-valuemax="5" aria-valuenow="${streakStep}"><span style="width:${(streakStep / 5) * 100}%"></span></div>
-          ${pendingChests ? `<div class="streak-actions">${pendingChests}</div>` : `<small class="streak-next">Следующая отметка: ${nextMilestone}</small>`}
+          <span>КАК РАБОТАЕТ СУНДУК</span><h3 id="streak-title">${streak.current} побед подряд · рекорд ${streak.best}</h3>
+          <p>${streak.pendingChests.length ? "Награда уже заработана и не пропадёт: нажми кнопку сундука ниже." : `Побеждай без поражений. Каждая 5-я победа даёт сундук, каждая 10-я — большой. До следующего осталось ${nextMilestone - streak.current}.`}</p>
+          <ol class="streak-steps" aria-label="Пять шагов до сундука">${Array.from({ length: 5 }, (_, index) => `<li class="${index < streakStep ? "is-done" : index === streakStep ? "is-next" : ""}">${index + 1}</li>`).join("")}</ol>
+          <div class="streak-rules"><span>✓ Уже заработанный сундук остаётся</span><span>× Поражение сбрасывает только текущую серию</span></div>
+          ${pendingChests ? `<div class="streak-actions">${pendingChests}</div>` : `<small class="streak-next">Следующая награда на отметке ${nextMilestone}</small>`}
         </div>
-      </section>
+      </section>`;
 
+    const weeklyContent = `
       <section class="weekly-route-card" aria-labelledby="weekly-route-title">
         <div class="weekly-art"><img src="${asset("ui-weekly-route-map.webp")}" alt="" aria-hidden="true" draggable="false" /></div>
-        <div class="weekly-copy">
-          <span>МАРШРУТ НЕДЕЛИ · ${route.weekId}</span>
-          <h3 id="weekly-route-title">${routeStatus.nextNode.name}</h3>
-          <p><strong>${currentModifier.name}:</strong> ${currentModifier.description}</p>
-        </div>
+        <div class="weekly-copy"><span>МАРШРУТ НЕДЕЛИ · ${route.weekId}</span><h3 id="weekly-route-title">${routeStatus.nextNode.name}</h3><p><strong>${currentModifier.name}:</strong> ${currentModifier.description}</p></div>
         <ol class="weekly-nodes" aria-label="Пять узлов недельного маршрута">${routeNodes}</ol>
         <div class="weekly-reward"><span>Финальная награда</span><strong>${route.finalReward.name}</strong></div>
         <div class="weekly-actions">
           <button class="route-button" data-action="weekly-start" ${routeStatus.canClaimFinalReward ? "disabled" : ""}><span>${routeStatus.canClaimFinalReward ? "МАРШРУТ ЗАВЕРШЁН" : routeStatus.completedNodesThisLap === 0 ? "НАЧАТЬ ПУТЬ" : "ИГРАТЬ СЛЕДУЮЩИЙ УЗЕЛ"}</span><small>${routeStatus.canClaimFinalReward ? "ЗАБЕРИ ЭМБЛЕМУ" : `${routeStatus.nextNode.order}/5 · ${currentModifier.name}`}</small></button>
           <button class="route-claim-button" data-action="weekly-claim" ${!routeStatus.canClaimFinalReward ? "disabled" : ""}><span>${routeProgress.finalRewardClaimed ? "ПОЛУЧЕНО" : "ЗАБРАТЬ ФИНАЛ"}</span><small>${routeProgress.finalRewardClaimed ? "ЭМБЛЕМА В КОЛЛЕКЦИИ" : "ПОСЛЕ 5 УЗЛОВ"}</small></button>
         </div>
-      </section>
+      </section>`;
 
-      <div class="section-divider"><span>Летопись мастерской</span><small>Постоянные достижения не исчезают</small></div>
+    const chronicleContent = `
       <div class="permanent-summary"><span>Получено наград</span><strong>${claimedCount}/${QUESTS.length}</strong></div>
       <div class="card-stack quest-stack permanent-quest-stack">${quests}</div>`;
+    const pageContent: Readonly<Record<QuestPage, string>> = {
+      daily: dailyContent,
+      weekly: weeklyContent,
+      chronicle: chronicleContent,
+    };
+    const pageCopy: Readonly<Record<QuestPage, readonly [string, string]>> = {
+      daily: ["Сегодня и серия", "Три поручения на день и понятный путь к сундуку за победы подряд."],
+      weekly: ["Маршрут недели", "Пять узлов с особым правилом и финальной эмблемой."],
+      chronicle: ["Летопись мастерской", "Постоянные достижения не исчезают и не сбрасываются."],
+    };
+    return `
+      <div class="panel-intro panel-intro-quests is-compact">
+        <span class="panel-intro-emblem" aria-hidden="true">${this.questPage === "weekly" ? "⌁" : this.questPage === "chronicle" ? "♛" : "✓"}</span>
+        <div><strong>${pageCopy[this.questPage][0]}</strong><p>${pageCopy[this.questPage][1]}</p></div>
+        <b>◈ ${this.state.cosmeticFragments}</b>
+      </div>
+      ${pageContent[this.questPage]}`;
   }
 
   private renderNeedles(): string {
     const unlockCost = getRandomNeedleUnlockCost(this.state);
     const canUnlock = unlockCost !== null && this.state.thread >= unlockCost;
     const ownedCount = this.state.ownedNeedles.length;
-    const equippedMastery = getNeedleMasterySummary(
+    const selected =
+      NEEDLE_SKINS.find((skin) => skin.id === this.needlePreviewId) ??
+      NEEDLE_SKINS[0];
+    const selectedOwned = this.state.ownedNeedles.includes(selected.id);
+    const selectedEquipped = this.state.equippedNeedle === selected.id;
+    const selectedMastery = getNeedleMasterySummary(
       this.state.needleMastery,
-      this.state.equippedNeedle,
+      selected.id,
     );
+    const selectedRewards = NEEDLE_MASTERY_REWARDS.filter(
+      (reward) => reward.needleId === selected.id,
+    );
+    const nextReward = selectedRewards.find(
+      (reward) => reward.requiredLevel > selectedMastery.level,
+    );
+    const masteryPercent = selectedMastery.nextLevelXp === null
+      ? 100
+      : Math.min(
+          100,
+          (selectedMastery.currentLevelXp / selectedMastery.nextLevelXp) * 100,
+        );
     const draw = `
-      <article class="needle-draw">
+      <article class="needle-draw is-compact">
         <div class="draw-emblem" aria-hidden="true"><span>?</span></div>
         <div class="draw-copy"><span>Тайный футляр</span><h3>${unlockCost === null ? "Коллекция собрана" : "Случайная новая игла"}</h3><p>${unlockCost === null ? "Все иглы уже открыты." : "Какая именно выпадет — станет известно после открытия."}</p></div>
         <button class="buy-button card-action" data-action="random-needle" ${!canUnlock ? "disabled" : ""} aria-label="${unlockCost === null ? "Все иглы уже открыты" : `Открыть случайную иглу за ${unlockCost} нитей`}">
@@ -1548,50 +1966,39 @@ export default class GameMenu {
         </button>
       </article>`;
 
-    return `
-      <div class="panel-intro panel-intro-needles">
-        <span class="panel-intro-emblem" aria-hidden="true">➶</span>
-        <div><strong>Коллекция и мастерство</strong><p>Играй любимой иглой, поднимай её до 10 уровня и открывай только косметические эффекты.</p></div>
-        <b>${ownedCount}/${NEEDLE_SKINS.length}</b>
-      </div>
-      <div class="mastery-overview">
-        <span>ИГЛА В КОЛЧАНЕ</span><strong>Мастерство ${equippedMastery.level}/${MAX_NEEDLE_MASTERY_LEVEL}</strong><small>${equippedMastery.nextLevelXp === null ? "Максимальный уровень достигнут" : `${equippedMastery.currentLevelXp}/${equippedMastery.nextLevelXp} опыта до нового уровня`}</small>
-      </div>
-      ${draw}
-      <div class="card-stack needle-stack">${NEEDLE_SKINS.map((skin) => {
+    const tiles = NEEDLE_SKINS.map((skin) => {
       const owned = this.state.ownedNeedles.includes(skin.id);
       const equipped = this.state.equippedNeedle === skin.id;
+      const selectedTile = selected.id === skin.id;
       const mastery = getNeedleMasterySummary(this.state.needleMastery, skin.id);
-      const rewards = NEEDLE_MASTERY_REWARDS.filter((reward) => reward.needleId === skin.id);
-      const nextReward = rewards.find((reward) => reward.requiredLevel > mastery.level);
-      const masteryPercent = mastery.nextLevelXp === null
-        ? 100
-        : Math.min(100, (mastery.currentLevelXp / mastery.nextLevelXp) * 100);
       return `
-        <article class="meta-card needle-card ${equipped ? "is-equipped" : ""} ${owned ? "" : "is-locked"}">
-          <div class="needle-showcase has-art">
-            <img class="needle-art" src="${asset(skin.iconFileName)}" alt="" aria-hidden="true" draggable="false" />
-            ${owned ? "" : `<span class="needle-lock" aria-hidden="true">?</span>`}
-          </div>
-          <div class="item-copy">
-            <div class="card-kicker"><span>${equipped ? "В колчане" : owned ? "Открыта" : "Неизвестна"}</span><strong>${owned ? `✦ ${skin.threadCost}` : "???"}</strong></div>
-            <h3>${owned ? skin.name : "Неизвестная игла"}</h3><strong>${owned ? skin.subtitle : "Скрыта в футляре"}</strong><p>${owned ? skin.description : "Облик и свойство откроются случайно."}</p>
-            ${owned ? `
-              <div class="mastery-line">
-                <span>Мастерство <b>${mastery.level}/${MAX_NEEDLE_MASTERY_LEVEL}</b></span>
-                <div role="progressbar" aria-label="Мастерство иглы ${skin.name}" aria-valuemin="1" aria-valuemax="${MAX_NEEDLE_MASTERY_LEVEL}" aria-valuenow="${mastery.level}"><i style="width:${masteryPercent}%"></i></div>
-              </div>
-              <div class="mastery-rewards" aria-label="Косметические награды мастерства">
-                ${rewards.map((reward) => `<span class="${reward.requiredLevel <= mastery.level ? "is-unlocked" : ""}" title="Уровень ${reward.requiredLevel}: ${reward.name}" aria-label="${reward.requiredLevel <= mastery.level ? "Открыто" : "Закрыто"}, уровень ${reward.requiredLevel}: ${reward.name}">${MASTERY_REWARD_SYMBOLS[reward.kind]}<small>${reward.requiredLevel}</small></span>`).join("")}
-              </div>
-              <small class="mastery-next">${nextReward ? `Следом: ${nextReward.name} · ур. ${nextReward.requiredLevel}` : "Все эффекты мастерства открыты"}</small>`
-              : ""}
-          </div>
-          <button class="select-button card-action" data-action="needle" data-id="${skin.id}" aria-pressed="${equipped}" ${!owned || equipped ? "disabled" : ""}>
-            <span>${equipped ? "В КОЛЧАНЕ" : owned ? "ВЫБРАТЬ" : "???"}</span><small>${equipped ? "АКТИВНА" : owned ? "СМЕНИТЬ" : "ЗАКРЫТО"}</small>
-          </button>
-        </article>`;
-      }).join("")}</div>`;
+        <button class="needle-tile ${owned ? "" : "is-locked"} ${equipped ? "is-equipped" : ""} ${selectedTile ? "is-selected" : ""}" data-action="needle-preview" data-id="${skin.id}" aria-pressed="${selectedTile}" aria-label="${owned ? `Показать ${skin.name}, мастерство ${mastery.level}` : "Показать закрытую иглу"}">
+          <span class="needle-tile-art"><img src="${asset(skin.iconFileName)}" alt="" aria-hidden="true" draggable="false" />${owned ? "" : `<i aria-hidden="true">?</i>`}</span>
+          <span class="needle-tile-copy"><strong>${owned ? skin.name : "Неизвестная игла"}</strong><small>${equipped ? "В КОЛЧАНЕ" : owned ? `МАСТЕРСТВО ${mastery.level}` : "ЗАКРЫТА"}</small></span>
+        </button>`;
+    }).join("");
+
+    return `
+      <div class="panel-intro panel-intro-needles is-compact">
+        <img class="panel-intro-icon" src="${asset(selected.iconFileName)}" alt="" aria-hidden="true" />
+        <div><strong>Иглы в футляре</strong><p>Квадратные карточки показывают коллекцию. Нажми иглу, чтобы увидеть свойство и награды мастерства.</p></div>
+        <b>${ownedCount}/${NEEDLE_SKINS.length}</b>
+      </div>
+      ${draw}
+      <div class="needle-grid" aria-label="Коллекция игл">${tiles}</div>
+      <article class="needle-feature ${selectedOwned ? "" : "is-locked"} ${selectedEquipped ? "is-equipped" : ""}">
+        <div class="needle-feature-art"><img src="${asset(selected.iconFileName)}" alt="" aria-hidden="true" draggable="false" />${selectedOwned ? "" : `<span aria-hidden="true">?</span>`}</div>
+        <div class="needle-feature-copy">
+          <div class="card-kicker"><span>${selectedEquipped ? "В колчане" : selectedOwned ? "Открыта" : "Закрыта"}</span><strong>${selectedOwned ? `ур. ${selectedMastery.level}/${MAX_NEEDLE_MASTERY_LEVEL}` : "???"}</strong></div>
+          <h3>${selectedOwned ? selected.name : "Неизвестная игла"}</h3>
+          <strong>${selectedOwned ? selected.subtitle : "Скрыта в тайном футляре"}</strong>
+          <p>${selectedOwned ? selected.description : "Открой футляр — облик и боевое свойство станут видны."}</p>
+          ${selectedOwned ? `<div class="mastery-line"><span>Опыт мастерства <b>${selectedMastery.nextLevelXp === null ? "МАКС" : `${selectedMastery.currentLevelXp}/${selectedMastery.nextLevelXp}`}</b></span><div role="progressbar" aria-label="Мастерство иглы ${selected.name}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(masteryPercent)}"><i style="width:${masteryPercent}%"></i></div></div>
+          <div class="mastery-rewards is-detailed" aria-label="Косметические награды мастерства">${selectedRewards.map((reward) => `<span class="${reward.requiredLevel <= selectedMastery.level ? "is-unlocked" : ""}" title="Уровень ${reward.requiredLevel}: ${reward.name}">${MASTERY_REWARD_SYMBOLS[reward.kind]}<small>${reward.requiredLevel}</small></span>`).join("")}</div>
+          <small class="mastery-next">${nextReward ? `Следующая награда: ${nextReward.name} · уровень ${nextReward.requiredLevel}` : "Все эффекты мастерства открыты"}</small>` : ""}
+        </div>
+        <button class="select-button needle-feature-action" data-action="needle" data-id="${selected.id}" aria-pressed="${selectedEquipped}" ${!selectedOwned || selectedEquipped ? "disabled" : ""}><span>${selectedEquipped ? "В КОЛЧАНЕ" : selectedOwned ? "ВЫБРАТЬ" : "ЗАКРЫТО"}</span><small>${selectedEquipped ? "АКТИВНА" : selectedOwned ? "СМЕНИТЬ" : "НУЖЕН ФУТЛЯР"}</small></button>
+      </article>`;
   }
 
   private renderBestiary(): string {
@@ -1623,24 +2030,53 @@ export default class GameMenu {
     locked = false,
   ): string {
     const patchFile = getWorkshopPatchArtFileName(collectible.id);
+    const frameFile = getWorkshopFrameArtFileName(collectible.id);
+    const ornamentFile = getWorkshopOrnamentArtFileName(collectible.id);
     const variant = collectibleVariant(collectible.id);
     const stateClass = locked ? " is-locked" : "";
     if (patchFile) {
       return `<span class="collectible-preview is-patch v-${variant}${stateClass}"><img src="${asset(patchFile)}" alt="" aria-hidden="true" draggable="false" /></span>`;
     }
+    if (frameFile) {
+      return `<span class="collectible-preview is-portrait-frame v-${variant}${stateClass}" aria-hidden="true"><span class="preview-avatar"><img src="${asset("hero-elya.webp")}" alt="" draggable="false" /><img class="preview-frame-art" src="${asset(frameFile)}" alt="" draggable="false" /></span></span>`;
+    }
+    if (ornamentFile) {
+      return `<span class="collectible-preview is-workshop-ornament v-${variant}${stateClass}" aria-hidden="true"><img src="${asset(ornamentFile)}" alt="" draggable="false" /></span>`;
+    }
+
+    const previewNeedle = NEEDLE_SKINS.find((needle) =>
+      collectible.id.startsWith(`${needle.id}-`),
+    ) ?? NEEDLE_SKINS.find((needle) => needle.id === this.state.equippedNeedle) ?? NEEDLE_SKINS[0];
+    const needlePresentation = collectible.kind.startsWith("needle-")
+      ? getNeedlePreviewPresentation(collectible.id)
+      : null;
+    const previewStyle = needlePresentation
+      ? ` style="--preview-primary:${needlePresentation.primary};--preview-secondary:${needlePresentation.secondary}"`
+      : "";
+    const needlePreviewClass = needlePresentation
+      ? ` has-cosmetic-palette motif-${collectible.kind === "needle-impact" ? needlePresentation.impactMotif : needlePresentation.trailMotif}`
+      : "";
+    const impactSymbols: Readonly<Record<NeedlePreviewPresentation["impactMotif"], string>> = {
+      stitches: "×",
+      stars: "✦",
+      shards: "◆",
+      lightning: "ϟ",
+      petals: "✤",
+      crown: "♛",
+    };
 
     const contents: Readonly<Record<WorkshopCollectibleKind, string>> = {
-      title: `<b>Аа</b><i>✦</i>`,
+      title: `<b class="preview-title">${escapeHtml(collectibleDisplayName(collectible.name))}</b><i>✦</i>`,
       patch: `<b>◆</b>`,
       "portrait-frame": `<i class="portrait-dot">✦</i>`,
-      "name-glow": `<b>Аа</b><i>✧</i>`,
-      "name-font": `<b>Аб</b>`,
-      "needle-trail": `<i class="preview-needle">➶</i><i class="preview-thread"></i>`,
-      "needle-impact": `<b>✦</b><i>·</i><i>✧</i>`,
-      "needle-aura": `<b>⌁</b><i class="preview-aura"></i>`,
+      "name-glow": `<b class="preview-name">Эля</b><i>✧</i>`,
+      "name-font": `<b class="preview-name">Эля</b>`,
+      "needle-trail": `<img class="preview-needle-art" src="${asset(previewNeedle.iconFileName)}" alt="" /><i class="preview-thread"></i><i class="preview-trail-accent">${needlePresentation?.trailMotif === "lightning" ? "ϟ" : needlePresentation?.trailMotif === "spark" ? "✦" : "·"}</i>`,
+      "needle-impact": `<b class="preview-impact-motif">${impactSymbols[needlePresentation?.impactMotif ?? "stitches"]}</b><i>·</i><i>✧</i>`,
+      "needle-aura": `<img class="preview-needle-art" src="${asset(previewNeedle.iconFileName)}" alt="" /><i class="preview-aura"></i><i class="preview-aura-orbit"></i>`,
       "workshop-ornament": `<b>${this.getOrnamentSymbol(collectible.name)}</b>`,
     };
-    return `<span class="collectible-preview is-${collectible.kind} v-${variant}${stateClass}" aria-hidden="true">${contents[collectible.kind]}</span>`;
+    return `<span class="collectible-preview is-${collectible.kind} v-${variant}${needlePreviewClass}${stateClass}"${previewStyle} aria-hidden="true">${contents[collectible.kind]}</span>`;
   }
 
   private getOrnamentSymbol(name: string): string {
@@ -1663,83 +2099,6 @@ export default class GameMenu {
         ? "ВКЛЮЧИТЬ"
         : "НАДЕТЬ";
     return `<button class="collectible-toggle ${equipped ? "is-equipped" : ""}" data-action="workshop-toggle" data-id="${collectible.id}" aria-pressed="${equipped}">${equipped ? "СНЯТЬ" : verb}</button>`;
-  }
-
-  private renderCollectionShelf(
-    collection: WorkshopCollectionState,
-    kinds: readonly WorkshopCollectibleKind[],
-    title: string,
-    summary: string,
-    open = false,
-  ): string {
-    const owned = WORKSHOP_COLLECTIBLES.filter(
-      (collectible) =>
-        kinds.includes(collectible.kind) &&
-        collection.ownedCollectibleIds.includes(collectible.id),
-    );
-    return `
-      <details class="collection-shelf" ${open ? "open" : ""}>
-        <summary><span>${title}</span><small>${summary}</small><b>${owned.length}</b></summary>
-        ${owned.length > 0
-          ? `<div class="collection-grid">${owned.map((collectible) => `
-              <article class="collection-item rarity-${collectible.rarity}">
-                ${this.renderCollectiblePreview(collectible)}
-                <div><small>${WORKSHOP_KIND_LABELS[collectible.kind]}</small><strong>${escapeHtml(collectibleDisplayName(collectible.name))}</strong></div>
-                ${this.renderWorkshopToggle(collectible, collection)}
-              </article>`).join("")}</div>`
-          : `<p class="collection-empty">Здесь появятся открытые награды. Первые предметы лежат в сезонном альбоме ниже.</p>`}
-      </details>`;
-  }
-
-  private renderWorkshopBook(collection: WorkshopCollectionState): string {
-    const summary = getWorkshopCollectionSummary(collection);
-    const title = getEquippedWorkshopCollectible(collection, "title");
-    const patch = getEquippedWorkshopCollectible(collection, "patch");
-    const portraitFrame = getEquippedWorkshopCollectible(collection, "portrait-frame");
-    const nameGlow = getEquippedWorkshopCollectible(collection, "name-glow");
-    const nameFont = getEquippedWorkshopCollectible(collection, "name-font");
-    const ornament = getEquippedWorkshopCollectible(collection, "workshop-ornament");
-    const next = summary.nextLevel;
-    const progress = next
-      ? Math.min(100, (summary.collectedTowardNextLevel / Math.max(1, next.requiredCollectionCount - summary.currentLevel.requiredCollectionCount)) * 100)
-      : 100;
-    const patchFile = patch ? getWorkshopPatchArtFileName(patch.id) : null;
-    const profileClass = [
-      portraitFrame ? `has-frame frame-v-${collectibleVariant(portraitFrame.id)}` : "",
-      nameGlow ? `has-glow glow-v-${collectibleVariant(nameGlow.id)}` : "",
-      nameFont ? `has-font font-v-${collectibleVariant(nameFont.id)}` : "",
-    ].filter(Boolean).join(" ");
-
-    return `
-      <section class="workshop-book" aria-labelledby="workshop-book-title">
-        <header class="workshop-book-heading">
-          <div><span>КОЛЛЕКЦИЯ И ПРОФИЛЬ</span><h3 id="workshop-book-title">Книга мастерской</h3><p>Награды теперь можно надевать, включать и ставить в комнате.</p></div>
-          <b>ур. ${summary.workshopLevel}</b>
-        </header>
-        <div class="workshop-room is-level-${summary.workshopLevel}">
-          <img class="workshop-book-art" src="${asset("ui-workshop-book.webp")}" alt="Открытая книга с коллекцией нашивок и рамок" />
-          ${summary.workshopLevel >= 2 ? `<i class="workshop-addition addition-lamp" title="Тёплая лампа">✦</i>` : ""}
-          ${summary.workshopLevel >= 3 ? `<span class="workshop-addition addition-patch">${patchFile ? `<img src="${asset(patchFile)}" alt="" />` : "◆"}</span>` : ""}
-          ${summary.workshopLevel >= 4 ? `<img class="workshop-addition addition-album" src="${asset("ui-season-album.webp")}" alt="" />` : ""}
-          ${summary.workshopLevel >= 5 ? `<span class="workshop-addition addition-frame">✦</span>` : ""}
-          ${summary.workshopLevel >= 6 ? `<img class="workshop-addition addition-chest" src="${asset("ui-streak-chest.webp")}" alt="" />` : ""}
-          ${ornament ? `<span class="workshop-addition addition-equipped-ornament" title="${escapeHtml(ornament.name)}"><b>${this.getOrnamentSymbol(ornament.name)}</b><small>${escapeHtml(collectibleDisplayName(ornament.name))}</small></span>` : ""}
-          <strong>${escapeHtml(summary.currentLevel.name)}</strong>
-        </div>
-        <div class="workshop-progress-copy"><span>${summary.collectedCount}/${summary.totalCollectibleCount} предметов</span><strong>${next ? `До «${next.name}»: ${summary.neededForNextLevel}` : "Мастерская завершена"}</strong></div>
-        <div class="workshop-progress" role="progressbar" aria-label="Развитие мастерской" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress)}"><span style="width:${progress}%"></span></div>
-        <p class="workshop-level-copy">${escapeHtml(summary.currentLevel.description)}</p>
-
-        <article class="workshop-profile ${profileClass}" aria-label="Предпросмотр профиля">
-          <div class="workshop-avatar"><img src="${asset("hero-menu-v2.webp")}" alt="" />${patchFile ? `<img class="profile-patch" src="${asset(patchFile)}" alt="" />` : ""}</div>
-          <div class="workshop-profile-name"><small>ВАШ ПРОФИЛЬ</small><strong>Мастер Живой нити</strong><span>${title ? escapeHtml(collectibleDisplayName(title.name)) : "Выберите титул в книге"}</span></div>
-          <div class="profile-loadout"><span>${portraitFrame ? "Рамка надета" : "Без рамки"}</span><span>${nameGlow ? "Имя светится" : "Без свечения"}</span><span>${nameFont ? "Особый почерк" : "Обычный почерк"}</span></div>
-        </article>
-
-        ${this.renderCollectionShelf(collection, PROFILE_COLLECTIBLE_KINDS, "Профиль", "титулы, нашивки, рамки и имя", true)}
-        ${this.renderCollectionShelf(collection, NEEDLE_COLLECTIBLE_KINDS, "Игла", "следы, попадания и сияния")}
-        ${this.renderCollectionShelf(collection, ["workshop-ornament"], "Комната", "предметы, которые появляются в мастерской")}
-      </section>`;
   }
 
   private renderShop(): string {
@@ -1816,8 +2175,6 @@ export default class GameMenu {
     }).join("");
 
     return `
-      ${this.renderWorkshopBook(workshopCollection)}
-
       <div class="section-divider shop-divider"><span>Сезонный путь</span><small>долгая коллекция</small></div>
       <section class="season-album" aria-labelledby="season-album-title">
         <header class="season-hero">

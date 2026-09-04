@@ -322,8 +322,37 @@ export const WORKSHOP_PATCH_ART: Readonly<Record<string, string>> = {
   "weekly-emblem-pattern-heart": "patch-weekly-pattern-heart.webp",
 };
 
+/** Runtime art for every collectible portrait frame in the current season. */
+export const WORKSHOP_FRAME_ART: Readonly<Record<string, string>> = {
+  "living-thread-01-free-5": "frame-blue-stitch.webp",
+  "living-thread-01-free-10": "frame-warm-felt.webp",
+  "living-thread-01-free-16": "frame-spool-wreath.webp",
+  "living-thread-01-premium-1": "frame-golden-eye.webp",
+  "living-thread-01-premium-7": "frame-thread-theatre.webp",
+  "living-thread-01-premium-13": "frame-mechanical-lace.webp",
+  "living-thread-01-premium-19": "frame-living-thread.webp",
+};
+
+/** Runtime art for every collectible ornament placed in the workshop. */
+export const WORKSHOP_ORNAMENT_ART: Readonly<Record<string, string>> = {
+  "living-thread-01-free-6": "ornament-small-spool.webp",
+  "living-thread-01-free-12": "ornament-apprentice-scissors.webp",
+  "living-thread-01-free-19": "ornament-moon-pattern.webp",
+  "living-thread-01-premium-6": "ornament-golden-shuttle.webp",
+  "living-thread-01-premium-12": "ornament-seamstress-clock.webp",
+  "living-thread-01-premium-18": "ornament-golden-machine-heart.webp",
+};
+
 export function getWorkshopPatchArtFileName(id: string): string | null {
   return WORKSHOP_PATCH_ART[id] ?? null;
+}
+
+export function getWorkshopFrameArtFileName(id: string): string | null {
+  return WORKSHOP_FRAME_ART[id] ?? null;
+}
+
+export function getWorkshopOrnamentArtFileName(id: string): string | null {
+  return WORKSHOP_ORNAMENT_ART[id] ?? null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

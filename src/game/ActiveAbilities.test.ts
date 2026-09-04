@@ -19,6 +19,15 @@ describe("active abilities", () => {
     expect(normalizeActiveAbilityId("magnetic-stitch")).toBe("magnetic-stitch");
     expect(normalizeActiveAbilityId("unknown")).toBe("time-loop");
     expect(ACTIVE_ABILITIES).toHaveLength(3);
+    expect(
+      Object.fromEntries(
+        ACTIVE_ABILITIES.map((ability) => [ability.id, ability.iconFileName]),
+      ),
+    ).toEqual({
+      "time-loop": "ability-time-loop.webp",
+      "magnetic-stitch": "ability-magnetic-stitch.webp",
+      "spare-knot": "ability-spare-knot.webp",
+    });
     for (const ability of ACTIVE_ABILITIES) {
       expect(ability.chargesPerStage).toBe(1);
       expect(ability.cooldownMs).toBe(0);

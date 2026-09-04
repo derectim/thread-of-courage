@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  QUEST_PAGE_LABELS,
+  UPGRADE_PAGE_LABELS,
+  WORKSHOP_PAGE_KINDS,
+  WORKSHOP_PAGE_LABELS,
   getBestiaryThreatLabel,
   resolvePanelScrollRestoration,
   TAB_LABELS,
 } from "./GameMenu";
+import { WORKSHOP_COLLECTIBLE_KINDS } from "../game/WorkshopCollection";
 
 describe("menu tab artwork", () => {
   it("maps every menu section to a unique published icon", () => {
@@ -16,6 +21,34 @@ describe("menu tab artwork", () => {
     expect(iconFiles.every((fileName) => fileName.endsWith(".webp"))).toBe(true);
   });
 
+});
+
+describe("compact menu sections", () => {
+  it("keeps stable, unique labels for upgrades and quests", () => {
+    expect(Object.keys(UPGRADE_PAGE_LABELS)).toEqual([
+      "permanent",
+      "active",
+      "passive",
+    ]);
+    expect(Object.keys(QUEST_PAGE_LABELS)).toEqual([
+      "daily",
+      "weekly",
+      "chronicle",
+    ]);
+    expect(new Set(Object.values(UPGRADE_PAGE_LABELS))).toHaveLength(3);
+    expect(new Set(Object.values(QUEST_PAGE_LABELS))).toHaveLength(3);
+  });
+
+  it("places every workshop reward kind on exactly one book page", () => {
+    expect(Object.keys(WORKSHOP_PAGE_LABELS)).toEqual([
+      "profile",
+      "needle",
+      "room",
+    ]);
+    const kinds = Object.values(WORKSHOP_PAGE_KINDS).flat();
+    expect(kinds).toHaveLength(WORKSHOP_COLLECTIBLE_KINDS.length);
+    expect(new Set(kinds)).toEqual(new Set(WORKSHOP_COLLECTIBLE_KINDS));
+  });
 });
 
 describe("bestiary threat labels", () => {

@@ -13,7 +13,11 @@ import {
 import {
   WORKSHOP_COLLECTION_SAVE_KEY,
   WORKSHOP_COLLECTIBLES,
+  WORKSHOP_FRAME_ART,
   WORKSHOP_LEVELS,
+  WORKSHOP_ORNAMENT_ART,
+  getWorkshopFrameArtFileName,
+  getWorkshopOrnamentArtFileName,
   getWorkshopPatchArtFileName,
   createWorkshopCollectionState,
   equipWorkshopCollectible,
@@ -114,6 +118,69 @@ describe("WorkshopCollection catalog", () => {
       "owl-eye": "patch-weekly-owl-eye.webp",
       "pattern-heart": "patch-weekly-pattern-heart.webp",
     });
+  });
+
+  it("maps every collectible portrait frame to its runtime art", () => {
+    const frames = WORKSHOP_COLLECTIBLES.filter(
+      (item) => item.kind === "portrait-frame",
+    );
+    expect(
+      Object.fromEntries(
+        frames.map((frame) => [frame.id, getWorkshopFrameArtFileName(frame.id)]),
+      ),
+    ).toEqual({
+      "living-thread-01-free-5": "frame-blue-stitch.webp",
+      "living-thread-01-free-10": "frame-warm-felt.webp",
+      "living-thread-01-free-16": "frame-spool-wreath.webp",
+      "living-thread-01-premium-1": "frame-golden-eye.webp",
+      "living-thread-01-premium-7": "frame-thread-theatre.webp",
+      "living-thread-01-premium-13": "frame-mechanical-lace.webp",
+      "living-thread-01-premium-19": "frame-living-thread.webp",
+    });
+    expect(Object.keys(WORKSHOP_FRAME_ART)).toHaveLength(frames.length);
+    expect(
+      frames.every((frame) => Boolean(getWorkshopFrameArtFileName(frame.id)?.trim())),
+    ).toBe(true);
+  });
+
+  it("maps every collectible workshop ornament to its runtime art", () => {
+    const ornaments = WORKSHOP_COLLECTIBLES.filter(
+      (item) => item.kind === "workshop-ornament",
+    );
+    expect(
+      Object.fromEntries(
+        ornaments.map((ornament) => [
+          ornament.id,
+          getWorkshopOrnamentArtFileName(ornament.id),
+        ]),
+      ),
+    ).toEqual({
+      "living-thread-01-free-6": "ornament-small-spool.webp",
+      "living-thread-01-free-12": "ornament-apprentice-scissors.webp",
+      "living-thread-01-free-19": "ornament-moon-pattern.webp",
+      "living-thread-01-premium-6": "ornament-golden-shuttle.webp",
+      "living-thread-01-premium-12": "ornament-seamstress-clock.webp",
+      "living-thread-01-premium-18": "ornament-golden-machine-heart.webp",
+    });
+    expect(Object.keys(WORKSHOP_ORNAMENT_ART)).toHaveLength(ornaments.length);
+    expect(
+      ornaments.every((ornament) =>
+        Boolean(getWorkshopOrnamentArtFileName(ornament.id)?.trim()),
+      ),
+    ).toBe(true);
+  });
+
+  it("returns no frame or ornament art for other collectible kinds or unknown ids", () => {
+    for (const collectible of WORKSHOP_COLLECTIBLES) {
+      if (collectible.kind !== "portrait-frame") {
+        expect(getWorkshopFrameArtFileName(collectible.id)).toBeNull();
+      }
+      if (collectible.kind !== "workshop-ornament") {
+        expect(getWorkshopOrnamentArtFileName(collectible.id)).toBeNull();
+      }
+    }
+    expect(getWorkshopFrameArtFileName("unknown-collectible")).toBeNull();
+    expect(getWorkshopOrnamentArtFileName("unknown-collectible")).toBeNull();
   });
 });
 
