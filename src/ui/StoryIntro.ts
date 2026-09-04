@@ -32,13 +32,15 @@ export interface StoryIntroChapterResolution {
 
 export const STORY_INTRO_DURATION_SECONDS = 59.851;
 
+// Starts measured against the supplied narration WAV. Its recording ends
+// after Elya enters the Workshop, so the unvoiced final card opens at EOF.
 export const STORY_INTRO_CHAPTER_CUES = [
   0,
-  10.43,
-  17.94,
-  28.03,
-  35.89,
-  49.63,
+  15.52,
+  25.52,
+  41.32,
+  49.6,
+  STORY_INTRO_DURATION_SECONDS,
 ] as const;
 
 export const STORY_INTRO_CHAPTERS: readonly StoryIntroChapter[] = [

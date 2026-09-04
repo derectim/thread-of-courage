@@ -15,11 +15,11 @@ describe("story intro chapter cues", () => {
     expect(STORY_INTRO_DURATION_SECONDS).toBe(59.851);
     expect(STORY_INTRO_CHAPTER_CUES).toEqual([
       0,
-      10.43,
-      17.94,
-      28.03,
-      35.89,
-      49.63,
+      15.52,
+      25.52,
+      41.32,
+      49.6,
+      STORY_INTRO_DURATION_SECONDS,
     ]);
     expect(STORY_INTRO_CHAPTERS).toHaveLength(6);
     expect(STORY_INTRO_CHAPTERS.map((chapter) => chapter.cue)).toEqual(
@@ -38,13 +38,13 @@ describe("story intro chapter cues", () => {
 
   it("switches chapters exactly on their narration cues", () => {
     expect(resolveStoryIntroChapterIndex(0)).toBe(0);
-    expect(resolveStoryIntroChapterIndex(10.429)).toBe(0);
-    expect(resolveStoryIntroChapterIndex(10.43)).toBe(1);
-    expect(resolveStoryIntroChapterIndex(17.939)).toBe(1);
-    expect(resolveStoryIntroChapterIndex(17.94)).toBe(2);
-    expect(resolveStoryIntroChapterIndex(28.03)).toBe(3);
-    expect(resolveStoryIntroChapterIndex(35.89)).toBe(4);
-    expect(resolveStoryIntroChapterIndex(49.63)).toBe(5);
+    expect(resolveStoryIntroChapterIndex(15.519)).toBe(0);
+    expect(resolveStoryIntroChapterIndex(15.52)).toBe(1);
+    expect(resolveStoryIntroChapterIndex(25.519)).toBe(1);
+    expect(resolveStoryIntroChapterIndex(25.52)).toBe(2);
+    expect(resolveStoryIntroChapterIndex(41.32)).toBe(3);
+    expect(resolveStoryIntroChapterIndex(49.6)).toBe(4);
+    expect(resolveStoryIntroChapterIndex(59.85)).toBe(4);
     expect(resolveStoryIntroChapterIndex(STORY_INTRO_DURATION_SECONDS)).toBe(5);
   });
 
@@ -57,27 +57,27 @@ describe("story intro chapter cues", () => {
   });
 
   it("reports stable chapter windows and normalized local progress", () => {
-    expect(resolveStoryIntroChapter(5.215)).toMatchObject({
+    expect(resolveStoryIntroChapter(7.76)).toMatchObject({
       index: 0,
       start: 0,
-      end: 10.43,
+      end: 15.52,
       progress: 0.5,
     });
-    expect(resolveStoryIntroChapter(10.43)).toMatchObject({
+    expect(resolveStoryIntroChapter(15.52)).toMatchObject({
       index: 1,
-      start: 10.43,
-      end: 17.94,
+      start: 15.52,
+      end: 25.52,
       progress: 0,
     });
     expect(resolveStoryIntroChapter(STORY_INTRO_DURATION_SECONDS)).toMatchObject({
       index: 5,
-      start: 49.63,
+      start: STORY_INTRO_DURATION_SECONDS,
       end: STORY_INTRO_DURATION_SECONDS,
       progress: 1,
     });
   });
 
-  it("keeps subtitles identical to the recorded narration script", () => {
+  it("keeps the authored story copy assigned to the six scenes", () => {
     expect(STORY_INTRO_CHAPTERS.map((chapter) => chapter.title)).toEqual([
       "Нити памяти",
       "Ночь Разрыва",
@@ -160,8 +160,8 @@ describe("story intro chapter cues", () => {
 
     story.seekToChapter(2);
 
-    expect(events).toEqual(["pause", "seek:17.94", "present", "restart"]);
-    expect(story.currentTime).toBe(17.94);
+    expect(events).toEqual(["pause", "seek:25.52", "present", "restart"]);
+    expect(story.currentTime).toBe(25.52);
     expect(story.audioUsable).toBe(false);
     expect(story.playbackAttempt).toBe(5);
   });
