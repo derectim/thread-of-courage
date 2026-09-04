@@ -6529,20 +6529,32 @@ button {
 
 .story-intro-backdrop {
   object-fit: cover;
-  opacity: 0.56;
+  opacity: 0;
   filter: blur(24px) saturate(0.85) brightness(0.62);
   transform: scale(1.12);
+  transition: opacity 950ms ease;
 }
 
 .story-intro-art {
   z-index: 1;
   object-fit: cover;
   object-position: 50% 50%;
+  opacity: 0;
   filter: saturate(1.04) contrast(1.02);
 }
 
+.story-intro-backdrop-active { opacity: 0.56; }
+.story-intro-art-active { opacity: 1; }
+
 .story-intro-art.story-intro-art-enter {
-  animation: story-intro-image-in 850ms cubic-bezier(0.2, 0.72, 0.2, 1) both;
+  z-index: 3;
+  animation: story-intro-image-in 1000ms cubic-bezier(0.2, 0.72, 0.2, 1) both;
+}
+
+.story-intro-art.story-intro-art-leave {
+  z-index: 2;
+  opacity: 0;
+  animation: story-intro-image-out 1000ms cubic-bezier(0.3, 0, 0.25, 1) both;
 }
 
 .story-intro-shade {
@@ -6554,8 +6566,22 @@ button {
 }
 
 @keyframes story-intro-image-in {
-  from { opacity: 0.16; transform: scale(1.045); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: translate3d(4%, 0, 0) scale(1.035); filter: saturate(0.82) blur(3px); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: saturate(1.04) blur(0); }
+}
+
+@keyframes story-intro-image-out {
+  from { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  to { opacity: 0; transform: translate3d(-3%, 0, 0) scale(1.018); }
+}
+
+.story-intro-copy.story-intro-copy-enter {
+  animation: story-intro-copy-in 540ms 180ms cubic-bezier(0.18, 0.72, 0.2, 1) both;
+}
+
+@keyframes story-intro-copy-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .story-intro-header {
@@ -6873,7 +6899,7 @@ button {
     object-fit: cover;
   }
 
-  .story-intro-backdrop { opacity: 0.38; }
+  .story-intro-backdrop-active { opacity: 0.38; }
 
   .story-intro-shade {
     background:
@@ -6918,6 +6944,8 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
   .story-intro-art,
+  .story-intro-backdrop,
+  .story-intro-copy,
   .story-intro-brand,
   .story-intro-dot-marker {
     animation: none !important;

@@ -34,11 +34,11 @@ export const STORY_INTRO_DURATION_SECONDS = 59.851;
 
 export const STORY_INTRO_CHAPTER_CUES = [
   0,
-  10.2,
-  17.7,
-  27.8,
-  35.7,
-  49,
+  10.47,
+  17.97,
+  28.07,
+  37.48,
+  51.05,
 ] as const;
 
 export const STORY_INTRO_CHAPTERS: readonly StoryIntroChapter[] = [
@@ -161,8 +161,9 @@ export class StoryIntro {
   private overlay: HTMLDivElement | null = null;
   private dialog: HTMLElement | null = null;
   private visual: HTMLElement | null = null;
-  private backdropImage: HTMLImageElement | null = null;
-  private artImage: HTMLImageElement | null = null;
+  private backdropImages: HTMLImageElement[] = [];
+  private artImages: HTMLImageElement[] = [];
+  private copyElement: HTMLElement | null = null;
   private titleElement: HTMLElement | null = null;
   private subtitleElement: HTMLElement | null = null;
   private counterElement: HTMLElement | null = null;
@@ -185,6 +186,9 @@ export class StoryIntro {
   private lastFrameTime = 0;
   private animationFrame: number | null = null;
   private playbackAttempt = 0;
+  private lastAudioCorrectionAt = 0;
+  private activeVisualLayer = 0;
+  private visualTransitionTimer: number | null = null;
   private resultResolver: ((result: StoryIntroResult) => void) | null = null;
   private previousFocus: HTMLElement | null = null;
   private destroyed = false;
@@ -220,7 +224,9 @@ export class StoryIntro {
     this.audioUsable = false;
     this.currentTime = 0;
     this.renderedChapter = -1;
+    this.activeVisualLayer = 0;
     this.lastFrameTime = performance.now();
+    this.lastAudioCorrectionAt = 0;
     this.playbackAttempt += 1;
     this.previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -278,6 +284,7 @@ export class StoryIntro {
     this.audio.pause();
     this.audio.removeAttribute("src");
     this.audio.load();
+    this.clearVisualTransitionTimer();
     this.overlay?.remove();
     this.overlay = null;
     this.preloadedImages.splice(0);
@@ -305,17 +312,23 @@ export class StoryIntro {
     const visual = document.createElement("figure");
     visual.className = "story-intro-visual";
     visual.setAttribute("role", "img");
-    const backdrop = document.createElement("img");
-    backdrop.className = "story-intro-backdrop";
-    backdrop.alt = "";
-    backdrop.setAttribute("aria-hidden", "true");
-    backdrop.draggable = false;
-    const art = document.createElement("img");
-    art.className = "story-intro-art";
-    art.alt = "";
-    art.setAttribute("aria-hidden", "true");
-    art.draggable = false;
-    visual.append(backdrop, art);
+    const backdrops = [0, 1].map(() => {
+      const backdrop = document.createElement("img");
+      backdrop.className = "story-intro-backdrop";
+      backdrop.alt = "";
+      backdrop.setAttribute("aria-hidden", "true");
+      backdrop.draggable = false;
+      return backdrop;
+    });
+    const arts = [0, 1].map(() => {
+      const art = document.createElement("img");
+      art.className = "story-intro-art";
+      art.alt = "";
+      art.setAttribute("aria-hidden", "true");
+      art.draggable = false;
+      return art;
+    });
+    visual.append(...backdrops, ...arts);
 
     const shade = document.createElement("div");
     shade.className = "story-intro-shade";
@@ -408,8 +421,9 @@ export class StoryIntro {
     this.overlay = layer;
     this.dialog = dialog;
     this.visual = visual;
-    this.backdropImage = backdrop;
-    this.artImage = art;
+    this.backdropImages = backdrops;
+    this.artImages = arts;
+    this.copyElement = copy;
     this.titleElement = title;
     this.subtitleElement = subtitle;
     this.counterElement = counter;
@@ -484,14 +498,19 @@ export class StoryIntro {
     if (!this.overlay) return;
     const elapsed = Math.max(0, now - this.lastFrameTime) / 1000;
     if (this.canAdvance()) {
+      // The slideshow owns the clock so buffering or blocked narration can
+      // never freeze automatic scene changes. The voice follows that clock.
+      this.currentTime = normalizeTime(this.currentTime + elapsed);
       if (
         this.audioUsable &&
         !this.audio.paused &&
         Number.isFinite(this.audio.currentTime)
       ) {
-        this.currentTime = normalizeTime(this.audio.currentTime);
-      } else {
-        this.currentTime = normalizeTime(this.currentTime + elapsed);
+        const drift = this.audio.currentTime - this.currentTime;
+        if (Math.abs(drift) > 0.4 && now - this.lastAudioCorrectionAt > 500) {
+          this.lastAudioCorrectionAt = now;
+          this.seekAudio(this.currentTime);
+        }
       }
     }
     this.lastFrameTime = now;
@@ -519,16 +538,12 @@ export class StoryIntro {
 
   private updatePresentation(force = false): void {
     const resolution = resolveStoryIntroChapter(this.currentTime);
-    if (force || resolution.index !== this.renderedChapter) {
+    const chapterChanged = resolution.index !== this.renderedChapter;
+    if (force || chapterChanged) {
+      const animateSlide = this.renderedChapter >= 0 && chapterChanged;
       this.renderedChapter = resolution.index;
       const imageUrl = assetUrl("art/prologue", resolution.chapter.artFileName);
-      if (this.backdropImage) this.backdropImage.src = imageUrl;
-      if (this.artImage) {
-        this.artImage.src = imageUrl;
-        this.artImage.classList.remove("story-intro-art-enter");
-        void this.artImage.offsetWidth;
-        this.artImage.classList.add("story-intro-art-enter");
-      }
+      this.showArtworkSlide(imageUrl, animateSlide);
       this.visual?.setAttribute("aria-label", resolution.chapter.artAlt);
       if (this.visual) this.visual.dataset.chapter = resolution.chapter.id;
       if (this.titleElement) this.titleElement.textContent = resolution.chapter.title;
@@ -537,6 +552,11 @@ export class StoryIntro {
       }
       if (this.counterElement) {
         this.counterElement.textContent = `СЦЕНА ${resolution.index + 1} ИЗ ${STORY_INTRO_CHAPTERS.length}`;
+      }
+      if (this.copyElement) {
+        this.copyElement.classList.remove("story-intro-copy-enter");
+        void this.copyElement.offsetWidth;
+        this.copyElement.classList.add("story-intro-copy-enter");
       }
     }
 
@@ -560,6 +580,55 @@ export class StoryIntro {
     if (this.finishButton) this.finishButton.hidden = !this.ended;
     this.overlay?.classList.toggle("story-intro-ended", this.ended);
     this.updateControls();
+  }
+
+  private showArtworkSlide(imageUrl: string, animate: boolean): void {
+    if (this.artImages.length < 2 || this.backdropImages.length < 2) return;
+    this.clearVisualTransitionTimer();
+
+    const previousLayer = this.activeVisualLayer;
+    const nextLayer = animate ? 1 - previousLayer : previousLayer;
+    this.artImages.forEach((image, index) => {
+      image.classList.remove("story-intro-art-enter", "story-intro-art-leave");
+      image.classList.toggle("story-intro-art-active", index === previousLayer);
+    });
+    this.backdropImages.forEach((image, index) => {
+      image.classList.toggle("story-intro-backdrop-active", index === previousLayer);
+    });
+
+    const nextArt = this.artImages[nextLayer];
+    const nextBackdrop = this.backdropImages[nextLayer];
+    nextArt.src = imageUrl;
+    nextBackdrop.src = imageUrl;
+
+    if (!animate) {
+      nextArt.classList.add("story-intro-art-active");
+      nextBackdrop.classList.add("story-intro-backdrop-active");
+      this.activeVisualLayer = nextLayer;
+      return;
+    }
+
+    const previousArt = this.artImages[previousLayer];
+    const previousBackdrop = this.backdropImages[previousLayer];
+    nextArt.classList.add("story-intro-art-active");
+    nextBackdrop.classList.add("story-intro-backdrop-active");
+    void nextArt.offsetWidth;
+    previousArt.classList.add("story-intro-art-leave");
+    previousBackdrop.classList.remove("story-intro-backdrop-active");
+    nextArt.classList.add("story-intro-art-enter");
+    this.activeVisualLayer = nextLayer;
+
+    this.visualTransitionTimer = window.setTimeout(() => {
+      previousArt.classList.remove("story-intro-art-active", "story-intro-art-leave");
+      nextArt.classList.remove("story-intro-art-enter");
+      this.visualTransitionTimer = null;
+    }, 1050);
+  }
+
+  private clearVisualTransitionTimer(): void {
+    if (this.visualTransitionTimer === null) return;
+    window.clearTimeout(this.visualTransitionTimer);
+    this.visualTransitionTimer = null;
   }
 
   private updateControls(): void {
@@ -635,7 +704,10 @@ export class StoryIntro {
 
   private readonly handleAudioEnded = (): void => {
     if (!this.overlay) return;
-    this.reachEnd();
+    // A rounded media duration must not end or freeze the visual slideshow.
+    this.audioUsable = false;
+    this.lastFrameTime = performance.now();
+    this.scheduleAnimationFrame();
   };
 
   private readonly handleAudioError = (): void => {
@@ -753,6 +825,7 @@ export class StoryIntro {
     this.audio.pause();
     this.seekAudio(0);
     this.cancelAnimationFrame();
+    this.clearVisualTransitionTimer();
     document.removeEventListener("visibilitychange", this.handleVisibilityChange);
     this.overlay?.removeEventListener("click", this.handleClick);
     this.overlay?.removeEventListener("keydown", this.handleKeyDown);
@@ -760,8 +833,9 @@ export class StoryIntro {
     this.overlay = null;
     this.dialog = null;
     this.visual = null;
-    this.backdropImage = null;
-    this.artImage = null;
+    this.backdropImages = [];
+    this.artImages = [];
+    this.copyElement = null;
     this.titleElement = null;
     this.subtitleElement = null;
     this.counterElement = null;

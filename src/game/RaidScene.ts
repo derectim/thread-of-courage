@@ -400,7 +400,8 @@ export class RaidScene extends Phaser.Scene {
       onPlaybackChange: (active) => {
         if (active) {
           this.sfx.setMusicTheme("story");
-          this.sfx.setMusicDucking(0.32, 0.12);
+          // Keep narration in front while lifting the prologue score by 50%.
+          this.sfx.setMusicDucking(0.48, 0.12);
         } else {
           this.sfx.setMusicDucking(1, 0.72);
         }

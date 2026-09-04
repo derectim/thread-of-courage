@@ -11,7 +11,14 @@ import {
 describe("story intro chapter cues", () => {
   it("keeps the authored narration timing and six unique art scenes", () => {
     expect(STORY_INTRO_DURATION_SECONDS).toBe(59.851);
-    expect(STORY_INTRO_CHAPTER_CUES).toEqual([0, 10.2, 17.7, 27.8, 35.7, 49]);
+    expect(STORY_INTRO_CHAPTER_CUES).toEqual([
+      0,
+      10.47,
+      17.97,
+      28.07,
+      37.48,
+      51.05,
+    ]);
     expect(STORY_INTRO_CHAPTERS).toHaveLength(6);
     expect(STORY_INTRO_CHAPTERS.map((chapter) => chapter.cue)).toEqual(
       STORY_INTRO_CHAPTER_CUES,
@@ -29,13 +36,13 @@ describe("story intro chapter cues", () => {
 
   it("switches chapters exactly on their narration cues", () => {
     expect(resolveStoryIntroChapterIndex(0)).toBe(0);
-    expect(resolveStoryIntroChapterIndex(10.199)).toBe(0);
-    expect(resolveStoryIntroChapterIndex(10.2)).toBe(1);
-    expect(resolveStoryIntroChapterIndex(17.699)).toBe(1);
-    expect(resolveStoryIntroChapterIndex(17.7)).toBe(2);
-    expect(resolveStoryIntroChapterIndex(27.8)).toBe(3);
-    expect(resolveStoryIntroChapterIndex(35.7)).toBe(4);
-    expect(resolveStoryIntroChapterIndex(49)).toBe(5);
+    expect(resolveStoryIntroChapterIndex(10.469)).toBe(0);
+    expect(resolveStoryIntroChapterIndex(10.47)).toBe(1);
+    expect(resolveStoryIntroChapterIndex(17.969)).toBe(1);
+    expect(resolveStoryIntroChapterIndex(17.97)).toBe(2);
+    expect(resolveStoryIntroChapterIndex(28.07)).toBe(3);
+    expect(resolveStoryIntroChapterIndex(37.48)).toBe(4);
+    expect(resolveStoryIntroChapterIndex(51.05)).toBe(5);
     expect(resolveStoryIntroChapterIndex(STORY_INTRO_DURATION_SECONDS)).toBe(5);
   });
 
@@ -48,21 +55,21 @@ describe("story intro chapter cues", () => {
   });
 
   it("reports stable chapter windows and normalized local progress", () => {
-    expect(resolveStoryIntroChapter(5.1)).toMatchObject({
+    expect(resolveStoryIntroChapter(5.235)).toMatchObject({
       index: 0,
       start: 0,
-      end: 10.2,
+      end: 10.47,
       progress: 0.5,
     });
-    expect(resolveStoryIntroChapter(10.2)).toMatchObject({
+    expect(resolveStoryIntroChapter(10.47)).toMatchObject({
       index: 1,
-      start: 10.2,
-      end: 17.7,
+      start: 10.47,
+      end: 17.97,
       progress: 0,
     });
     expect(resolveStoryIntroChapter(STORY_INTRO_DURATION_SECONDS)).toMatchObject({
       index: 5,
-      start: 49,
+      start: 51.05,
       end: STORY_INTRO_DURATION_SECONDS,
       progress: 1,
     });
