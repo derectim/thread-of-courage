@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  StoryIntro,
   STORY_INTRO_CHAPTER_CUES,
   STORY_INTRO_CHAPTERS,
   STORY_INTRO_DURATION_SECONDS,
@@ -128,5 +129,40 @@ describe("story intro chapter cues", () => {
         fallbackClockActive: true,
       }),
     ).toBe(8);
+  });
+
+  it("does not rewind a manually selected chapter while the audio seek is pending", () => {
+    expect(
+      resolveStoryTimelineTime({
+        currentTime: STORY_INTRO_CHAPTER_CUES[2],
+        elapsedSeconds: 0.016,
+        canAdvance: true,
+        audioUsable: false,
+        audioPaused: true,
+        audioCurrentTime: 12.91,
+        fallbackClockActive: false,
+      }),
+    ).toBe(STORY_INTRO_CHAPTER_CUES[2]);
+  });
+
+  it("stops stale playback before seeking a manually selected chapter", () => {
+    const events: string[] = [];
+    const story = Object.create(StoryIntro.prototype) as any;
+    story.overlay = {};
+    story.audioUsable = true;
+    story.playbackAttempt = 4;
+    story.currentTime = 12.91;
+    story.audio = { pause: () => events.push("pause") };
+    story.seekAudio = (time: number) => events.push(`seek:${time}`);
+    story.updatePresentation = () => events.push("present");
+    story.canAdvance = () => true;
+    story.startMediaOrFallback = () => events.push("restart");
+
+    story.seekToChapter(2);
+
+    expect(events).toEqual(["pause", "seek:17.94", "present", "restart"]);
+    expect(story.currentTime).toBe(17.94);
+    expect(story.audioUsable).toBe(false);
+    expect(story.playbackAttempt).toBe(5);
   });
 });

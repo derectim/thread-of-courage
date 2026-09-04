@@ -511,12 +511,10 @@ export class StoryIntro {
       return;
     }
     void playback.then(() => {
-      if (
-        attempt !== this.playbackAttempt ||
-        !this.overlay ||
-        !this.canAdvance() ||
-        this.muted
-      ) {
+      // A superseded play() promise shares the same HTMLAudioElement with the
+      // new chapter. It must not pause the newer attempt when it settles.
+      if (attempt !== this.playbackAttempt) return;
+      if (!this.overlay || !this.canAdvance() || this.muted) {
         this.audio.pause();
         return;
       }
@@ -719,17 +717,25 @@ export class StoryIntro {
   }
 
   private seekTo(timeSeconds: number): void {
-    this.currentTime = normalizeTime(timeSeconds);
+    const targetTime = normalizeTime(timeSeconds);
+
+    // Invalidate the currently playing attempt before changing currentTime.
+    // Some mobile browsers expose the old audio position until their async
+    // seek completes; an animation frame could otherwise copy that stale
+    // position back into the story clock and resume the previous chapter.
+    this.playbackAttempt += 1;
+    this.audioUsable = false;
+    this.audio.pause();
+    this.currentTime = targetTime;
     this.ended = this.currentTime >= STORY_INTRO_DURATION_SECONDS;
     this.lastFrameTime = performance.now();
-    this.seekAudio(this.currentTime);
+    this.seekAudio(targetTime);
+    this.updatePresentation(true);
     if (this.ended) {
-      this.audio.pause();
-      this.audioUsable = false;
+      this.fallbackClockActive = false;
     } else if (this.canAdvance()) {
       this.startMediaOrFallback();
     }
-    this.updatePresentation(true);
   }
 
   private seekAudio(timeSeconds: number): void {
