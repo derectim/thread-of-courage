@@ -670,7 +670,7 @@ export class SoundEngine {
       case "menu":
         return 0.56;
       case "story":
-        return 0.46;
+        return 1.1;
       case "raid":
         return 0.48;
       case "boss":

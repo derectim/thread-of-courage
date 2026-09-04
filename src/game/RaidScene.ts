@@ -400,8 +400,9 @@ export class RaidScene extends Phaser.Scene {
       onPlaybackChange: (active) => {
         if (active) {
           this.sfx.setMusicTheme("story");
-          // Keep narration in front while lifting the prologue score by 50%.
-          this.sfx.setMusicDucking(0.48, 0.12);
+          // Narration plays outside the WebAudio bus; keep the dedicated
+          // prologue score at full bus level so it remains clearly audible.
+          this.sfx.setMusicDucking(1, 0.12);
         } else {
           this.sfx.setMusicDucking(1, 0.72);
         }

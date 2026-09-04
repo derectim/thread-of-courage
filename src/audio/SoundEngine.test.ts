@@ -252,7 +252,7 @@ describe('SoundEngine without browser audio APIs', () => {
     },
   );
 
-  it('builds a quiet 64 BPM story loop', async () => {
+  it('builds an audible 64 BPM story loop', async () => {
     const fakeDocument = installFakeBrowserAudio();
     const engine = new SoundEngine();
     engine.setMusicTheme('story');
@@ -265,7 +265,7 @@ describe('SoundEngine without browser audio APIs', () => {
     const storyVoice = context.gains[2].gain;
     expect(storySource.loopEnd).toBeCloseTo(15, 3);
     expect(storyVoice.exponentialRampToValueAtTime).toHaveBeenCalledWith(
-      0.46,
+      1.1,
       1.16,
     );
 

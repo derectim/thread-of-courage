@@ -34,11 +34,11 @@ export const STORY_INTRO_DURATION_SECONDS = 59.851;
 
 export const STORY_INTRO_CHAPTER_CUES = [
   0,
-  10.47,
-  17.97,
-  28.07,
-  37.48,
-  51.05,
+  10.43,
+  17.94,
+  28.03,
+  35.89,
+  49.63,
 ] as const;
 
 export const STORY_INTRO_CHAPTERS: readonly StoryIntroChapter[] = [
@@ -110,6 +110,31 @@ function normalizeTime(timeSeconds: number): number {
   );
 }
 
+export interface StoryTimelineFrame {
+  readonly currentTime: number;
+  readonly elapsedSeconds: number;
+  readonly canAdvance: boolean;
+  readonly audioUsable: boolean;
+  readonly audioPaused: boolean;
+  readonly audioCurrentTime: number;
+  readonly fallbackClockActive: boolean;
+}
+
+export function resolveStoryTimelineTime(frame: StoryTimelineFrame): number {
+  if (!frame.canAdvance) return normalizeTime(frame.currentTime);
+  if (
+    frame.audioUsable &&
+    !frame.audioPaused &&
+    Number.isFinite(frame.audioCurrentTime)
+  ) {
+    return normalizeTime(frame.audioCurrentTime);
+  }
+  if (frame.fallbackClockActive) {
+    return normalizeTime(frame.currentTime + Math.max(0, frame.elapsedSeconds));
+  }
+  return normalizeTime(frame.currentTime);
+}
+
 export function resolveStoryIntroChapterIndex(timeSeconds: number): number {
   const time = normalizeTime(timeSeconds);
   for (let index = STORY_INTRO_CHAPTER_CUES.length - 1; index > 0; index -= 1) {
@@ -163,7 +188,6 @@ export class StoryIntro {
   private visual: HTMLElement | null = null;
   private backdropImages: HTMLImageElement[] = [];
   private artImages: HTMLImageElement[] = [];
-  private copyElement: HTMLElement | null = null;
   private titleElement: HTMLElement | null = null;
   private subtitleElement: HTMLElement | null = null;
   private counterElement: HTMLElement | null = null;
@@ -181,12 +205,13 @@ export class StoryIntro {
   private visibilityPaused = false;
   private ended = false;
   private audioUsable = false;
+  private audioNeedsGesture = false;
   private currentTime = 0;
   private renderedChapter = -1;
   private lastFrameTime = 0;
   private animationFrame: number | null = null;
   private playbackAttempt = 0;
-  private lastAudioCorrectionAt = 0;
+  private fallbackClockActive = false;
   private activeVisualLayer = 0;
   private visualTransitionTimer: number | null = null;
   private resultResolver: ((result: StoryIntroResult) => void) | null = null;
@@ -222,11 +247,12 @@ export class StoryIntro {
     this.visibilityPaused = document.visibilityState === "hidden";
     this.ended = false;
     this.audioUsable = false;
+    this.audioNeedsGesture = false;
+    this.fallbackClockActive = this.muted;
     this.currentTime = 0;
     this.renderedChapter = -1;
     this.activeVisualLayer = 0;
     this.lastFrameTime = performance.now();
-    this.lastAudioCorrectionAt = 0;
     this.playbackAttempt += 1;
     this.previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -423,7 +449,6 @@ export class StoryIntro {
     this.visual = visual;
     this.backdropImages = backdrops;
     this.artImages = arts;
-    this.copyElement = copy;
     this.titleElement = title;
     this.subtitleElement = subtitle;
     this.counterElement = counter;
@@ -452,12 +477,25 @@ export class StoryIntro {
     if (!this.resultResolver && !this.overlay) return;
     this.lastFrameTime = performance.now();
     this.scheduleAnimationFrame();
-    if (!this.canAdvance() || this.muted) {
+    if (!this.canAdvance()) {
       this.audioUsable = false;
       this.audio.pause();
       return;
     }
+    if (this.muted) {
+      this.audioUsable = false;
+      this.fallbackClockActive = true;
+      this.audioNeedsGesture = false;
+      this.audio.pause();
+      this.updateControls();
+      return;
+    }
 
+    // Wait for the narration to actually start before advancing the slides.
+    // This keeps slow network/media startup from putting the voice behind.
+    this.fallbackClockActive = false;
+    this.audioNeedsGesture = false;
+    this.updateControls();
     const attempt = ++this.playbackAttempt;
     this.seekAudio(this.currentTime);
     let playback: Promise<void>;
@@ -465,6 +503,10 @@ export class StoryIntro {
       playback = this.audio.play();
     } catch {
       this.audioUsable = false;
+      this.fallbackClockActive = false;
+      this.audioNeedsGesture = true;
+      this.lastFrameTime = performance.now();
+      this.updateControls();
       return;
     }
     void playback.then(() => {
@@ -477,10 +519,20 @@ export class StoryIntro {
         this.audio.pause();
         return;
       }
-      this.audioUsable = true;
       this.seekAudio(this.currentTime);
+      this.audioUsable = true;
+      this.fallbackClockActive = false;
+      this.audioNeedsGesture = false;
+      this.lastFrameTime = performance.now();
+      this.updateControls();
     }).catch(() => {
-      if (attempt === this.playbackAttempt) this.audioUsable = false;
+      if (attempt === this.playbackAttempt) {
+        this.audioUsable = false;
+        this.fallbackClockActive = false;
+        this.audioNeedsGesture = true;
+        this.lastFrameTime = performance.now();
+        this.updateControls();
+      }
     });
   }
 
@@ -497,22 +549,19 @@ export class StoryIntro {
   private snapshotTimeline(now = performance.now()): void {
     if (!this.overlay) return;
     const elapsed = Math.max(0, now - this.lastFrameTime) / 1000;
-    if (this.canAdvance()) {
-      // The slideshow owns the clock so buffering or blocked narration can
-      // never freeze automatic scene changes. The voice follows that clock.
-      this.currentTime = normalizeTime(this.currentTime + elapsed);
-      if (
-        this.audioUsable &&
-        !this.audio.paused &&
-        Number.isFinite(this.audio.currentTime)
-      ) {
-        const drift = this.audio.currentTime - this.currentTime;
-        if (Math.abs(drift) > 0.4 && now - this.lastAudioCorrectionAt > 500) {
-          this.lastAudioCorrectionAt = now;
-          this.seekAudio(this.currentTime);
-        }
-      }
-    }
+    // The recorded narration is the master clock: every slide cue is a
+    // timestamp in this exact WAV, so buffering pauses picture and voice
+    // together instead of letting them drift apart. Only mute or a terminal
+    // media error enables the visual-only clock.
+    this.currentTime = resolveStoryTimelineTime({
+      currentTime: this.currentTime,
+      elapsedSeconds: elapsed,
+      canAdvance: this.canAdvance(),
+      audioUsable: this.audioUsable,
+      audioPaused: this.audio.paused,
+      audioCurrentTime: this.audio.currentTime,
+      fallbackClockActive: this.fallbackClockActive,
+    });
     this.lastFrameTime = now;
     if (this.currentTime >= STORY_INTRO_DURATION_SECONDS) this.reachEnd();
   }
@@ -552,11 +601,6 @@ export class StoryIntro {
       }
       if (this.counterElement) {
         this.counterElement.textContent = `СЦЕНА ${resolution.index + 1} ИЗ ${STORY_INTRO_CHAPTERS.length}`;
-      }
-      if (this.copyElement) {
-        this.copyElement.classList.remove("story-intro-copy-enter");
-        void this.copyElement.offsetWidth;
-        this.copyElement.classList.add("story-intro-copy-enter");
       }
     }
 
@@ -622,7 +666,7 @@ export class StoryIntro {
       previousArt.classList.remove("story-intro-art-active", "story-intro-art-leave");
       nextArt.classList.remove("story-intro-art-enter");
       this.visualTransitionTimer = null;
-    }, 1050);
+    }, 220);
   }
 
   private clearVisualTransitionTimer(): void {
@@ -650,6 +694,10 @@ export class StoryIntro {
         this.muted ? "Включить озвучку" : "Выключить озвучку",
       );
     }
+    this.overlay?.classList.toggle(
+      "story-intro-audio-blocked",
+      this.audioNeedsGesture && !this.muted,
+    );
   }
 
   private togglePause(): void {
@@ -677,7 +725,7 @@ export class StoryIntro {
     if (this.ended) {
       this.audio.pause();
       this.audioUsable = false;
-    } else if (this.canAdvance() && !this.muted) {
+    } else if (this.canAdvance()) {
       this.startMediaOrFallback();
     }
     this.updatePresentation(true);
@@ -704,15 +752,17 @@ export class StoryIntro {
 
   private readonly handleAudioEnded = (): void => {
     if (!this.overlay) return;
-    // A rounded media duration must not end or freeze the visual slideshow.
-    this.audioUsable = false;
-    this.lastFrameTime = performance.now();
-    this.scheduleAnimationFrame();
+    this.reachEnd();
   };
 
   private readonly handleAudioError = (): void => {
+    this.playbackAttempt += 1;
     this.audioUsable = false;
+    this.fallbackClockActive = true;
+    this.audioNeedsGesture = false;
+    this.audio.pause();
     this.lastFrameTime = performance.now();
+    this.updateControls();
     this.scheduleAnimationFrame();
   };
 
@@ -835,7 +885,6 @@ export class StoryIntro {
     this.visual = null;
     this.backdropImages = [];
     this.artImages = [];
-    this.copyElement = null;
     this.titleElement = null;
     this.subtitleElement = null;
     this.counterElement = null;

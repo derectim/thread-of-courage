@@ -6,6 +6,7 @@ import {
   STORY_INTRO_DURATION_SECONDS,
   resolveStoryIntroChapter,
   resolveStoryIntroChapterIndex,
+  resolveStoryTimelineTime,
 } from "./StoryIntro";
 
 describe("story intro chapter cues", () => {
@@ -13,11 +14,11 @@ describe("story intro chapter cues", () => {
     expect(STORY_INTRO_DURATION_SECONDS).toBe(59.851);
     expect(STORY_INTRO_CHAPTER_CUES).toEqual([
       0,
-      10.47,
-      17.97,
-      28.07,
-      37.48,
-      51.05,
+      10.43,
+      17.94,
+      28.03,
+      35.89,
+      49.63,
     ]);
     expect(STORY_INTRO_CHAPTERS).toHaveLength(6);
     expect(STORY_INTRO_CHAPTERS.map((chapter) => chapter.cue)).toEqual(
@@ -36,13 +37,13 @@ describe("story intro chapter cues", () => {
 
   it("switches chapters exactly on their narration cues", () => {
     expect(resolveStoryIntroChapterIndex(0)).toBe(0);
-    expect(resolveStoryIntroChapterIndex(10.469)).toBe(0);
-    expect(resolveStoryIntroChapterIndex(10.47)).toBe(1);
-    expect(resolveStoryIntroChapterIndex(17.969)).toBe(1);
-    expect(resolveStoryIntroChapterIndex(17.97)).toBe(2);
-    expect(resolveStoryIntroChapterIndex(28.07)).toBe(3);
-    expect(resolveStoryIntroChapterIndex(37.48)).toBe(4);
-    expect(resolveStoryIntroChapterIndex(51.05)).toBe(5);
+    expect(resolveStoryIntroChapterIndex(10.429)).toBe(0);
+    expect(resolveStoryIntroChapterIndex(10.43)).toBe(1);
+    expect(resolveStoryIntroChapterIndex(17.939)).toBe(1);
+    expect(resolveStoryIntroChapterIndex(17.94)).toBe(2);
+    expect(resolveStoryIntroChapterIndex(28.03)).toBe(3);
+    expect(resolveStoryIntroChapterIndex(35.89)).toBe(4);
+    expect(resolveStoryIntroChapterIndex(49.63)).toBe(5);
     expect(resolveStoryIntroChapterIndex(STORY_INTRO_DURATION_SECONDS)).toBe(5);
   });
 
@@ -55,21 +56,21 @@ describe("story intro chapter cues", () => {
   });
 
   it("reports stable chapter windows and normalized local progress", () => {
-    expect(resolveStoryIntroChapter(5.235)).toMatchObject({
+    expect(resolveStoryIntroChapter(5.215)).toMatchObject({
       index: 0,
       start: 0,
-      end: 10.47,
+      end: 10.43,
       progress: 0.5,
     });
-    expect(resolveStoryIntroChapter(10.47)).toMatchObject({
+    expect(resolveStoryIntroChapter(10.43)).toMatchObject({
       index: 1,
-      start: 10.47,
-      end: 17.97,
+      start: 10.43,
+      end: 17.94,
       progress: 0,
     });
     expect(resolveStoryIntroChapter(STORY_INTRO_DURATION_SECONDS)).toMatchObject({
       index: 5,
-      start: 51.05,
+      start: 49.63,
       end: STORY_INTRO_DURATION_SECONDS,
       progress: 1,
     });
@@ -92,5 +93,40 @@ describe("story intro chapter cues", () => {
       "Она выбрала Элю — юную собирательницу узоров, способную услышать тихий голос старых вещей. Взяв последнюю живую иглу, Эля отправилась в глубины Мастерской. Теперь ей предстоит пройти через забытые залы, победить созданий Разрыва и вернуть похищенные части Великого Узора. Каждое точное попадание станет новым стежком.",
       "Каждая победа поможет зашить ещё одну рану этого мира. И, возможно, когда последний обрывок вернётся на своё место, Мастерская снова наполнится светом. Возьми иглу. Натяни нить. И помни… Даже самый большой разрыв можно исправить, если не бояться сделать первый стежок.",
     ]);
+  });
+
+  it("uses narration as the clock and never advances while audio is waiting", () => {
+    const baseFrame = {
+      currentTime: 8,
+      elapsedSeconds: 2,
+      canAdvance: true,
+      audioUsable: false,
+      audioPaused: true,
+      audioCurrentTime: 0,
+      fallbackClockActive: false,
+    };
+
+    expect(resolveStoryTimelineTime(baseFrame)).toBe(8);
+    expect(
+      resolveStoryTimelineTime({
+        ...baseFrame,
+        audioUsable: true,
+        audioPaused: false,
+        audioCurrentTime: 10.43,
+      }),
+    ).toBe(10.43);
+    expect(
+      resolveStoryTimelineTime({
+        ...baseFrame,
+        fallbackClockActive: true,
+      }),
+    ).toBe(10);
+    expect(
+      resolveStoryTimelineTime({
+        ...baseFrame,
+        canAdvance: false,
+        fallbackClockActive: true,
+      }),
+    ).toBe(8);
   });
 });

@@ -6493,6 +6493,28 @@ button {
   isolation: isolate;
 }
 
+.story-intro-layer.story-intro-audio-blocked::after {
+  position: absolute;
+  z-index: 8;
+  top: 50%;
+  left: 50%;
+  max-width: min(86%, 420px);
+  padding: 12px 18px;
+  border: 1px solid rgba(255, 225, 151, 0.58);
+  border-radius: 999px;
+  color: #fff0bd;
+  background: rgba(10, 10, 23, 0.88);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.48), 0 0 24px rgba(255, 194, 76, 0.14);
+  content: "КОСНИТЕСЬ ЭКРАНА, ЧТОБЫ ПРОДОЛЖИТЬ СО ЗВУКОМ";
+  font-size: clamp(9px, 2.7vw, 12px);
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
 .story-intro-scrim,
 .story-intro-dialog,
 .story-intro-visual,
@@ -6532,7 +6554,7 @@ button {
   opacity: 0;
   filter: blur(24px) saturate(0.85) brightness(0.62);
   transform: scale(1.12);
-  transition: opacity 950ms ease;
+  transition: opacity 180ms ease;
 }
 
 .story-intro-art {
@@ -6548,13 +6570,13 @@ button {
 
 .story-intro-art.story-intro-art-enter {
   z-index: 3;
-  animation: story-intro-image-in 1000ms cubic-bezier(0.2, 0.72, 0.2, 1) both;
+  animation: story-intro-image-in 180ms ease-out both;
 }
 
 .story-intro-art.story-intro-art-leave {
   z-index: 2;
   opacity: 0;
-  animation: story-intro-image-out 1000ms cubic-bezier(0.3, 0, 0.25, 1) both;
+  animation: story-intro-image-out 180ms ease-in both;
 }
 
 .story-intro-shade {
@@ -6566,22 +6588,13 @@ button {
 }
 
 @keyframes story-intro-image-in {
-  from { opacity: 0; transform: translate3d(4%, 0, 0) scale(1.035); filter: saturate(0.82) blur(3px); }
+  from { opacity: 0.62; transform: translate3d(1%, 0, 0) scale(1.01); filter: saturate(0.94); }
   to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: saturate(1.04) blur(0); }
 }
 
 @keyframes story-intro-image-out {
   from { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
   to { opacity: 0; transform: translate3d(-3%, 0, 0) scale(1.018); }
-}
-
-.story-intro-copy.story-intro-copy-enter {
-  animation: story-intro-copy-in 540ms 180ms cubic-bezier(0.18, 0.72, 0.2, 1) both;
-}
-
-@keyframes story-intro-copy-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 .story-intro-header {
@@ -6945,7 +6958,6 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .story-intro-art,
   .story-intro-backdrop,
-  .story-intro-copy,
   .story-intro-brand,
   .story-intro-dot-marker {
     animation: none !important;
