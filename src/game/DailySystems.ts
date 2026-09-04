@@ -7,6 +7,8 @@ export const DAILY_QUEST_COUNT = 3 as const;
 export interface RewardBundle {
   readonly thread: number;
   readonly cosmeticFragments: number;
+  /** Premium moon buttons are only present in victory-streak chests. */
+  readonly buttonReward?: number;
 }
 
 export type BossKind = "any" | "main" | "mini";
@@ -620,11 +622,13 @@ export function getStreakChestReward(milestone: number): RewardBundle {
     return {
       thread: 6 + grandNumber * 2,
       cosmeticFragments: 2 + Math.floor(grandNumber / 3),
+      buttonReward: 1,
     };
   }
   return {
     thread: 3 + Math.floor(normalizedMilestone / 15),
     cosmeticFragments: 1 + Math.floor(normalizedMilestone / 25),
+    buttonReward: 1,
   };
 }
 

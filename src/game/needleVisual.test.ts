@@ -10,9 +10,9 @@ import {
 
 describe("generated needle artwork", () => {
   it("publishes one unique transparent-ready texture for every skin", () => {
-    expect(NEEDLE_SKINS).toHaveLength(4);
-    expect(new Set(NEEDLE_SKINS.map((skin) => skin.textureKey))).toHaveLength(4);
-    expect(new Set(NEEDLE_SKINS.map((skin) => skin.iconFileName))).toHaveLength(4);
+    expect(NEEDLE_SKINS).toHaveLength(8);
+    expect(new Set(NEEDLE_SKINS.map((skin) => skin.textureKey))).toHaveLength(8);
+    expect(new Set(NEEDLE_SKINS.map((skin) => skin.iconFileName))).toHaveLength(8);
     expect(NEEDLE_SKINS.every((skin) => skin.iconFileName.endsWith(".webp"))).toBe(true);
   });
 

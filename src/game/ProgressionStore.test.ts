@@ -80,7 +80,7 @@ describe("ProgressionStore v3 persistence", () => {
         bossesDefeated: 5,
         upgradesPurchased: 7,
       },
-      ownedNeedles: ["silver", "bone", "storm"],
+      ownedNeedles: ["silver", "bone", "storm", "moonweave", "velvet-thorn"],
       equippedNeedle: "storm",
       ownedBackgrounds: ["auto", "moon-garden"],
       equippedBackground: "moon-garden",
@@ -382,6 +382,92 @@ describe("needles, skills and backgrounds", () => {
     expect(second.thread).toBe(670);
     expect(second.ownedNeedles).toEqual(["silver", "bone", "storm"]);
     expect(getRandomNeedleUnlockCost(second)).toBe(520);
+  });
+
+  it("unlocks stage needles only after victories on stages 23, 25, 30 and 40", () => {
+    let state = recordVictory(createState(), 22, false, 0);
+    expect(state.ownedNeedles).toEqual(["silver"]);
+
+    state = recordVictory(state, 23, false, 0);
+    expect(state.ownedNeedles).toEqual(["silver", "moonweave"]);
+
+    state = recordVictory(state, 24, false, 0);
+    expect(state.ownedNeedles).toEqual(["silver", "moonweave"]);
+
+    state = recordVictory(state, 25, false, 0);
+    expect(state.ownedNeedles).toEqual(["silver", "moonweave", "velvet-thorn"]);
+
+    state = recordVictory(state, 29, false, 0);
+    expect(state.ownedNeedles).toEqual(["silver", "moonweave", "velvet-thorn"]);
+
+    state = recordVictory(state, 30, false, 0);
+    expect(state.ownedNeedles).toEqual([
+      "silver",
+      "moonweave",
+      "velvet-thorn",
+      "clockwork",
+    ]);
+
+    state = recordVictory(state, 39, false, 0);
+    expect(state.ownedNeedles).toEqual([
+      "silver",
+      "moonweave",
+      "velvet-thorn",
+      "clockwork",
+    ]);
+
+    state = recordVictory(state, 40, false, 0);
+    expect(state.ownedNeedles).toEqual([
+      "silver",
+      "moonweave",
+      "velvet-thorn",
+      "clockwork",
+      "royal-seam",
+    ]);
+  });
+
+  it("restores earned stage needles when an older high-stage save is normalized", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      PROGRESSION_SAVE_KEY,
+      JSON.stringify(
+        createState({
+          highestStageCleared: 40,
+          ownedNeedles: ["silver", "bone"],
+        }),
+      ),
+    );
+
+    expect(load(storage).ownedNeedles).toEqual([
+      "silver",
+      "bone",
+      "moonweave",
+      "velvet-thorn",
+      "clockwork",
+      "royal-seam",
+    ]);
+  });
+
+  it("keeps the case limited to the original four-needle collection and price ladder", () => {
+    let state = createState({
+      highestStageCleared: 40,
+      thread: 1_000,
+      ownedNeedles: ["silver"],
+    });
+
+    expect(getRandomNeedleUnlockCost(state)).toBe(90);
+    state = unlockRandomNeedle(state, 0);
+    expect(state.ownedNeedles).toEqual(["silver", "bone"]);
+    expect(getRandomNeedleUnlockCost(state)).toBe(240);
+
+    state = unlockRandomNeedle(state, 0);
+    expect(state.ownedNeedles).toEqual(["silver", "bone", "storm"]);
+    expect(getRandomNeedleUnlockCost(state)).toBe(520);
+
+    state = unlockRandomNeedle(state, 0);
+    expect(state.ownedNeedles).toEqual(["silver", "bone", "storm", "sunrise"]);
+    expect(getRandomNeedleUnlockCost(state)).toBeNull();
+    expect(unlockRandomNeedle(state, 0)).toBe(state);
   });
 
   it("does not open a random needle without enough thread or after the collection is complete", () => {

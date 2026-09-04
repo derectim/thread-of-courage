@@ -72,7 +72,7 @@ import {
 } from "../game/WeeklyRoute";
 import {
   MONSTERS,
-  getMonsterForStage,
+  getFirstCampaignStageForMonster,
   type MonsterDefinition,
 } from "../game/content";
 import { HERO_CROSSBOW_FRAMES } from "../game/heroAnimation";
@@ -110,6 +110,16 @@ export function resolvePanelScrollRestoration(
   scrollTop: number | undefined,
 ): number | undefined {
   return storedTab === nextTab && nextTab !== "home" ? scrollTop : undefined;
+}
+
+export function getMenuPanelKey(
+  tab: MenuTab,
+  upgradePage: UpgradePage,
+  questPage: QuestPage,
+): string {
+  if (tab === "upgrades") return `upgrades:${upgradePage}`;
+  if (tab === "quests") return `quests:${questPage}`;
+  return tab;
 }
 
 export interface GameMenuCallbacks {
@@ -278,6 +288,14 @@ function getNeedlePreviewPresentation(id: string): NeedlePreviewPresentation {
     palette = ["#50d7cf", "#a78bfa"];
   } else if (id.includes("sunrise") || id.endsWith("free-17")) {
     palette = ["#ffb83d", "#ffef9a"];
+  } else if (id.includes("moonweave")) {
+    palette = ["#dff7ff", "#9ebcff"];
+  } else if (id.includes("velvet-thorn")) {
+    palette = ["#c02665", "#f4c55c"];
+  } else if (id.includes("clockwork")) {
+    palette = ["#39d4d0", "#f2bd4e"];
+  } else if (id.includes("royal-seam")) {
+    palette = ["#9d65e8", "#f4c55c"];
   } else if (id.endsWith("free-14")) {
     palette = ["#9b62c7", "#e09be2"];
   } else if (id.endsWith("premium-8")) {
@@ -290,12 +308,16 @@ function getNeedlePreviewPresentation(id: string): NeedlePreviewPresentation {
     palette = NEEDLE_PREVIEW_PALETTES[hash % NEEDLE_PREVIEW_PALETTES.length];
   }
 
-  const impactMotif = id.includes("storm")
+  const impactMotif = id.includes("storm") || id.includes("clockwork")
     ? "lightning"
-    : id.includes("sunrise")
+    : id.includes("sunrise") || id.includes("velvet-thorn")
       ? "petals"
       : id.includes("bone")
         ? "shards"
+        : id.includes("royal-seam")
+          ? "crown"
+          : id.includes("moonweave")
+            ? "stars"
         : id.endsWith("premium-16")
           ? "crown"
           : id.endsWith("premium-4") || id.endsWith("free-17")
@@ -303,9 +325,9 @@ function getNeedlePreviewPresentation(id: string): NeedlePreviewPresentation {
             : id.endsWith("premium-10")
               ? "shards"
               : "stitches";
-  const trailMotif = id.includes("storm") || id.endsWith("premium-14")
+  const trailMotif = id.includes("storm") || id.includes("clockwork") || id.endsWith("premium-14")
     ? "lightning"
-    : id.endsWith("premium-2") || id.includes("sunrise")
+    : id.endsWith("premium-2") || id.includes("sunrise") || id.includes("moonweave") || id.includes("royal-seam")
       ? "spark"
       : "plain";
 
@@ -542,10 +564,7 @@ function escapeHtml(value: string): string {
 }
 
 function firstStageForMonster(monsterId: string): number {
-  for (let stage = 1; stage <= 20; stage += 1) {
-    if (getMonsterForStage(stage).id === monsterId) return stage;
-  }
-  return 1;
+  return getFirstCampaignStageForMonster(monsterId) ?? Number.POSITIVE_INFINITY;
 }
 
 export function getBestiaryThreatLabel(
@@ -829,6 +848,7 @@ export default class GameMenu {
       if (NEEDLE_SKINS.some((skin) => skin.id === id)) {
         this.needlePreviewId = id;
         this.render();
+        this.revealNeedleSelection();
       }
       return;
     }
@@ -946,10 +966,11 @@ export default class GameMenu {
         {
           ...this.state,
           thread: this.state.thread + result.reward.thread,
+          premium: this.state.premium + (result.reward.buttonReward ?? 0),
           cosmeticFragments: this.state.cosmeticFragments + result.reward.cosmeticFragments,
           dailySystems: result.state,
         },
-        `Сундук открыт: ✦ ${result.reward.thread} · осколки ${result.reward.cosmeticFragments}`,
+        `Сундук открыт: ✦ ${result.reward.thread} · ◆ ${result.reward.buttonReward ?? 0} · осколки ${result.reward.cosmeticFragments}`,
       );
       return;
     }
@@ -1212,10 +1233,20 @@ export default class GameMenu {
   }
 
   private getPanelKey(): string {
-    if (this.tab === "upgrades") return `upgrades:${this.upgradePage}`;
-    if (this.tab === "quests") return `quests:${this.questPage}`;
-    if (this.tab === "needles") return `needles:${this.needlePreviewId}`;
-    return this.tab;
+    return getMenuPanelKey(this.tab, this.upgradePage, this.questPage);
+  }
+
+  private revealNeedleSelection(): void {
+    const feature = this.root.querySelector<HTMLElement>(".needle-feature");
+    if (!feature || typeof feature.scrollIntoView !== "function") return;
+    const reducedMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    feature.scrollIntoView({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
   }
 
   private render(): void {
@@ -1903,7 +1934,7 @@ export default class GameMenu {
     const pendingChests = streak.pendingChests.map((chest) => `
       <button class="streak-claim-button ${chest.tier === "grand" ? "is-grand" : ""}" data-action="streak-claim" data-chest-id="${chest.id}" aria-label="Открыть сундук за серию ${chest.milestone}">
         <span>${chest.tier === "grand" ? "БОЛЬШОЙ СУНДУК" : `СУНДУК · ${chest.milestone}`}</span>
-        <small>✦ ${chest.reward.thread} · ◈ ${chest.reward.cosmeticFragments}</small>
+        <small>✦ ${chest.reward.thread} · ◆ ${chest.reward.buttonReward ?? 0} · ◈ ${chest.reward.cosmeticFragments}</small>
       </button>`).join("");
 
     const weeklyNow = new Date();
@@ -1966,7 +1997,7 @@ export default class GameMenu {
         </div>
         <div class="streak-copy">
           <span>КАК РАБОТАЕТ СУНДУК</span><h3 id="streak-title">${streak.current} побед подряд · рекорд ${streak.best}</h3>
-          <p>${streak.pendingChests.length ? "Награда уже заработана и не пропадёт: нажми кнопку сундука ниже." : `Побеждай без поражений. Каждая 5-я победа даёт сундук, каждая 10-я — большой. До следующего осталось ${nextMilestone - streak.current}.`}</p>
+          <p>${streak.pendingChests.length ? "Награда уже заработана и не пропадёт: нажми кнопку сундука ниже. В каждом сундуке есть 1 лунная пуговица." : `Побеждай без поражений. Каждая 5-я победа даёт сундук, каждая 10-я — большой. В каждом есть 1 лунная пуговица. До следующего осталось ${nextMilestone - streak.current}.`}</p>
           <ol class="streak-steps" aria-label="Пять шагов до сундука">${Array.from({ length: 5 }, (_, index) => `<li class="${index < streakStep ? "is-done" : index === streakStep ? "is-next" : ""}">${index + 1}</li>`).join("")}</ol>
           <div class="streak-rules"><span>✓ Уже заработанный сундук остаётся</span><span>× Поражение сбрасывает только текущую серию</span></div>
           ${pendingChests ? `<div class="streak-actions">${pendingChests}</div>` : `<small class="streak-next">Следующая награда на отметке ${nextMilestone}</small>`}
@@ -2012,11 +2043,21 @@ export default class GameMenu {
     const unlockCost = getRandomNeedleUnlockCost(this.state);
     const canUnlock = unlockCost !== null && this.state.thread >= unlockCost;
     const ownedCount = this.state.ownedNeedles.length;
+    const collectionComplete = ownedCount >= NEEDLE_SKINS.length;
+    const caseCollectionComplete = unlockCost === null;
     const selected =
       NEEDLE_SKINS.find((skin) => skin.id === this.needlePreviewId) ??
       NEEDLE_SKINS[0];
     const selectedOwned = this.state.ownedNeedles.includes(selected.id);
     const selectedEquipped = this.state.equippedNeedle === selected.id;
+    const selectedStageUnlock =
+      selected.unlockKind === "stage" ? selected.unlockStage ?? 21 : null;
+    const selectedLockedSubtitle = selectedStageUnlock
+      ? `Награда глубокого пути · этап ${selectedStageUnlock}`
+      : "Скрыта в тайном футляре";
+    const selectedLockedDescription = selectedStageUnlock
+      ? `Победи на этапе ${selectedStageUnlock}, и игла сразу появится в коллекции.`
+      : "Открой футляр — облик и боевое свойство станут видны.";
     const selectedArtFileName = selectedOwned
       ? selected.iconFileName
       : LOCKED_REWARD_ART_FILE_NAME;
@@ -2039,9 +2080,9 @@ export default class GameMenu {
     const draw = `
       <article class="needle-draw is-compact">
         <div class="draw-emblem is-mystery" aria-hidden="true"><img src="${asset(LOCKED_REWARD_ART_FILE_NAME)}" alt="" draggable="false" /></div>
-        <div class="draw-copy"><span>Тайный футляр</span><h3>${unlockCost === null ? "Коллекция собрана" : "Случайная новая игла"}</h3><p>${unlockCost === null ? "Все иглы уже открыты." : "Какая именно выпадет — станет известно после открытия."}</p></div>
-        <button class="buy-button card-action" data-action="random-needle" ${!canUnlock ? "disabled" : ""} aria-label="${unlockCost === null ? "Все иглы уже открыты" : `Открыть случайную иглу за ${unlockCost} нитей`}">
-          <span>${unlockCost === null ? "ГОТОВО" : "ОТКРЫТЬ"}</span><small>${unlockCost === null ? "СОБРАНО" : `✦ ${unlockCost}`}</small>
+        <div class="draw-copy"><span>Тайный футляр</span><h3>${collectionComplete ? "Коллекция собрана" : caseCollectionComplete ? "Иглы глубокого пути" : "Случайная новая игла"}</h3><p>${collectionComplete ? "Все иглы уже открыты." : caseCollectionComplete ? "Оставшиеся иглы выдаются за победы после 20-го этапа." : "Какая именно выпадет — станет известно после открытия."}</p></div>
+        <button class="buy-button card-action" data-action="random-needle" ${!canUnlock ? "disabled" : ""} aria-label="${collectionComplete ? "Все иглы уже открыты" : caseCollectionComplete ? "Оставшиеся иглы открываются в глубоком пути" : `Открыть случайную иглу за ${unlockCost} нитей`}">
+          <span>${collectionComplete ? "ГОТОВО" : caseCollectionComplete ? "В ПОХОД" : "ОТКРЫТЬ"}</span><small>${collectionComplete ? "СОБРАНО" : caseCollectionComplete ? "ПОСЛЕ 20" : `✦ ${unlockCost}`}</small>
         </button>
       </article>`;
 
@@ -2053,7 +2094,7 @@ export default class GameMenu {
       return `
         <button class="needle-tile ${owned ? "" : "is-locked"} ${equipped ? "is-equipped" : ""} ${selectedTile ? "is-selected" : ""}" data-action="needle-preview" data-id="${skin.id}" aria-pressed="${selectedTile}" aria-label="${owned ? `Показать ${skin.name}, мастерство ${mastery.level}` : "Показать закрытую иглу"}">
           <span class="needle-tile-art ${owned ? "" : "is-mystery"}"><img src="${asset(owned ? skin.iconFileName : LOCKED_REWARD_ART_FILE_NAME)}" alt="" aria-hidden="true" draggable="false" /></span>
-          <span class="needle-tile-copy"><strong>${owned ? skin.name : "Неизвестная игла"}</strong><small>${equipped ? "В КОЛЧАНЕ" : owned ? `МАСТЕРСТВО ${mastery.level}` : "ЗАКРЫТА"}</small></span>
+          <span class="needle-tile-copy"><strong>${owned ? skin.name : "Неизвестная игла"}</strong><small>${equipped ? "В КОЛЧАНЕ" : owned ? `МАСТЕРСТВО ${mastery.level}` : skin.unlockKind === "stage" ? `ЭТАП ${skin.unlockStage}` : "ЗАКРЫТА"}</small></span>
         </button>`;
     }).join("");
 
@@ -2070,8 +2111,8 @@ export default class GameMenu {
         <div class="needle-feature-copy">
           <div class="card-kicker"><span>${selectedEquipped ? "В колчане" : selectedOwned ? "Открыта" : "Закрыта"}</span><strong>${selectedOwned ? `ур. ${selectedMastery.level}/${MAX_NEEDLE_MASTERY_LEVEL}` : "???"}</strong></div>
           <h3>${selectedOwned ? selected.name : "Неизвестная игла"}</h3>
-          <strong>${selectedOwned ? selected.subtitle : "Скрыта в тайном футляре"}</strong>
-          <p>${selectedOwned ? selected.description : "Открой футляр — облик и боевое свойство станут видны."}</p>
+          <strong>${selectedOwned ? selected.subtitle : selectedLockedSubtitle}</strong>
+          <p>${selectedOwned ? selected.description : selectedLockedDescription}</p>
           ${selectedOwned ? `<div class="mastery-line"><span>Опыт мастерства <b>${selectedMastery.nextLevelXp === null ? "МАКС" : `${selectedMastery.currentLevelXp}/${selectedMastery.nextLevelXp}`}</b></span><div role="progressbar" aria-label="Мастерство иглы ${selected.name}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(masteryPercent)}"><i style="width:${masteryPercent}%"></i></div></div>
           <div class="mastery-rewards is-detailed" aria-label="Косметические награды мастерства">${selectedRewards.map((reward) => {
             const revealed = reward.requiredLevel <= selectedMastery.level;
@@ -2079,7 +2120,7 @@ export default class GameMenu {
           }).join("")}</div>
           <small class="mastery-next">${nextReward ? `Следующая награда: тайна · уровень ${nextReward.requiredLevel}` : "Все эффекты мастерства открыты"}</small>` : ""}
         </div>
-        <button class="select-button card-action needle-feature-action" data-action="needle" data-id="${selected.id}" aria-label="${selectedEquipped ? `Игла «${selected.name}» уже активна` : selectedOwned ? `Выбрать иглу «${selected.name}»` : "Игла пока закрыта"}" aria-pressed="${selectedEquipped}" ${!selectedOwned || selectedEquipped ? "disabled" : ""}><span>${selectedEquipped ? "В КОЛЧАНЕ" : selectedOwned ? "ВЫБРАТЬ" : "ЗАКРЫТО"}</span><small>${selectedEquipped ? "АКТИВНА" : selectedOwned ? "В КОЛЧАН" : "НУЖЕН ФУТЛЯР"}</small></button>
+        <button class="select-button card-action needle-feature-action" data-action="needle" data-id="${selected.id}" aria-label="${selectedEquipped ? `Игла «${selected.name}» уже активна` : selectedOwned ? `Выбрать иглу «${selected.name}»` : selectedStageUnlock ? `Игла откроется после победы на этапе ${selectedStageUnlock}` : "Игла пока закрыта"}" aria-pressed="${selectedEquipped}" ${!selectedOwned || selectedEquipped ? "disabled" : ""}><span>${selectedEquipped ? "В КОЛЧАНЕ" : selectedOwned ? "ВЫБРАТЬ" : "ЗАКРЫТО"}</span><small>${selectedEquipped ? "АКТИВНА" : selectedOwned ? "В КОЛЧАН" : selectedStageUnlock ? `ЭТАП ${selectedStageUnlock}` : "НУЖЕН ФУТЛЯР"}</small></button>
       </article>`;
   }
 
@@ -2091,7 +2132,7 @@ export default class GameMenu {
       const threatLabel = getBestiaryThreatLabel(monster);
       return `
         <article class="meta-card beast-card ${discovered ? "" : "is-locked"}">
-          <div class="beast-portrait">${discovered && imageKey ? `<img src="${asset(`${imageKey}.webp`)}" alt="" />` : "?"}</div>
+          <div class="beast-portrait">${discovered && imageKey ? `<img src="${asset(`${imageKey}.webp`)}" alt="" loading="lazy" decoding="async" />` : "?"}</div>
           <div class="item-copy">
             <h3>${discovered ? monster.name : "Неизвестный кошмар"}${threatLabel && discovered ? ` · ${threatLabel}` : ""}</h3>
             <p>${discovered ? monster.epithet : `Встречается не раньше этапа ${firstStage}`}</p>

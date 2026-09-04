@@ -103,7 +103,7 @@ describe("WorkshopCollection catalog", () => {
 
   it("has an individual generated image for every collectible patch", () => {
     const patches = WORKSHOP_COLLECTIBLES.filter((item) => item.kind === "patch");
-    expect(patches).toHaveLength(16);
+    expect(patches).toHaveLength(20);
     expect(
       patches.every((patch) => getWorkshopPatchArtFileName(patch.id)?.endsWith(".webp")),
     ).toBe(true);
@@ -194,6 +194,10 @@ describe("WorkshopCollection catalog", () => {
       "bone-mastery-4": "impact-runic-shard.webp",
       "storm-mastery-4": "impact-thunder-knot.webp",
       "sunrise-mastery-4": "impact-dawn-petals.webp",
+      "moonweave-mastery-4": "impact-moon-tide-v1.webp",
+      "velvet-thorn-mastery-4": "impact-velvet-rose-v1.webp",
+      "clockwork-mastery-4": "impact-clockwork-strike-v1.webp",
+      "royal-seam-mastery-4": "impact-amethyst-crown-v1.webp",
     });
     expect(Object.keys(WORKSHOP_IMPACT_ART)).toHaveLength(impacts.length);
     expect(

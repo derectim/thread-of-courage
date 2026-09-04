@@ -33,6 +33,7 @@ import {
   PATTERN_NAMES,
   ROOMS,
   getExpeditionNumber,
+  getFirstCampaignStageForMonster,
   getMonsterForStage,
   getMovementPatternForProgress,
   getRequiredHits,
@@ -41,6 +42,10 @@ import {
   type MovementPattern,
   type RoomDefinition,
 } from "./content";
+import {
+  getMonsterDamageReactionProfile,
+  type MonsterDamageReactionProfile,
+} from "./MonsterDamageReactions";
 import { recordDailyGameplayEvent } from "./DailySystems";
 import { isAngleBlocked, normalizeAngle } from "./geometry";
 import {
@@ -184,6 +189,18 @@ function getNeedleCosmeticPalette(id: string): NeedleCosmeticPalette {
   if (id.includes("sunrise") || id.endsWith("free-17")) {
     return { primary: 0xffb83d, secondary: 0xffef9a };
   }
+  if (id.includes("moonweave")) {
+    return { primary: 0xdff7ff, secondary: 0x9ebcff };
+  }
+  if (id.includes("velvet-thorn")) {
+    return { primary: 0xc02665, secondary: 0xf4c55c };
+  }
+  if (id.includes("clockwork")) {
+    return { primary: 0x39d4d0, secondary: 0xf2bd4e };
+  }
+  if (id.includes("royal-seam")) {
+    return { primary: 0x9d65e8, secondary: 0xf4c55c };
+  }
   if (id.endsWith("free-14")) {
     return { primary: 0x9b62c7, secondary: 0xe09be2 };
   }
@@ -199,9 +216,11 @@ function getNeedleCosmeticPalette(id: string): NeedleCosmeticPalette {
 }
 
 function getNeedleImpactMotif(id: string): NeedleImpactMotif {
-  if (id.includes("storm")) return "lightning";
-  if (id.includes("sunrise")) return "petals";
+  if (id.includes("storm") || id.includes("clockwork")) return "lightning";
+  if (id.includes("sunrise") || id.includes("velvet-thorn")) return "petals";
   if (id.includes("bone")) return "shards";
+  if (id.includes("royal-seam")) return "crown";
+  if (id.includes("moonweave")) return "stars";
   if (id.endsWith("premium-16")) return "crown";
   if (id.endsWith("premium-4") || id.endsWith("free-17")) return "stars";
   if (id.endsWith("premium-10")) return "shards";
@@ -224,6 +243,16 @@ const MONSTER_FALLBACK_SURFACE_RADIUS: Readonly<Record<string, number>> = {
   "ink-shuttle": 100,
   "thimble-sentinel": 106,
   ripper: 105,
+  "measuring-worm": 104,
+  "velvet-bat": 108,
+  "bobbin-crab": 105,
+  "wax-doll": 98,
+  "lace-wisp": 100,
+  "scissor-mantis": 112,
+  "loom-widow": 114,
+  "pincushion-boar": 110,
+  "queen-unraveling": 118,
+  "clockwork-tailor": 118,
 };
 
 type RaidState =
@@ -659,7 +688,9 @@ export class RaidScene extends Phaser.Scene {
 
   private getStartingWardCharges(): number {
     const skillBonus = getSkill(this.progression.equippedSkill).modifiers.startingWardBonus ?? 0;
-    return getWardCharges(this.progression.upgrades.ward) + skillBonus;
+    const needleBonus =
+      getNeedleSkin(this.progression.equippedNeedle).modifiers.startingWardBonus ?? 0;
+    return getWardCharges(this.progression.upgrades.ward) + skillBonus + needleBonus;
   }
 
   private getEquippedActiveAbilityId(): ActiveAbilityId {
@@ -1093,10 +1124,18 @@ export class RaidScene extends Phaser.Scene {
         : encounterKind === "mini"
           ? monster.isMiniBoss === true
           : !monster.isBoss && !monster.isMiniBoss;
-    const roomPool = MONSTERS.filter(
+    const highestAvailableStage = Math.max(
+      20,
+      this.progression.highestStageCleared + 1,
+    );
+    const availableMonsters = MONSTERS.filter((monster) => {
+      const firstStage = getFirstCampaignStageForMonster(monster.id);
+      return firstStage !== null && firstStage <= highestAvailableStage;
+    });
+    const roomPool = availableMonsters.filter(
       (monster) => monster.roomId === node.roomId && matchesKind(monster),
     );
-    const fallbackPool = MONSTERS.filter(matchesKind);
+    const fallbackPool = availableMonsters.filter(matchesKind);
     const pool = roomPool.length > 0 ? roomPool : fallbackPool;
     const seed = Array.from(node.id).reduce(
       (total, character) => total + character.charCodeAt(0),
@@ -1146,11 +1185,15 @@ export class RaidScene extends Phaser.Scene {
     const skillSpeed = getSkill(
       this.progression.equippedSkill,
     ).modifiers.rotationSpeedMultiplier ?? 1;
+    const needleSpeed =
+      getNeedleSkin(this.progression.equippedNeedle).modifiers
+        .rotationSpeedMultiplier ?? 1;
     const bossSpeedMultiplier =
       this.currentMonster.bossTuning?.speedMultiplier ?? 1;
     this.rotationSpeed =
       getStageRotationSpeed(this.stage) *
       skillSpeed *
+      needleSpeed *
       bossSpeedMultiplier *
       (this.weeklyModifier?.effects.rotationSpeedMultiplier ?? 1);
     if (this.weeklyModifier?.effects.reverseRotation) this.patternDirection *= -1;
@@ -1315,16 +1358,16 @@ export class RaidScene extends Phaser.Scene {
           this.patternDirection * this.rotationSpeed * deltaSeconds;
         break;
       case "pendulum": {
-        const pendulumSpeed =
-          getSkill(this.progression.equippedSkill).modifiers
-            .rotationSpeedMultiplier ?? 1;
+        const stageSpeed = getStageRotationSpeed(this.stage);
+        // rotationSpeed already contains skill, needle, boss and weekly
+        // modifiers, plus any acceleration earned during the encounter.
+        const pendulumSpeed = stageSpeed > 0 ? this.rotationSpeed / stageSpeed : 1;
         this.monster.rotation =
           this.baseRotation +
           Math.sin(
             this.patternElapsed *
               (1.25 + this.stage * 0.025) *
-              pendulumSpeed *
-              (this.currentMonster.bossTuning?.speedMultiplier ?? 1),
+              pendulumSpeed,
           ) *
             1.55 *
             this.patternDirection;
@@ -1898,6 +1941,7 @@ export class RaidScene extends Phaser.Scene {
 
     this.flashMonster(isEmpowered ? needleSkin.headColor : 0xf2e3c6);
     this.spawnEquippedNeedleImpact(localAngle, isEmpowered);
+    this.spawnMonsterDamageReaction(localAngle, isEmpowered);
     this.spawnHitText(isEmpowered, stitchPower);
     this.updateMonsterDamageVisual();
     this.updateHealth();
@@ -1991,7 +2035,11 @@ export class RaidScene extends Phaser.Scene {
       context.clearRect(0, 0, width, height);
       context.drawImage(source, 0, 0, width, height);
       const image = context.getImageData(0, 0, width, height);
-      const mask: AlphaMask = { width, height, data: image.data };
+      const alpha = new Uint8ClampedArray(width * height);
+      for (let index = 0; index < alpha.length; index += 1) {
+        alpha[index] = image.data[index * 4 + 3];
+      }
+      const mask: AlphaMask = { width, height, data: alpha };
       this.silhouetteMasks.set(textureKey, mask);
       return mask;
     } catch {
@@ -2001,6 +2049,9 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private warmMonsterSilhouetteMasks(): void {
+    // Only the current monster's four damage frames are needed. Keeping masks
+    // from every prior encounter would steadily grow the mobile JS heap.
+    this.silhouetteMasks.clear();
     for (const [index, textureKey] of (this.currentMonster.textureKeys ?? []).entries()) {
       this.time.delayedCall(index * 16, () => {
         if (this.textures.exists(textureKey)) this.getSilhouetteMask(textureKey);
@@ -2186,6 +2237,238 @@ export class RaidScene extends Phaser.Scene {
     });
   }
 
+  private createMonsterDamagePiece(
+    profile: MonsterDamageReactionProfile,
+    index: number,
+  ): Phaser.GameObjects.Container {
+    const piece = this.add.container(0, 0);
+    const shape = this.add.graphics();
+    const alternate = index % 2 === 0;
+    const color = alternate ? profile.primary : profile.secondary;
+
+    switch (profile.motif) {
+      case "tape":
+        shape.fillStyle(color, 0.96);
+        shape.fillRoundedRect(-10, -3, 20, 6, 2);
+        shape.lineStyle(1, profile.accent, 0.9);
+        for (let mark = -7; mark <= 7; mark += 7) {
+          shape.lineBetween(mark, -3, mark, alternate ? 1 : 3);
+        }
+        break;
+      case "velvet":
+        shape.fillStyle(color, 0.84);
+        shape.fillEllipse(0, 0, alternate ? 9 : 5, alternate ? 5 : 10);
+        shape.lineStyle(1, profile.accent, 0.55);
+        shape.lineBetween(-4, 1, 4, -1);
+        break;
+      case "metal":
+        shape.lineStyle(alternate ? 3 : 2, color, 1);
+        shape.lineBetween(-2, 8, 2, -8);
+        shape.fillStyle(profile.accent, 1);
+        shape.fillCircle(0, -8, 2.3);
+        break;
+      case "wax":
+        shape.fillStyle(color, 0.9);
+        shape.fillCircle(0, -2, alternate ? 5 : 3.5);
+        shape.fillTriangle(-4, 0, 4, 0, 0, 10);
+        break;
+      case "lace":
+        shape.lineStyle(1.8, color, 0.92);
+        shape.strokeCircle(-4, 0, 4);
+        shape.strokeCircle(4, 0, 4);
+        shape.lineStyle(1, profile.accent, 0.72);
+        shape.lineBetween(-8, 0, 8, 0);
+        break;
+      case "blade":
+        shape.fillStyle(color, 0.92);
+        shape.fillTriangle(-2, -11, 3, 8, -5, 5);
+        shape.lineStyle(1.5, profile.secondary, 0.92);
+        shape.lineBetween(-2, -8, 1, 6);
+        break;
+      case "web":
+        shape.lineStyle(1.35, color, 0.86);
+        shape.strokeCircle(0, 0, alternate ? 8 : 6);
+        for (let spoke = 0; spoke < 4; spoke += 1) {
+          const angle = (Math.PI * spoke) / 2 + Math.PI / 4;
+          shape.lineBetween(0, 0, Math.cos(angle) * 9, Math.sin(angle) * 9);
+        }
+        break;
+      case "needle":
+        shape.fillStyle(color, 0.96);
+        shape.fillRoundedRect(-1.4, -12, 2.8, 24, 1);
+        shape.fillStyle(profile.accent, 0.95);
+        shape.fillCircle(0, 9, 2.2);
+        break;
+      case "royal":
+        shape.fillStyle(color, 0.9);
+        shape.fillTriangle(-7, 5, 0, -9, 7, 5);
+        shape.lineStyle(2, profile.secondary, 0.95);
+        shape.strokeTriangle(-7, 5, 0, -9, 7, 5);
+        shape.fillStyle(profile.accent, 0.95);
+        shape.fillCircle(0, 1, 2.2);
+        break;
+      case "clockwork":
+        shape.lineStyle(2.2, color, 0.95);
+        shape.strokeCircle(0, 0, alternate ? 8 : 6);
+        shape.fillStyle(profile.accent, 0.9);
+        shape.fillCircle(0, 0, 2.4);
+        for (let tooth = 0; tooth < 6; tooth += 1) {
+          const angle = (Math.PI * 2 * tooth) / 6;
+          shape.lineBetween(
+            Math.cos(angle) * 6,
+            Math.sin(angle) * 6,
+            Math.cos(angle) * 10,
+            Math.sin(angle) * 10,
+          );
+        }
+        break;
+    }
+
+    piece.add(shape);
+    return piece;
+  }
+
+  private spawnMonsterDamageReaction(
+    localAngle: number,
+    isEmpowered: boolean,
+  ): void {
+    const reactionId = this.currentMonster.damageReaction;
+    if (!reactionId) return;
+
+    const profile = getMonsterDamageReactionProfile(reactionId);
+    const count = profile.particleCount + (isEmpowered ? 3 : 0);
+    const needsBackLayer =
+      profile.motif === "velvet" ||
+      profile.motif === "lace" ||
+      profile.motif === "clockwork";
+    const [front, back = null] = this.createImpactVfxGroup(
+      needsBackLayer ? [15, 5] : [15],
+      profile.durationMs + 260,
+    );
+    const worldAngle = normalizeAngle(localAngle + this.monster.rotation);
+    const impactPoint = this.getImpactVfxSurfacePoint(worldAngle, 3);
+    const pulse = this.add
+      .circle(impactPoint.x, impactPoint.y, isEmpowered ? 18 : 13, profile.primary, 0.09)
+      .setStrokeStyle(isEmpowered ? 3 : 2, profile.secondary, 0.86)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    front.add(pulse);
+    this.tweens.add({
+      targets: pulse,
+      alpha: 0,
+      scale: isEmpowered ? 2.25 : 1.78,
+      duration: Math.min(360, profile.durationMs),
+      ease: "Cubic.Out",
+    });
+
+    if (this.monsterArtwork?.active) {
+      this.monsterArtwork.setTint(profile.primary);
+      this.time.delayedCall(isEmpowered ? 82 : 58, () => {
+        if (this.monsterArtwork?.active) this.monsterArtwork.clearTint();
+      });
+    }
+
+    const orbitingMotif =
+      profile.motif === "velvet" ||
+      profile.motif === "lace" ||
+      profile.motif === "web" ||
+      profile.motif === "needle" ||
+      profile.motif === "royal" ||
+      profile.motif === "clockwork";
+
+    for (let index = 0; index < count; index += 1) {
+      const angle = orbitingMotif
+        ? (Math.PI * 2 * index) / count + Phaser.Math.FloatBetween(-0.12, 0.12)
+        : worldAngle + Phaser.Math.FloatBetween(-1.05, 1.05);
+      const start = orbitingMotif
+        ? this.getImpactVfxSurfacePoint(angle, Phaser.Math.Between(-5, 5))
+        : new Phaser.Math.Vector2(
+            impactPoint.x + Phaser.Math.Between(-7, 7),
+            impactPoint.y + Phaser.Math.Between(-7, 7),
+          );
+      const piece = this.createMonsterDamagePiece(profile, index)
+        .setPosition(start.x, start.y)
+        .setRotation(angle + Phaser.Math.FloatBetween(-0.35, 0.35))
+        .setScale(isEmpowered ? 1.12 : 1);
+      (needsBackLayer && index % 3 === 0 ? back ?? front : front).add(piece);
+
+      const distance = Phaser.Math.Between(
+        profile.motif === "royal" || profile.motif === "clockwork" ? 35 : 22,
+        profile.motif === "needle" || profile.motif === "blade" ? 64 : 48,
+      );
+      const fall =
+        profile.motif === "velvet" || profile.motif === "wax"
+          ? Phaser.Math.Between(24, 48)
+          : profile.motif === "clockwork"
+            ? Phaser.Math.Between(6, 24)
+            : 0;
+      this.tweens.add({
+        targets: piece,
+        x: start.x + Math.cos(angle) * distance,
+        y: start.y + Math.sin(angle) * distance + fall,
+        rotation:
+          piece.rotation + Phaser.Math.FloatBetween(-1.4, 1.4),
+        alpha: 0,
+        scale: profile.motif === "web" || profile.motif === "lace" ? 1.48 : 0.72,
+        duration: Phaser.Math.Between(
+          Math.max(260, profile.durationMs - 110),
+          profile.durationMs + 80,
+        ),
+        delay: Phaser.Math.Between(0, 85),
+        ease: profile.motif === "wax" ? "Quad.In" : "Sine.Out",
+      });
+    }
+
+    if (profile.motif === "wax") {
+      const crack = this.add.graphics();
+      crack.lineStyle(2.4, profile.accent, 0.92);
+      crack.beginPath();
+      crack.moveTo(impactPoint.x - 2, impactPoint.y - 3);
+      crack.lineTo(impactPoint.x + 7, impactPoint.y + 4);
+      crack.lineTo(impactPoint.x + 2, impactPoint.y + 12);
+      crack.moveTo(impactPoint.x + 7, impactPoint.y + 4);
+      crack.lineTo(impactPoint.x + 15, impactPoint.y + 1);
+      crack.strokePath();
+      front.add(crack);
+      this.tweens.add({
+        targets: crack,
+        alpha: 0,
+        duration: profile.durationMs,
+        ease: "Sine.In",
+      });
+    }
+
+    if (profile.motif === "clockwork") {
+      for (let index = 0; index < 4; index += 1) {
+        const smoke = this.add
+          .ellipse(
+            Phaser.Math.Between(-32, 32),
+            Phaser.Math.Between(-18, 24),
+            Phaser.Math.Between(18, 30),
+            Phaser.Math.Between(12, 22),
+            0x33434a,
+            0.24,
+          )
+          .setScale(0.7);
+        (back ?? front).add(smoke);
+        this.tweens.add({
+          targets: smoke,
+          y: smoke.y - Phaser.Math.Between(28, 48),
+          x: smoke.x + Phaser.Math.Between(-12, 12),
+          scale: 1.35,
+          alpha: 0,
+          duration: profile.durationMs,
+          delay: index * 45,
+          ease: "Sine.Out",
+        });
+      }
+    }
+
+    this.cameras.main.shake(
+      isEmpowered ? 110 : 75,
+      profile.shake * (isEmpowered ? 1.25 : 1),
+    );
+  }
+
   private getEquippedNeedleCosmetic(
     kind: NeedleCosmeticKind,
   ): WorkshopCollectible | null {
@@ -2213,6 +2496,7 @@ export class RaidScene extends Phaser.Scene {
     const midpointY = (fromY + toY) / 2;
     if (
       collectible.id.includes("storm") ||
+      collectible.id.includes("clockwork") ||
       collectible.id.endsWith("premium-14")
     ) {
       stitch.lineStyle(1.4, palette.secondary, 0.9);
@@ -2223,7 +2507,9 @@ export class RaidScene extends Phaser.Scene {
       stitch.strokePath();
     } else if (
       collectible.id.endsWith("premium-2") ||
-      collectible.id.includes("sunrise")
+      collectible.id.includes("sunrise") ||
+      collectible.id.includes("moonweave") ||
+      collectible.id.includes("royal-seam")
     ) {
       stitch.fillStyle(palette.secondary, 0.9);
       stitch.fillPoints(
@@ -2334,7 +2620,8 @@ export class RaidScene extends Phaser.Scene {
     const radius = Phaser.Math.Clamp(sampledRadius, 72, 128) * sizeBoost;
     const needsBackLayer =
       profile.reaction === "wool-smoke" ||
-      profile.reaction === "moon-mist";
+      profile.reaction === "moon-mist" ||
+      profile.reaction === "moon-tide";
     const groupLifetime = duration + count * 30 + 160;
     const [front, back = null] = this.createImpactVfxGroup(
       needsBackLayer ? [13, 5] : [13],
@@ -2822,6 +3109,203 @@ export class RaidScene extends Phaser.Scene {
       return;
     }
 
+    if (profile.reaction === "moon-tide") {
+      const tide = this.add.graphics();
+      tide.lineStyle(9, profile.primary, 0.12);
+      tide.beginPath();
+      tide.arc(-radius * 0.05, 0, radius * 0.95, -Math.PI * 0.74, Math.PI * 0.72);
+      tide.strokePath();
+      tide.lineStyle(2.5, profile.secondary, 0.72);
+      tide.beginPath();
+      tide.arc(radius * 0.08, 2, radius * 0.98, Math.PI * 0.3, Math.PI * 1.72);
+      tide.strokePath();
+      (back ?? front).add(tide);
+      this.tweens.add({
+        targets: tide,
+        alpha: 0,
+        rotation: 0.34,
+        scaleX: 1.14,
+        scaleY: 1.06,
+        y: -8,
+        duration,
+        ease: "Sine.Out",
+      });
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
+        const point = this.getImpactVfxSurfacePoint(angle, 3);
+        const mote = index % 3 === 0
+          ? this.add.star(point.x, point.y, 4, 1.2, 5.5, profile.accent, 0.9)
+          : this.add.ellipse(point.x, point.y, 4, 10, profile.primary, 0.66);
+        mote.setBlendMode(Phaser.BlendModes.ADD).setRotation(angle);
+        front.add(mote);
+        const tangent = Phaser.Math.Between(18, 34);
+        this.tweens.add({
+          targets: mote,
+          x: mote.x - Math.sin(angle) * tangent,
+          y: mote.y + Math.cos(angle) * tangent - Phaser.Math.Between(8, 18),
+          alpha: 0,
+          scale: 0.24,
+          rotation: mote.rotation + 0.8,
+          duration: duration - Phaser.Math.Between(20, 130),
+          delay: index * 18,
+          ease: "Sine.Out",
+        });
+      }
+      return;
+    }
+
+    if (profile.reaction === "velvet-bloom") {
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
+        const point = this.getImpactVfxSurfacePoint(angle, 2);
+        const petal = this.add
+          .ellipse(
+            point.x,
+            point.y,
+            Phaser.Math.Between(8, 13),
+            Phaser.Math.Between(17, 25),
+            index % 2 === 0 ? profile.primary : profile.secondary,
+            0.9,
+          )
+          .setStrokeStyle(1, profile.accent, 0.52)
+          .setRotation(angle + Math.PI / 2)
+          .setScale(0.48);
+        front.add(petal);
+        const outward = Phaser.Math.Between(24, 41) * sizeBoost;
+        const curl = Phaser.Math.Between(16, 31);
+        this.tweens.add({
+          targets: petal,
+          x: petal.x + Math.cos(angle) * outward - Math.sin(angle) * curl,
+          y: petal.y + Math.sin(angle) * outward + Math.cos(angle) * curl + 8,
+          alpha: 0,
+          scaleX: 0.22,
+          scaleY: 1.08,
+          rotation: petal.rotation + Phaser.Math.FloatBetween(0.9, 1.5),
+          duration: duration - Phaser.Math.Between(0, 110),
+          delay: index * 20,
+          ease: "Sine.Out",
+        });
+        if (index % 3 === 0) {
+          const thorn = this.add
+            .triangle(point.x, point.y, 0, -8, 3.5, 5, -3.5, 5, profile.accent, 0.88)
+            .setRotation(angle + Math.PI / 2);
+          front.add(thorn);
+          this.tweens.add({
+            targets: thorn,
+            x: thorn.x + Math.cos(angle) * 31,
+            y: thorn.y + Math.sin(angle) * 31,
+            alpha: 0,
+            rotation: thorn.rotation + 0.55,
+            duration: 430,
+            ease: "Cubic.Out",
+          });
+        }
+      }
+      return;
+    }
+
+    if (profile.reaction === "clockwork-burst") {
+      const gear = this.add
+        .star(0, 0, 12, radius * 0.72, radius * 0.86, profile.secondary, 0.08)
+        .setStrokeStyle(2.2, profile.secondary, 0.72);
+      const innerGear = this.add
+        .star(0, 0, 10, radius * 0.42, radius * 0.53, profile.primary, 0.05)
+        .setStrokeStyle(1.5, profile.primary, 0.74);
+      front.add([gear, innerGear]);
+      this.tweens.add({
+        targets: gear,
+        alpha: 0,
+        rotation: 0.58,
+        scale: 1.08,
+        duration,
+        ease: "Cubic.Out",
+      });
+      this.tweens.add({
+        targets: innerGear,
+        alpha: 0,
+        rotation: -0.9,
+        scale: 0.88,
+        duration: duration - 40,
+        ease: "Cubic.Out",
+      });
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count;
+        const point = this.getImpactVfxSurfacePoint(angle, 3);
+        const spark = index % 3 === 0
+          ? this.add.star(point.x, point.y, 6, 3, 7, profile.secondary, 0.9)
+          : this.add.rectangle(point.x, point.y, 3, 13, profile.primary, 0.94);
+        spark.setRotation(angle + Math.PI / 2).setBlendMode(Phaser.BlendModes.ADD);
+        front.add(spark);
+        const distance = Phaser.Math.Between(24, 43) * sizeBoost;
+        this.tweens.add({
+          targets: spark,
+          x: spark.x + Math.cos(angle) * distance,
+          y: spark.y + Math.sin(angle) * distance,
+          alpha: 0,
+          scale: 0.18,
+          rotation: spark.rotation + Phaser.Math.FloatBetween(-1, 1),
+          duration: Phaser.Math.Between(330, duration),
+          delay: Phaser.Math.Between(0, 70),
+          ease: "Cubic.Out",
+        });
+      }
+      return;
+    }
+
+    if (profile.reaction === "royal-seam") {
+      const royal = this.add.graphics();
+      royal.lineStyle(2.4, profile.secondary, 0.84);
+      for (let index = 0; index < 12; index += 1) {
+        const angle = (Math.PI * 2 * index) / 12;
+        const tangentX = -Math.sin(angle) * 5;
+        const tangentY = Math.cos(angle) * 5;
+        const x = Math.cos(angle) * radius * 0.88;
+        const y = Math.sin(angle) * radius * 0.88;
+        royal.lineBetween(x - tangentX, y - tangentY, x + tangentX, y + tangentY);
+      }
+      const crownY = -radius * 0.82;
+      royal.lineStyle(3, profile.accent, 0.94);
+      royal.beginPath();
+      royal.moveTo(-30, crownY + 18);
+      royal.lineTo(-24, crownY - 2);
+      royal.lineTo(-8, crownY + 10);
+      royal.lineTo(0, crownY - 8);
+      royal.lineTo(9, crownY + 10);
+      royal.lineTo(25, crownY - 2);
+      royal.lineTo(30, crownY + 18);
+      royal.strokePath();
+      front.add(royal);
+      this.tweens.add({
+        targets: royal,
+        alpha: 0,
+        y: -12,
+        rotation: 0.18,
+        scale: 1.1,
+        duration,
+        ease: "Sine.Out",
+      });
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
+        const point = this.getImpactVfxSurfacePoint(angle, 2);
+        const jewel = this.add
+          .star(point.x, point.y, 4, 1.5, index % 3 === 0 ? 8 : 5.5, index % 3 === 0 ? profile.accent : profile.primary, 0.94)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        front.add(jewel);
+        this.tweens.add({
+          targets: jewel,
+          x: jewel.x + Math.cos(angle) * Phaser.Math.Between(18, 34),
+          y: jewel.y + Math.sin(angle) * Phaser.Math.Between(18, 34) - 10,
+          alpha: 0,
+          scale: 0.18,
+          rotation: Phaser.Math.FloatBetween(-1.1, 1.1),
+          duration: duration - Phaser.Math.Between(60, 150),
+          delay: index * 22,
+          ease: "Cubic.Out",
+        });
+      }
+      return;
+    }
+
     for (let index = 0; index < count; index += 1) {
       const angle =
         (Math.PI * 2 * index) / count - Math.PI / 2 + Phaser.Math.FloatBetween(-0.08, 0.08);
@@ -3020,20 +3504,26 @@ export class RaidScene extends Phaser.Scene {
     const impactX = this.monster.x + Math.cos(worldAngle) * surface;
     const impactY = this.monster.y + Math.sin(worldAngle) * surface;
     const baseDisplaySize =
-      vfxProfile?.reaction === "stitch-crown" ? 94 :
+      vfxProfile?.reaction === "stitch-crown" ||
+      vfxProfile?.reaction === "royal-seam" ? 94 :
         vfxProfile?.reaction === "lightning-wrap" ? 92 :
           vfxProfile?.reaction === "dawn-petals" ||
-          vfxProfile?.reaction === "moon-mist" ? 90 : 84;
+          vfxProfile?.reaction === "moon-mist" ||
+          vfxProfile?.reaction === "moon-tide" ||
+          vfxProfile?.reaction === "clockwork-burst" ? 90 : 84;
     const displaySize = baseDisplaySize + (isEmpowered ? 10 : 0);
     const duration = vfxProfile
       ? Math.min(390, Math.round(vfxProfile.durationMs * 0.55))
       : motif === "lightning" ? 210 : motif === "crown" ? 330 : 270;
-    const baseRotation = vfxProfile?.reaction === "stitch-crown"
+    const baseRotation =
+      vfxProfile?.reaction === "stitch-crown" ||
+      vfxProfile?.reaction === "royal-seam"
       ? 0
       : worldAngle - Math.PI / 2;
     const entryRotationOffset =
       vfxProfile?.reaction === "golden-thread" ? -0.34 :
         vfxProfile?.reaction === "dawn-petals" ? -0.28 :
+          vfxProfile?.reaction === "moon-tide" ? -0.18 :
           vfxProfile?.reaction === "button-sparks" ? -0.2 :
             vfxProfile?.reaction === "silk-stars" ? 0.14 : 0;
 
@@ -3096,7 +3586,8 @@ export class RaidScene extends Phaser.Scene {
           ? 0.88
           : isEmpowered ? 1.34 : 1.2;
         const exitRotation =
-          vfxProfile?.reaction === "stitch-crown" ? 0 :
+          vfxProfile?.reaction === "stitch-crown" ||
+          vfxProfile?.reaction === "royal-seam" ? 0 :
             vfxProfile?.reaction === "lightning-wrap" ? baseRotation + 0.04 :
               baseRotation + 0.12;
         this.tweens.add({
@@ -3105,7 +3596,11 @@ export class RaidScene extends Phaser.Scene {
           scaleX: finalScaleX * exitScale,
           scaleY: finalScaleY * exitScale,
           rotation: exitRotation,
-          y: vfxProfile?.reaction === "stitch-crown" ? impactY - 11 : impactY,
+          y:
+            vfxProfile?.reaction === "stitch-crown" ||
+            vfxProfile?.reaction === "royal-seam"
+              ? impactY - 11
+              : impactY,
           duration,
           ease: "Quad.Out",
           onComplete: () => artwork.destroy(),

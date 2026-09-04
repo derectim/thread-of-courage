@@ -10,6 +10,7 @@ import {
   WORKSHOP_PAGE_LABELS,
   getCollectibleRewardPresentation,
   getBestiaryThreatLabel,
+  getMenuPanelKey,
   resolvePanelScrollRestoration,
   TAB_LABELS,
 } from "./GameMenu";
@@ -101,5 +102,12 @@ describe("menu panel scroll restoration", () => {
     expect(resolvePanelScrollRestoration("quests", "needles", 640)).toBeUndefined();
     expect(resolvePanelScrollRestoration("quests", "home", 640)).toBeUndefined();
     expect(resolvePanelScrollRestoration(undefined, "quests", 640)).toBeUndefined();
+  });
+
+  it("keeps the needles panel stable while another needle is previewed", () => {
+    expect(getMenuPanelKey("needles", "permanent", "daily")).toBe("needles");
+    expect(getMenuPanelKey("needles", "active", "weekly")).toBe("needles");
+    expect(getMenuPanelKey("upgrades", "active", "daily")).toBe("upgrades:active");
+    expect(getMenuPanelKey("quests", "permanent", "weekly")).toBe("quests:weekly");
   });
 });

@@ -1,5 +1,15 @@
-export const NEEDLE_SKIN_IDS = ["silver", "bone", "storm", "sunrise"] as const;
+export const NEEDLE_SKIN_IDS = [
+  "silver",
+  "bone",
+  "storm",
+  "sunrise",
+  "moonweave",
+  "velvet-thorn",
+  "clockwork",
+  "royal-seam",
+] as const;
 export type NeedleSkinId = (typeof NEEDLE_SKIN_IDS)[number];
+export type NeedleUnlockKind = "starter" | "case" | "stage";
 
 export interface CombatModifiers {
   readonly doubleChanceBonus?: number;
@@ -20,6 +30,8 @@ export interface NeedleSkinDefinition {
   readonly textureKey: string;
   readonly iconFileName: string;
   readonly threadCost: number;
+  readonly unlockKind: NeedleUnlockKind;
+  readonly unlockStage?: number;
   readonly shaftColor: number;
   readonly headColor: number;
   readonly tailColor: number;
@@ -35,6 +47,7 @@ export const NEEDLE_SKINS: readonly NeedleSkinDefinition[] = [
     textureKey: "needle-silver-v2",
     iconFileName: "needle-silver-v2.webp",
     threadCost: 0,
+    unlockKind: "starter",
     shaftColor: 0xf2e3c6,
     headColor: 0xdde8e5,
     tailColor: 0xe56b6f,
@@ -48,6 +61,7 @@ export const NEEDLE_SKINS: readonly NeedleSkinDefinition[] = [
     textureKey: "needle-bone-v2",
     iconFileName: "needle-bone-v2.webp",
     threadCost: 90,
+    unlockKind: "case",
     shaftColor: 0xf0dfba,
     headColor: 0xfff4d5,
     tailColor: 0x9f7655,
@@ -61,6 +75,7 @@ export const NEEDLE_SKINS: readonly NeedleSkinDefinition[] = [
     textureKey: "needle-storm-v2",
     iconFileName: "needle-storm-v2.webp",
     threadCost: 240,
+    unlockKind: "case",
     shaftColor: 0x9edfd7,
     headColor: 0x39b7a5,
     tailColor: 0x557dc4,
@@ -74,12 +89,86 @@ export const NEEDLE_SKINS: readonly NeedleSkinDefinition[] = [
     textureKey: "needle-sunrise-v2",
     iconFileName: "needle-sunrise-v2.webp",
     threadCost: 520,
+    unlockKind: "case",
     shaftColor: 0xffe7a0,
     headColor: 0xe8b44d,
     tailColor: 0xff846f,
     modifiers: { firstHitBonus: 1 },
   },
+  {
+    id: "moonweave",
+    name: "Лунная спица",
+    subtitle: "Лунный оберег глубокого пути",
+    description: "Даёт один дополнительный оберег, но летит на 6% медленнее.",
+    textureKey: "needle-moonweave-v1",
+    iconFileName: "needle-moonweave-v1.webp",
+    threadCost: 0,
+    unlockKind: "stage",
+    unlockStage: 23,
+    shaftColor: 0xcfe8ff,
+    headColor: 0x82bfff,
+    tailColor: 0x263d78,
+    modifiers: { startingWardBonus: 1, projectileSpeedMultiplier: 0.94 },
+  },
+  {
+    id: "velvet-thorn",
+    name: "Бархатное остриё",
+    subtitle: "Тихий стежок сквозь тесный узор",
+    description: "Сильнее прощает тесные стежки, но летит на 10% медленнее.",
+    textureKey: "needle-velvet-thorn-v1",
+    iconFileName: "needle-velvet-thorn-v1.webp",
+    threadCost: 0,
+    unlockKind: "stage",
+    unlockStage: 25,
+    shaftColor: 0xd6b4a2,
+    headColor: 0xa84d72,
+    tailColor: 0x681f48,
+    modifiers: { needleGapReduction: 0.012, projectileSpeedMultiplier: 0.9 },
+  },
+  {
+    id: "clockwork",
+    name: "Часовая игла",
+    subtitle: "Каждый четвёртый стежок заводит пружину",
+    description: "Каждый четвёртый точный удар наносит ещё одно повреждение, но узор вращается на 6% быстрее.",
+    textureKey: "needle-clockwork-v1",
+    iconFileName: "needle-clockwork-v1.webp",
+    threadCost: 0,
+    unlockKind: "stage",
+    unlockStage: 30,
+    shaftColor: 0xd8c28b,
+    headColor: 0x3fb8bc,
+    tailColor: 0x176a76,
+    modifiers: { extraHitEvery: 4, rotationSpeedMultiplier: 1.06 },
+  },
+  {
+    id: "royal-seam",
+    name: "Королевский стежок",
+    subtitle: "Редкая сила требует безупречной руки",
+    description: "+14% к двойному стежку, но безопасный зазор становится уже.",
+    textureKey: "needle-royal-seam-v1",
+    iconFileName: "needle-royal-seam-v1.webp",
+    threadCost: 0,
+    unlockKind: "stage",
+    unlockStage: 40,
+    shaftColor: 0xf4e7ff,
+    headColor: 0xa875e8,
+    tailColor: 0x6c2cb8,
+    modifiers: { doubleChanceBonus: 0.14, needleGapPenalty: 0.008 },
+  },
 ] as const;
+
+export const CASE_NEEDLE_SKIN_IDS: readonly NeedleSkinId[] = NEEDLE_SKINS.filter(
+  (needle) => needle.unlockKind === "case",
+).map((needle) => needle.id);
+
+export function getStageUnlockedNeedleIds(
+  highestStageCleared: number,
+): NeedleSkinId[] {
+  const stage = Math.max(0, Math.floor(highestStageCleared));
+  return NEEDLE_SKINS.filter(
+    (needle) => needle.unlockKind === "stage" && (needle.unlockStage ?? Infinity) <= stage,
+  ).map((needle) => needle.id);
+}
 
 export const SKILL_IDS = ["steady-hand", "time-seam", "guardian-knot"] as const;
 export type SkillId = (typeof SKILL_IDS)[number];

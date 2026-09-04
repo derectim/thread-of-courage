@@ -86,6 +86,34 @@ const REWARD_COPY: Readonly<Record<NeedleSkinId, readonly RewardCopy[]>> = {
     ["aura", "Утренняя корона", "Иглу окружает мягкий венец света."],
     ["title", "Титул «Несущая рассвет»", "Редкий косметический титул профиля."],
   ],
+  moonweave: [
+    ["trail", "След лунного шёлка", "За спицей тянется холодная серебряная нить."],
+    ["impact", "Лунный прилив", "Попадание раскрывает мягкую волну голубого света."],
+    ["badge", "Знак лунной спицы", "Нашивка мастера Лунной спицы."],
+    ["aura", "Ореол полумесяца", "Иглу окружает тонкий защитный лунный круг."],
+    ["title", "Титул «Хранительница луны»", "Редкий косметический титул профиля."],
+  ],
+  "velvet-thorn": [
+    ["trail", "Бархатная строчка", "За остриём остаётся тёмно-малиновая нить."],
+    ["impact", "Роза шипов", "Попадание расцветает лепестками и золотыми шипами."],
+    ["badge", "Знак тихого шипа", "Нашивка мастера Бархатного острия."],
+    ["aura", "Винный бархат", "Вокруг иглы колышется густое мягкое сияние."],
+    ["title", "Титул «Бархатная мастерица»", "Редкий косметический титул профиля."],
+  ],
+  clockwork: [
+    ["trail", "Заводная нить", "За иглой щёлкают бирюзовые часовые искры."],
+    ["impact", "Латунный бой", "Попадание разбрасывает шестерёнки и искры."],
+    ["badge", "Знак точного хода", "Нашивка мастера Часовой иглы."],
+    ["aura", "Заводная орбита", "Вокруг иглы вращается маленькое латунное кольцо."],
+    ["title", "Титул «Хозяйка времени»", "Редкий косметический титул профиля."],
+  ],
+  "royal-seam": [
+    ["trail", "Королевская вязь", "За иглой тянется пурпурно-золотая строчка."],
+    ["impact", "Аметистовая корона", "Попадание вспыхивает гранёным королевским узором."],
+    ["badge", "Знак высшего стежка", "Нашивка мастера Королевского стежка."],
+    ["aura", "Дворцовый венец", "Иглу окружает торжественный золотой ореол."],
+    ["title", "Титул «Королева узора»", "Редкий косметический титул профиля."],
+  ],
 };
 
 const REWARD_LEVELS = [2, 4, 6, 8, 10] as const;
@@ -125,12 +153,9 @@ function createNeedleProgress(xp = 0): NeedleMasteryProgress {
 export function createNeedleMasteryState(): NeedleMasteryState {
   return {
     version: NEEDLE_MASTERY_VERSION,
-    byNeedle: {
-      silver: createNeedleProgress(),
-      bone: createNeedleProgress(),
-      storm: createNeedleProgress(),
-      sunrise: createNeedleProgress(),
-    },
+    byNeedle: Object.fromEntries(
+      NEEDLE_SKIN_IDS.map((id) => [id, createNeedleProgress()]),
+    ) as Record<NeedleSkinId, NeedleMasteryProgress>,
   };
 }
 
@@ -145,12 +170,9 @@ export function normalizeNeedleMasteryState(value: unknown): NeedleMasteryState 
 
   return {
     version: NEEDLE_MASTERY_VERSION,
-    byNeedle: {
-      silver: createNeedleProgress(readXp("silver")),
-      bone: createNeedleProgress(readXp("bone")),
-      storm: createNeedleProgress(readXp("storm")),
-      sunrise: createNeedleProgress(readXp("sunrise")),
-    },
+    byNeedle: Object.fromEntries(
+      NEEDLE_SKIN_IDS.map((id) => [id, createNeedleProgress(readXp(id))]),
+    ) as Record<NeedleSkinId, NeedleMasteryProgress>,
   };
 }
 

@@ -1,11 +1,13 @@
 import {
   BACKGROUND_IDS,
+  CASE_NEEDLE_SKIN_IDS,
   NEEDLE_SKIN_IDS,
   QUEST_IDS,
   SKILLS,
   SKILL_IDS,
   getBackground,
   getNeedleSkin,
+  getStageUnlockedNeedleIds,
   type BackgroundId,
   type NeedleSkinId,
   type QuestId,
@@ -252,7 +254,11 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
     normalizeInteger(value.campaignResumeStage, legacyResumeStage, 1),
   );
   const ownedNeedles = Array.from(
-    new Set<NeedleSkinId>(["silver", ...normalizeIdList(value.ownedNeedles, NEEDLE_SKIN_IDS)]),
+    new Set<NeedleSkinId>([
+      "silver",
+      ...normalizeIdList(value.ownedNeedles, NEEDLE_SKIN_IDS),
+      ...getStageUnlockedNeedleIds(highestStageCleared),
+    ]),
   );
   const ownedBackgrounds = Array.from(
     new Set<BackgroundId>(["auto", ...normalizeIdList(value.ownedBackgrounds, BACKGROUND_IDS)]),
@@ -424,7 +430,14 @@ export function purchaseUpgrade(state: ProgressionState, upgrade: UpgradeId): Pr
 
 export function buyNeedle(state: ProgressionState, id: NeedleSkinId): ProgressionState {
   if (state.ownedNeedles.includes(id)) return { ...state, equippedNeedle: id };
-  const cost = getNeedleSkin(id).threadCost;
+  const definition = getNeedleSkin(id);
+  if (
+    definition.unlockKind === "stage" &&
+    state.highestStageCleared < (definition.unlockStage ?? Number.POSITIVE_INFINITY)
+  ) {
+    return state;
+  }
+  const cost = definition.threadCost;
   if (state.thread < cost) return state;
   return {
     ...state,
@@ -440,15 +453,17 @@ export function equipNeedle(state: ProgressionState, id: NeedleSkinId): Progress
 }
 
 export function getRandomNeedleUnlockCost(state: ProgressionState): number | null {
-  const unlockedBeyondStarter = Math.max(0, state.ownedNeedles.length - 1);
-  return RANDOM_NEEDLE_UNLOCK_COSTS[unlockedBeyondStarter] ?? null;
+  const openedCases = CASE_NEEDLE_SKIN_IDS.filter((id) =>
+    state.ownedNeedles.includes(id),
+  ).length;
+  return RANDOM_NEEDLE_UNLOCK_COSTS[openedCases] ?? null;
 }
 
 export function unlockRandomNeedle(
   state: ProgressionState,
   randomValue = Math.random(),
 ): ProgressionState {
-  const locked = NEEDLE_SKIN_IDS.filter((id) => !state.ownedNeedles.includes(id));
+  const locked = CASE_NEEDLE_SKIN_IDS.filter((id) => !state.ownedNeedles.includes(id));
   const cost = getRandomNeedleUnlockCost(state);
   if (locked.length === 0 || cost === null || state.thread < cost) return state;
 
@@ -520,11 +535,18 @@ export function recordVictory(
       ),
     ]),
   );
+  const ownedNeedles = Array.from(
+    new Set<NeedleSkinId>([
+      ...state.ownedNeedles,
+      ...getStageUnlockedNeedleIds(highestStageCleared),
+    ]),
+  );
   return {
     ...state,
     highestStageCleared,
     campaignResumeStage: Math.max(1, Math.floor(stage) + 1),
     thread: state.thread + reward,
+    ownedNeedles,
     unlockedSkills,
     stats: {
       ...state.stats,

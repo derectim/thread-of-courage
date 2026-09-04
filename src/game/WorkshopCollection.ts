@@ -316,6 +316,10 @@ export const WORKSHOP_PATCH_ART: Readonly<Record<string, string>> = {
   "bone-mastery-6": "patch-old-craft.webp",
   "storm-mastery-6": "patch-storm-tamer.webp",
   "sunrise-mastery-6": "patch-first-ray.webp",
+  "moonweave-mastery-6": "patch-moonweave-master-v1.webp",
+  "velvet-thorn-mastery-6": "patch-velvet-thorn-master-v1.webp",
+  "clockwork-mastery-6": "patch-clockwork-master-v1.webp",
+  "royal-seam-mastery-6": "patch-royal-seam-master-v1.webp",
   "weekly-emblem-moon-thimble": "patch-weekly-moon-thimble.webp",
   "weekly-emblem-golden-spool": "patch-weekly-golden-spool.webp",
   "weekly-emblem-owl-eye": "patch-weekly-owl-eye.webp",
@@ -355,6 +359,10 @@ export const WORKSHOP_IMPACT_ART: Readonly<Record<string, string>> = {
   "bone-mastery-4": "impact-runic-shard.webp",
   "storm-mastery-4": "impact-thunder-knot.webp",
   "sunrise-mastery-4": "impact-dawn-petals.webp",
+  "moonweave-mastery-4": "impact-moon-tide-v1.webp",
+  "velvet-thorn-mastery-4": "impact-velvet-rose-v1.webp",
+  "clockwork-mastery-4": "impact-clockwork-strike-v1.webp",
+  "royal-seam-mastery-4": "impact-amethyst-crown-v1.webp",
 };
 
 export function getWorkshopPatchArtFileName(id: string): string | null {

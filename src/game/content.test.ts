@@ -4,11 +4,60 @@ import {
   MONSTERS,
   ROOMS,
   getExpeditionNumber,
+  getFirstCampaignStageForMonster,
   getMonsterForStage,
   getMovementPatternForProgress,
   getRequiredHits,
   getRoomForStage,
 } from "./content";
+
+const OPENING_STAGE_IDS = [
+  "grumble-yarn",
+  "button-bug",
+  "spool-spider",
+  "spring-rabbit",
+  "sewing-storm",
+  "thimble-hedgehog",
+  "ink-shuttle",
+  "patchwork-owl",
+  "grumble-yarn",
+  "moth-mask",
+  "button-bug",
+  "spring-rabbit",
+  "thimble-sentinel",
+  "thimble-hedgehog",
+  "madam-marionette",
+  "ink-shuttle",
+  "grumble-yarn",
+  "spool-spider",
+  "button-bug",
+  "ripper",
+] as const;
+
+const LATE_STAGE_IDS = [
+  "measuring-worm",
+  "velvet-bat",
+  "scissor-mantis",
+  "bobbin-crab",
+  "queen-unraveling",
+  "wax-doll",
+  "lace-wisp",
+  "loom-widow",
+  "measuring-worm",
+  "clockwork-tailor",
+  "velvet-bat",
+  "bobbin-crab",
+  "pincushion-boar",
+  "wax-doll",
+  "queen-unraveling",
+  "lace-wisp",
+  "measuring-worm",
+  "scissor-mantis",
+  "velvet-bat",
+  "clockwork-tailor",
+] as const;
+
+const LATE_MONSTER_IDS: ReadonlySet<string> = new Set(LATE_STAGE_IDS);
 
 describe("getRequiredHits", () => {
   it("starts each monster at its configured number of hits", () => {
@@ -49,19 +98,167 @@ describe("getRequiredHits", () => {
 });
 
 describe("expedition content", () => {
-  it("contains three rooms, five ordinary enemies, three mini-bosses, and four bosses", () => {
+  it("contains the original expedition plus ten late-game enemies", () => {
     expect(ROOMS).toHaveLength(3);
-    expect(MONSTERS).toHaveLength(12);
+    expect(MONSTERS).toHaveLength(22);
     expect(
       MONSTERS.filter((monster) => !monster.isBoss && !monster.isMiniBoss),
-    ).toHaveLength(5);
-    expect(MONSTERS.filter((monster) => monster.isMiniBoss)).toHaveLength(3);
-    expect(MONSTERS.filter((monster) => monster.isBoss)).toHaveLength(4);
+    ).toHaveLength(10);
+    expect(MONSTERS.filter((monster) => monster.isMiniBoss)).toHaveLength(6);
+    expect(MONSTERS.filter((monster) => monster.isBoss)).toHaveLength(6);
 
     for (const monster of MONSTERS) {
       expect(ROOMS.some((room) => room.id === monster.roomId)).toBe(true);
       expect(Boolean(monster.isBoss && monster.isMiniBoss)).toBe(false);
       expect(monster.textureKeys).toHaveLength(4);
+    }
+  });
+
+  it("preserves the exact opening roster for stages one through twenty", () => {
+    expect(
+      Array.from({ length: 20 }, (_, index) => getMonsterForStage(index + 1).id),
+    ).toEqual(OPENING_STAGE_IDS);
+  });
+
+  it("uses only the new roster for stages twenty-one through forty", () => {
+    const encounters = Array.from(
+      { length: 20 },
+      (_, index) => getMonsterForStage(index + 21),
+    );
+    expect(encounters.map((monster) => monster.id)).toEqual(LATE_STAGE_IDS);
+    expect(encounters.every((monster) => LATE_MONSTER_IDS.has(monster.id))).toBe(
+      true,
+    );
+
+    const unique = Array.from(
+      new Map(encounters.map((monster) => [monster.id, monster])).values(),
+    );
+    expect(
+      unique.filter((monster) => !monster.isBoss && !monster.isMiniBoss),
+    ).toHaveLength(5);
+    expect(unique.filter((monster) => monster.isMiniBoss)).toHaveLength(3);
+    expect(unique.filter((monster) => monster.isBoss)).toHaveLength(2);
+  });
+
+  it("places late bosses and mini-bosses in their intended slots", () => {
+    const bossStages = [25, 30, 35, 40];
+    const miniBossStages = [23, 28, 33, 38];
+
+    for (let stage = 21; stage <= 40; stage += 1) {
+      expect(Boolean(getMonsterForStage(stage).isBoss)).toBe(
+        bossStages.includes(stage),
+      );
+      expect(Boolean(getMonsterForStage(stage).isMiniBoss)).toBe(
+        miniBossStages.includes(stage),
+      );
+    }
+
+    expect(bossStages.map((stage) => getMonsterForStage(stage).id)).toEqual([
+      "queen-unraveling",
+      "clockwork-tailor",
+      "queen-unraveling",
+      "clockwork-tailor",
+    ]);
+    expect(miniBossStages.map((stage) => getMonsterForStage(stage).id)).toEqual([
+      "scissor-mantis",
+      "loom-widow",
+      "pincushion-boar",
+      "scissor-mantis",
+    ]);
+  });
+
+  it("gives every late enemy four unique frames and a unique hit reaction", () => {
+    const lateMonsters = MONSTERS.filter((monster) =>
+      LATE_MONSTER_IDS.has(monster.id),
+    );
+    const textureKeys = lateMonsters.flatMap(
+      (monster) => monster.textureKeys ?? [],
+    );
+    const reactions = lateMonsters.map((monster) => monster.damageReaction);
+
+    expect(lateMonsters).toHaveLength(10);
+    expect(textureKeys).toHaveLength(40);
+    expect(new Set(textureKeys)).toHaveLength(40);
+    expect(lateMonsters.every((monster) => monster.textureKeys?.length === 4)).toBe(
+      true,
+    );
+    expect(reactions.every(Boolean)).toBe(true);
+    expect(new Set(reactions)).toHaveLength(10);
+  });
+
+  it("keeps the intended late-enemy tuning and asset prefixes", () => {
+    const expected = [
+      ["measuring-worm", "Мерная Гусеница", "attic", "stitches", 11, "tape-ripple", "regular"],
+      ["velvet-bat", "Бархатная Ночница", "theatre", "pendulum", 12, "velvet-dust", "regular"],
+      ["bobbin-crab", "Шпульковый Краб", "machine", "recoil", 12, "metal-sparks", "regular"],
+      ["wax-doll", "Восковая Кукла", "theatre", "carousel", 12, "wax-crack", "regular"],
+      ["lace-wisp", "Кружевной Огонёк", "attic", "stitches", 13, "lace-unravel", "regular"],
+      ["scissor-mantis", "Ножничный Богомол", "machine", "recoil", 15, "blade-sparks", "mini"],
+      ["loom-widow", "Ткацкая Вдова", "theatre", "stitches", 16, "web-unwind", "mini"],
+      ["pincushion-boar", "Игольчатый Кабан", "attic", "carousel", 16, "needle-burst", "mini"],
+      ["queen-unraveling", "Королева Распущенных Швов", "theatre", "stitches", 20, "royal-unravel", "boss"],
+      ["clockwork-tailor", "Часовой Портной", "machine", "recoil", 21, "clockwork-break", "boss"],
+    ] as const;
+
+    for (const [id, name, roomId, pattern, baseHits, damageReaction, kind] of expected) {
+      const monster = MONSTERS.find((candidate) => candidate.id === id);
+      expect(monster).toMatchObject({
+        id,
+        name,
+        roomId,
+        pattern,
+        baseHits,
+        damageReaction,
+        ...(kind === "boss"
+          ? { isBoss: true }
+          : kind === "mini"
+            ? { isMiniBoss: true }
+            : {}),
+      });
+      const texturePrefix =
+        kind === "boss" ? `boss-${id}` : kind === "mini" ? `miniboss-${id}` : id;
+      expect(monster?.textureKeys).toEqual(
+        Array.from({ length: 4 }, (_, index) => `${texturePrefix}-${index}`),
+      );
+    }
+
+    expect(MONSTERS.find((monster) => monster.id === "queen-unraveling")?.bossTuning).toEqual({
+      speedMultiplier: 1.09,
+      phaseTwoAt: 0.43,
+      phaseTwoPattern: "recoil",
+    });
+    expect(MONSTERS.find((monster) => monster.id === "clockwork-tailor")?.bossTuning).toEqual({
+      speedMultiplier: 1.11,
+      phaseTwoAt: 0.37,
+      phaseTwoPattern: "pendulum",
+    });
+  });
+
+  it("reports the first campaign stage for opening and late enemies", () => {
+    expect(getFirstCampaignStageForMonster("grumble-yarn")).toBe(1);
+    expect(getFirstCampaignStageForMonster("ripper")).toBe(20);
+    expect(getFirstCampaignStageForMonster("measuring-worm")).toBe(21);
+    expect(getFirstCampaignStageForMonster("scissor-mantis")).toBe(23);
+    expect(getFirstCampaignStageForMonster("queen-unraveling")).toBe(25);
+    expect(getFirstCampaignStageForMonster("loom-widow")).toBe(28);
+    expect(getFirstCampaignStageForMonster("clockwork-tailor")).toBe(30);
+    expect(getFirstCampaignStageForMonster("pincushion-boar")).toBe(33);
+    expect(getFirstCampaignStageForMonster("unknown-nightmare")).toBeNull();
+  });
+
+  it("keeps late-game durability within the angular capacity of each pattern", () => {
+    const caps = {
+      carousel: 22,
+      pendulum: 20,
+      stitches: 24,
+      recoil: 24,
+    } as const;
+
+    for (let stage = 21; stage <= 400; stage += 1) {
+      const monster = getMonsterForStage(stage);
+      expect(getRequiredHits(monster, stage)).toBeLessThanOrEqual(
+        caps[monster.pattern],
+      );
     }
   });
 
@@ -247,15 +444,13 @@ describe("expedition content", () => {
     }
   });
 
-  it("repeats the roster every 20 stages and increments the expedition number", () => {
-    for (let stage = 1; stage <= 20; stage += 1) {
-      expect(getMonsterForStage(stage + 20).id).toBe(
-        getMonsterForStage(stage).id,
-      );
-      expect(getRoomForStage(stage).id).toBe(
-        getMonsterForStage(stage).roomId,
-      );
+  it("repeats the late roster after stage forty and increments expedition numbers", () => {
+    for (let stage = 21; stage <= 40; stage += 1) {
+      expect(getMonsterForStage(stage + 20).id).toBe(getMonsterForStage(stage).id);
+      expect(getRoomForStage(stage).id).toBe(getMonsterForStage(stage).roomId);
     }
+
+    expect(getMonsterForStage(41).id).toBe(getMonsterForStage(21).id);
 
     expect(getExpeditionNumber(1)).toBe(1);
     expect(getExpeditionNumber(20)).toBe(1);

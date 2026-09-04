@@ -8,7 +8,11 @@ export type NeedleImpactReactionKind =
   | "moon-mist"
   | "runic-shards"
   | "lightning-wrap"
-  | "dawn-petals";
+  | "dawn-petals"
+  | "moon-tide"
+  | "velvet-bloom"
+  | "clockwork-burst"
+  | "royal-seam";
 
 export interface NeedleImpactVfxProfile {
   readonly reaction: NeedleImpactReactionKind;
@@ -101,6 +105,38 @@ export const NEEDLE_IMPACT_VFX_PROFILES: Readonly<
     secondary: 0xffe38c,
     accent: 0xffd1af,
     particleCount: 8,
+    durationMs: 760,
+  },
+  "moonweave-mastery-4": {
+    reaction: "moon-tide",
+    primary: 0xdff7ff,
+    secondary: 0x72d7ff,
+    accent: 0xbca7ff,
+    particleCount: 11,
+    durationMs: 720,
+  },
+  "velvet-thorn-mastery-4": {
+    reaction: "velvet-bloom",
+    primary: 0xc02665,
+    secondary: 0xff8ab7,
+    accent: 0xf4c55c,
+    particleCount: 12,
+    durationMs: 690,
+  },
+  "clockwork-mastery-4": {
+    reaction: "clockwork-burst",
+    primary: 0x39d4d0,
+    secondary: 0xf2bd4e,
+    accent: 0xe7fbff,
+    particleCount: 10,
+    durationMs: 610,
+  },
+  "royal-seam-mastery-4": {
+    reaction: "royal-seam",
+    primary: 0x9d65e8,
+    secondary: 0xf4c55c,
+    accent: 0xffe8a8,
+    particleCount: 11,
     durationMs: 760,
   },
 };

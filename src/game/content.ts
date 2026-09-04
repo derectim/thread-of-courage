@@ -1,5 +1,17 @@
 export type MovementPattern = "carousel" | "pendulum" | "stitches" | "recoil";
 
+export type MonsterDamageReaction =
+  | "tape-ripple"
+  | "velvet-dust"
+  | "metal-sparks"
+  | "wax-crack"
+  | "lace-unravel"
+  | "blade-sparks"
+  | "web-unwind"
+  | "needle-burst"
+  | "royal-unravel"
+  | "clockwork-break";
+
 export type RoomId = "attic" | "theatre" | "machine";
 
 export interface RoomDefinition {
@@ -29,6 +41,7 @@ export interface MonsterDefinition {
   readonly isBoss?: boolean;
   readonly isMiniBoss?: boolean;
   readonly bossTuning?: BossTuning;
+  readonly damageReaction?: MonsterDamageReaction;
   readonly textureKeys?: readonly string[];
 }
 
@@ -288,6 +301,201 @@ export const MONSTERS: readonly MonsterDefinition[] = [
       "boss-ripper-3",
     ],
   },
+  {
+    id: "measuring-worm",
+    name: "Мерная Гусеница",
+    epithet: "стягивает путь мерной лентой",
+    roomId: "attic",
+    pattern: "stitches",
+    baseHits: 11,
+    bodyColor: 0xd5ad68,
+    accentColor: 0x5b8c85,
+    shadowColor: 0x4d3b37,
+    damageReaction: "tape-ripple",
+    textureKeys: [
+      "measuring-worm-0",
+      "measuring-worm-1",
+      "measuring-worm-2",
+      "measuring-worm-3",
+    ],
+  },
+  {
+    id: "velvet-bat",
+    name: "Бархатная Ночница",
+    epithet: "гасит свет пыльцой старых кулис",
+    roomId: "theatre",
+    pattern: "pendulum",
+    baseHits: 12,
+    bodyColor: 0x713f73,
+    accentColor: 0xe8b44d,
+    shadowColor: 0x281c38,
+    damageReaction: "velvet-dust",
+    textureKeys: [
+      "velvet-bat-0",
+      "velvet-bat-1",
+      "velvet-bat-2",
+      "velvet-bat-3",
+    ],
+  },
+  {
+    id: "bobbin-crab",
+    name: "Шпульковый Краб",
+    epithet: "закусывает нить стальными клешнями",
+    roomId: "machine",
+    pattern: "recoil",
+    baseHits: 12,
+    bodyColor: 0x346575,
+    accentColor: 0xe56b6f,
+    shadowColor: 0x171a24,
+    damageReaction: "metal-sparks",
+    textureKeys: [
+      "bobbin-crab-0",
+      "bobbin-crab-1",
+      "bobbin-crab-2",
+      "bobbin-crab-3",
+    ],
+  },
+  {
+    id: "wax-doll",
+    name: "Восковая Кукла",
+    epithet: "запоминает движения своей противницы",
+    roomId: "theatre",
+    pattern: "carousel",
+    baseHits: 12,
+    bodyColor: 0xd7ad87,
+    accentColor: 0x8a5578,
+    shadowColor: 0x6b4a6f,
+    damageReaction: "wax-crack",
+    textureKeys: [
+      "wax-doll-0",
+      "wax-doll-1",
+      "wax-doll-2",
+      "wax-doll-3",
+    ],
+  },
+  {
+    id: "lace-wisp",
+    name: "Кружевной Огонёк",
+    epithet: "распускает узоры в холодном воздухе",
+    roomId: "attic",
+    pattern: "stitches",
+    baseHits: 13,
+    bodyColor: 0xe9dfc7,
+    accentColor: 0x8a5578,
+    shadowColor: 0x315f5b,
+    damageReaction: "lace-unravel",
+    textureKeys: [
+      "lace-wisp-0",
+      "lace-wisp-1",
+      "lace-wisp-2",
+      "lace-wisp-3",
+    ],
+  },
+  {
+    id: "scissor-mantis",
+    name: "Ножничный Богомол",
+    epithet: "перерезает стежки одним взмахом",
+    roomId: "machine",
+    pattern: "recoil",
+    baseHits: 15,
+    bodyColor: 0x52646d,
+    accentColor: 0xe8b44d,
+    shadowColor: 0x171a24,
+    isMiniBoss: true,
+    damageReaction: "blade-sparks",
+    textureKeys: [
+      "miniboss-scissor-mantis-0",
+      "miniboss-scissor-mantis-1",
+      "miniboss-scissor-mantis-2",
+      "miniboss-scissor-mantis-3",
+    ],
+  },
+  {
+    id: "loom-widow",
+    name: "Ткацкая Вдова",
+    epithet: "плетёт западню из чёрной основы",
+    roomId: "theatre",
+    pattern: "stitches",
+    baseHits: 16,
+    bodyColor: 0x432347,
+    accentColor: 0xc89345,
+    shadowColor: 0x281c38,
+    isMiniBoss: true,
+    damageReaction: "web-unwind",
+    textureKeys: [
+      "miniboss-loom-widow-0",
+      "miniboss-loom-widow-1",
+      "miniboss-loom-widow-2",
+      "miniboss-loom-widow-3",
+    ],
+  },
+  {
+    id: "pincushion-boar",
+    name: "Игольчатый Кабан",
+    epithet: "несётся напролом сквозь всякий узор",
+    roomId: "attic",
+    pattern: "carousel",
+    baseHits: 16,
+    bodyColor: 0xa34f62,
+    accentColor: 0xe8b44d,
+    shadowColor: 0x4d3b37,
+    isMiniBoss: true,
+    damageReaction: "needle-burst",
+    textureKeys: [
+      "miniboss-pincushion-boar-0",
+      "miniboss-pincushion-boar-1",
+      "miniboss-pincushion-boar-2",
+      "miniboss-pincushion-boar-3",
+    ],
+  },
+  {
+    id: "queen-unraveling",
+    name: "Королева Распущенных Швов",
+    epithet: "повелевает нитями павшего двора",
+    roomId: "theatre",
+    pattern: "stitches",
+    baseHits: 20,
+    bodyColor: 0x7b385f,
+    accentColor: 0xe8b44d,
+    shadowColor: 0x281c38,
+    isBoss: true,
+    bossTuning: {
+      speedMultiplier: 1.09,
+      phaseTwoAt: 0.43,
+      phaseTwoPattern: "recoil",
+    },
+    damageReaction: "royal-unravel",
+    textureKeys: [
+      "boss-queen-unraveling-0",
+      "boss-queen-unraveling-1",
+      "boss-queen-unraveling-2",
+      "boss-queen-unraveling-3",
+    ],
+  },
+  {
+    id: "clockwork-tailor",
+    name: "Часовой Портной",
+    epithet: "перешивает само течение времени",
+    roomId: "machine",
+    pattern: "recoil",
+    baseHits: 21,
+    bodyColor: 0x4e5d66,
+    accentColor: 0x39b7a5,
+    shadowColor: 0x171a24,
+    isBoss: true,
+    bossTuning: {
+      speedMultiplier: 1.11,
+      phaseTwoAt: 0.37,
+      phaseTwoPattern: "pendulum",
+    },
+    damageReaction: "clockwork-break",
+    textureKeys: [
+      "boss-clockwork-tailor-0",
+      "boss-clockwork-tailor-1",
+      "boss-clockwork-tailor-2",
+      "boss-clockwork-tailor-3",
+    ],
+  },
 ] as const;
 
 export const PATTERN_NAMES: Readonly<Record<MovementPattern, string>> = {
@@ -307,7 +515,8 @@ const MAX_HITS_BY_PATTERN: Readonly<Record<MovementPattern, number>> = {
 const FIRST_SPOOL_SPIDER_STAGE = 3;
 const FIRST_SPOOL_SPIDER_HIT_RELIEF = 2;
 
-const REGULAR_MONSTERS = MONSTERS.filter(
+const OPENING_MONSTERS = MONSTERS.slice(0, 12);
+const REGULAR_MONSTERS = OPENING_MONSTERS.filter(
   (monster) => !monster.isBoss && !monster.isMiniBoss,
 );
 const MINI_BOSS_STAGES = [3, 8, 13, 18] as const;
@@ -323,8 +532,39 @@ const BOSS_ROTATION = [
   MONSTERS.find((monster) => monster.id === "ripper")!,
 ] as const;
 
+const LATE_ROSTER_IDS = [
+  "measuring-worm",
+  "velvet-bat",
+  "scissor-mantis",
+  "bobbin-crab",
+  "queen-unraveling",
+  "wax-doll",
+  "lace-wisp",
+  "loom-widow",
+  "measuring-worm",
+  "clockwork-tailor",
+  "velvet-bat",
+  "bobbin-crab",
+  "pincushion-boar",
+  "wax-doll",
+  "queen-unraveling",
+  "lace-wisp",
+  "measuring-worm",
+  "scissor-mantis",
+  "velvet-bat",
+  "clockwork-tailor",
+] as const;
+
+const LATE_ROSTER = LATE_ROSTER_IDS.map(
+  (id) => MONSTERS.find((monster) => monster.id === id)!,
+);
+
 export function getMonsterForStage(stage: number): MonsterDefinition {
   const normalizedStage = Math.max(1, Math.floor(stage));
+  if (normalizedStage > 20) {
+    return LATE_ROSTER[(normalizedStage - 21) % LATE_ROSTER.length];
+  }
+
   const cycleStage = ((normalizedStage - 1) % 20) + 1;
   if (cycleStage % 5 === 0) {
     const bossIndex = cycleStage / 5 - 1;
@@ -345,6 +585,15 @@ export function getMonsterForStage(stage: number): MonsterDefinition {
   const regularIndex =
     cycleStage - 1 - bossesBeforeStage - miniBossesBeforeStage;
   return REGULAR_MONSTERS[regularIndex % REGULAR_MONSTERS.length];
+}
+
+export function getFirstCampaignStageForMonster(
+  monsterId: string,
+): number | null {
+  for (let stage = 1; stage <= 40; stage += 1) {
+    if (getMonsterForStage(stage).id === monsterId) return stage;
+  }
+  return null;
 }
 
 export function getRoomForStage(stage: number): RoomDefinition {
