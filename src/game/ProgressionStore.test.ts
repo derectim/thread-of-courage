@@ -72,6 +72,7 @@ describe("ProgressionStore v3 persistence", () => {
       thread: 875,
       premium: 42,
       muted: true,
+      introSeen: true,
       upgrades: { power: 2, precision: 1, speed: 3, ward: 1 },
       stats: {
         needlesThrown: 321,
@@ -178,6 +179,24 @@ describe("ProgressionStore v3 persistence", () => {
     storage.setItem(PROGRESSION_SAVE_KEY, JSON.stringify(stored));
 
     expect(load(storage).campaignResumeStage).toBe(15);
+  });
+
+  it("shows the prologue once and safely normalizes older v3 saves", () => {
+    const storage = new MemoryStorage();
+    const watched = createState({ introSeen: true });
+    expect(save(watched, storage)).toBe(true);
+    expect(load(storage).introSeen).toBe(true);
+
+    const oldSave: Record<string, unknown> = { ...watched };
+    delete oldSave.introSeen;
+    storage.setItem(PROGRESSION_SAVE_KEY, JSON.stringify(oldSave));
+    expect(load(storage).introSeen).toBe(false);
+
+    storage.setItem(
+      PROGRESSION_SAVE_KEY,
+      JSON.stringify({ ...watched, introSeen: "yes" }),
+    );
+    expect(load(storage).introSeen).toBe(false);
   });
 
   it("persists ad cadence and normalizes saves created before it existed", () => {

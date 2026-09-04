@@ -17,7 +17,7 @@ const SOUND_NAMES: readonly SoundName[] = [
   'boss',
 ];
 
-const MUSIC_THEMES: readonly MusicTheme[] = ['menu', 'raid', 'boss'];
+const MUSIC_THEMES: readonly MusicTheme[] = ['menu', 'story', 'raid', 'boss'];
 
 class FakeDocument extends EventTarget {
   public visibilityState: DocumentVisibilityState = 'visible';
@@ -35,6 +35,10 @@ class FakeAudioParam {
     return this;
   });
   public readonly exponentialRampToValueAtTime = vi.fn((value: number) => {
+    this.value = value;
+    return this;
+  });
+  public readonly linearRampToValueAtTime = vi.fn((value: number) => {
     this.value = value;
     return this;
   });
@@ -211,8 +215,10 @@ describe('SoundEngine without browser audio APIs', () => {
     const engine = new SoundEngine();
 
     expect(() => engine.setMusicTheme('menu')).not.toThrow();
+    expect(() => engine.setMusicTheme('story')).not.toThrow();
     expect(() => engine.setMusicTheme('raid')).not.toThrow();
     expect(() => engine.setMusicTheme('boss')).not.toThrow();
+    expect(() => engine.setMusicDucking(0.32, 0.7)).not.toThrow();
     expect(() => engine.stopMusic()).not.toThrow();
     await expect(engine.unlock()).resolves.toBe(false);
 
@@ -245,6 +251,88 @@ describe('SoundEngine without browser audio APIs', () => {
       engine.destroy();
     },
   );
+
+  it('builds a quiet 64 BPM story loop', async () => {
+    const fakeDocument = installFakeBrowserAudio();
+    const engine = new SoundEngine();
+    engine.setMusicTheme('story');
+
+    fakeDocument.dispatchEvent(new Event('pointerdown'));
+    await settleAudioPromises();
+
+    const context = FakeAudioContext.instances[0];
+    const storySource = musicSources(context)[0];
+    const storyVoice = context.gains[2].gain;
+    expect(storySource.loopEnd).toBeCloseTo(15, 3);
+    expect(storyVoice.exponentialRampToValueAtTime).toHaveBeenCalledWith(
+      0.46,
+      1.16,
+    );
+
+    engine.destroy();
+  });
+
+  it('retains story ducking selected before the audio context exists', async () => {
+    const fakeDocument = installFakeBrowserAudio();
+    const engine = new SoundEngine();
+
+    engine.setMusicDucking(0.32, 0.7);
+    engine.setMusicTheme('story');
+    expect(FakeAudioContext.instances).toHaveLength(0);
+
+    fakeDocument.dispatchEvent(new Event('pointerdown'));
+    await settleAudioPromises();
+
+    const context = FakeAudioContext.instances[0];
+    const musicBus = context.gains[1].gain;
+    expect(musicBus.value).toBeCloseTo(0.32);
+    expect(musicBus.linearRampToValueAtTime).not.toHaveBeenCalled();
+    expect(musicSources(context)).toHaveLength(1);
+
+    engine.destroy();
+  });
+
+  it('smoothly clamps ducking and does not reset it after mute or platform restore', async () => {
+    const fakeDocument = installFakeBrowserAudio();
+    const engine = new SoundEngine();
+    engine.setMusicTheme('story');
+    fakeDocument.dispatchEvent(new Event('pointerdown'));
+    await settleAudioPromises();
+
+    const context = FakeAudioContext.instances[0];
+    const musicBus = context.gains[1].gain;
+    engine.setMusicDucking(0.32, 0.75);
+    expect(musicBus.cancelScheduledValues).toHaveBeenLastCalledWith(1);
+    expect(musicBus.setValueAtTime).toHaveBeenLastCalledWith(1, 1);
+    expect(musicBus.linearRampToValueAtTime).toHaveBeenLastCalledWith(
+      0.32,
+      1.75,
+    );
+    engine.setMusicDucking(1, 0.7);
+    expect(musicBus.setValueAtTime).toHaveBeenLastCalledWith(0.32, 1);
+    expect(musicBus.linearRampToValueAtTime).toHaveBeenLastCalledWith(1, 1.7);
+
+    engine.setMuted(true);
+    engine.setMusicDucking(-2, 0.7);
+    expect(musicBus.setValueAtTime).toHaveBeenLastCalledWith(0.05, 1);
+    expect(musicBus.linearRampToValueAtTime).toHaveBeenCalledTimes(2);
+    engine.setMuted(false);
+    await settleAudioPromises();
+    expect(musicBus.value).toBeCloseTo(0.05);
+
+    engine.pauseForPlatform();
+    engine.setMusicDucking(2, 0.7);
+    expect(musicBus.setValueAtTime).toHaveBeenLastCalledWith(1, 1);
+    expect(musicBus.linearRampToValueAtTime).toHaveBeenCalledTimes(2);
+    engine.resumeForPlatform();
+    fakeDocument.dispatchEvent(new Event('pointerdown'));
+    await settleAudioPromises();
+    expect(musicBus.value).toBe(1);
+
+    engine.destroy();
+    expect(() => engine.setMusicDucking(0.32)).not.toThrow();
+    expect(musicBus.value).toBe(1);
+  });
 
   it('keeps the completed-tap fallback available after a pointerdown unlock', async () => {
     const fakeDocument = installFakeBrowserAudio();

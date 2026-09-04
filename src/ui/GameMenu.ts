@@ -115,6 +115,7 @@ export function resolvePanelScrollRestoration(
 export interface GameMenuCallbacks {
   readonly onStart: () => void;
   readonly onStartWeekly: () => void;
+  readonly onShowStory?: () => void;
   readonly onStateChange: (state: ProgressionState) => void;
   readonly onToggleSound: (muted: boolean) => void;
   readonly onFullscreen: () => void;
@@ -632,6 +633,12 @@ export default class GameMenu {
     this.root.classList.add("is-hidden");
   }
 
+  public focusStoryTrigger(): void {
+    this.root
+      .querySelector<HTMLButtonElement>('[data-action="story-open"]')
+      ?.focus({ preventScroll: true });
+  }
+
   public destroy(): void {
     this.destroyed = true;
     this.profileRequest += 1;
@@ -770,6 +777,10 @@ export default class GameMenu {
       this.tab = nextTab;
       this.notice = "";
       this.render();
+      return;
+    }
+    if (action === "story-open") {
+      this.callbacks.onShowStory?.();
       return;
     }
 
@@ -1345,6 +1356,9 @@ export default class GameMenu {
             ? `<img class="is-vk-photo" src="${escapeHtml(this.profile.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
             : `<img class="is-hero-fallback" src="${asset("hero-elya.webp")}" alt="" />`}
           <strong>Профиль</strong>
+        </button>
+        <button class="menu-story-trigger" data-action="story-open" aria-haspopup="dialog" aria-label="Посмотреть историю мира">
+          <span aria-hidden="true">✦</span><strong>История</strong>
         </button>
         <section class="menu-hero-copy">
           <span class="menu-kicker">ТКАНЕВЫЙ РЕЙД</span>

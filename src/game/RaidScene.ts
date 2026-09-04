@@ -6,6 +6,10 @@ import type {
   RewardedAdResult,
 } from "../platform/PlatformAdapter";
 import GameMenu from "../ui/GameMenu";
+import StoryIntro, {
+  type StoryIntroMode,
+  type StoryIntroResult,
+} from "../ui/StoryIntro";
 import { getStageReward } from "./Economy";
 import {
   MAX_UPGRADE_LEVEL,
@@ -312,6 +316,8 @@ export class RaidScene extends Phaser.Scene {
   private sentinelRicochetHintShown = false;
   private upgradePurchaseLockedUntil = 0;
   private menu!: GameMenu;
+  private storyIntro!: StoryIntro;
+  private storyIntroPromise: Promise<StoryIntroResult> | null = null;
   private readonly sfx = new SoundEngine();
   private readonly silhouetteMasks = new Map<string, AlphaMask | null>();
   private abilityRuntime: ActiveAbilityRuntime =
@@ -388,9 +394,28 @@ export class RaidScene extends Phaser.Scene {
 
     const menuRoot = document.querySelector<HTMLElement>("#game-menu");
     if (!menuRoot) throw new Error("Не найден контейнер главного меню");
+    const gameFrame = menuRoot.closest<HTMLElement>(".game-frame");
+    if (!gameFrame) throw new Error("Не найдена рамка игры для вступления");
+    this.storyIntro = new StoryIntro(gameFrame, {
+      onPlaybackChange: (active) => {
+        if (active) {
+          this.sfx.setMusicTheme("story");
+          this.sfx.setMusicDucking(0.32, 0.12);
+        } else {
+          this.sfx.setMusicDucking(1, 0.72);
+        }
+      },
+      onMutedChange: (muted) => {
+        this.progression = { ...this.progression, muted };
+        this.sfx.setMuted(muted);
+        this.soundButton.setText(muted ? "🔇" : "♪");
+        this.persistProgress();
+      },
+    });
     this.menu = new GameMenu(menuRoot, this.progression, {
       onStart: () => void this.startRaidFromMenu(),
       onStartWeekly: () => void this.startWeeklyRouteFromMenu(),
+      onShowStory: () => void this.replayStoryFromMenu(),
       onStateChange: (state) => this.applyMenuProgress(state),
       onToggleSound: (muted) => {
         this.sfx.setMuted(muted);
@@ -412,6 +437,7 @@ export class RaidScene extends Phaser.Scene {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutExpandedViewport, this);
       this.heroFrameTimers.forEach((timer) => timer.remove(false));
       this.clearImpactVfxLayers();
+      this.storyIntro.destroy();
       this.menu.destroy();
       this.sfx.destroy();
     });
@@ -453,14 +479,61 @@ export class RaidScene extends Phaser.Scene {
   }
 
   public pauseForPlatform(): void {
+    this.storyIntro?.pauseForPlatform();
     this.sfx.pauseForPlatform();
   }
 
   public resumeForPlatform(): void {
+    this.storyIntro?.resumeForPlatform();
     this.sfx.resumeForPlatform();
   }
 
+  private playStoryIntro(mode: StoryIntroMode): Promise<StoryIntroResult> {
+    if (this.storyIntroPromise) return this.storyIntroPromise;
+
+    this.menu.hide();
+    this.closeOverlay();
+    this.clearImpactVfxLayers();
+    void this.sfx.unlock();
+    const playback = this.storyIntro.play({
+      mode,
+      muted: this.progression.muted,
+    });
+    let tracked!: Promise<StoryIntroResult>;
+    tracked = playback
+      .then((result) => {
+        if (
+          mode === "first-run" &&
+          result !== "closed" &&
+          !this.progression.introSeen
+        ) {
+          this.progression = { ...this.progression, introSeen: true };
+          this.persistProgress();
+        }
+        return result;
+      })
+      .finally(() => {
+        if (this.storyIntroPromise === tracked) this.storyIntroPromise = null;
+      });
+    this.storyIntroPromise = tracked;
+    return tracked;
+  }
+
+  private async replayStoryFromMenu(): Promise<void> {
+    if (this.state !== "menu") return;
+    const result = await this.playStoryIntro("replay");
+    if (result === "closed" && !this.scene.isActive()) return;
+    if (this.state !== "menu") return;
+    this.sfx.setMusicTheme("menu");
+    this.menu.show(this.progression, "home");
+    this.menu.focusStoryTrigger();
+  }
+
   private async startRaidFromMenu(): Promise<void> {
+    if (!this.progression.introSeen) {
+      const result = await this.playStoryIntro("first-run");
+      if (result === "closed" || this.state !== "menu") return;
+    }
     await this.waitForLossInterstitial();
     if (this.state !== "menu") return;
     this.raidMode = "campaign";
@@ -479,6 +552,10 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private async startWeeklyRouteFromMenu(): Promise<void> {
+    if (!this.progression.introSeen) {
+      const result = await this.playStoryIntro("first-run");
+      if (result === "closed" || this.state !== "menu") return;
+    }
     await this.waitForLossInterstitial();
     if (this.state !== "menu") return;
     this.weeklyRoute = createWeeklyRoute(new Date());

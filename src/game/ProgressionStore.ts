@@ -77,6 +77,8 @@ export interface ProgressionState {
   readonly thread: number;
   readonly premium: number;
   readonly muted: boolean;
+  /** The opening story has been completed or deliberately skipped. */
+  readonly introSeen: boolean;
   readonly upgrades: UpgradeLevels;
   readonly stats: LifetimeStats;
   readonly ownedNeedles: readonly NeedleSkinId[];
@@ -141,6 +143,7 @@ export function createDefaultState(): ProgressionState {
     thread: 0,
     premium: 0,
     muted: false,
+    introSeen: false,
     upgrades: createUpgradeLevels(),
     stats: {
       needlesThrown: 0,
@@ -293,6 +296,7 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
     thread: normalizeInteger(value.thread, 0),
     premium: normalizeInteger(value.premium, 0),
     muted: value.muted === true,
+    introSeen: value.introSeen === true,
     upgrades: {
       power: normalizeUpgradeLevel(upgrades.power),
       precision: normalizeUpgradeLevel(upgrades.precision),

@@ -8,7 +8,7 @@ export type SoundName =
   | "upgrade"
   | "boss";
 
-export type MusicTheme = "menu" | "raid" | "boss";
+export type MusicTheme = "menu" | "story" | "raid" | "boss";
 
 type AudioContextConstructor = new (options?: AudioContextOptions) => AudioContext;
 
@@ -23,6 +23,7 @@ export class SoundEngine {
   private context: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private musicBus: GainNode | null = null;
+  private musicDucking = 1;
   private musicSource: AudioBufferSourceNode | null = null;
   private musicVoiceGain: GainNode | null = null;
   private requestedMusicTheme: MusicTheme | null = null;
@@ -213,6 +214,43 @@ export class SoundEngine {
     this.stopMusicSource();
   }
 
+  /**
+   * Smoothly lowers or restores music without affecting effects or mute state.
+   * The value is retained even when audio has not been unlocked yet.
+   */
+  public setMusicDucking(multiplier: number, transitionSeconds = 0.18): void {
+    if (this.destroyed) return;
+
+    const ducking = Number.isFinite(multiplier)
+      ? Math.max(0.05, Math.min(1, multiplier))
+      : 1;
+    const transition = Number.isFinite(transitionSeconds)
+      ? Math.max(0, Math.min(10, transitionSeconds))
+      : 0.18;
+    this.musicDucking = ducking;
+
+    const context = this.context;
+    const gain = this.musicBus?.gain;
+    if (!context || !gain) return;
+
+    const now = context.currentTime;
+    const currentValue = Math.max(0.0001, gain.value);
+    gain.cancelScheduledValues(now);
+    if (
+      transition <= 0 ||
+      this.muted ||
+      this.platformPaused ||
+      context.state !== "running" ||
+      !this.isDocumentVisible()
+    ) {
+      gain.setValueAtTime(ducking, now);
+      return;
+    }
+
+    gain.setValueAtTime(currentValue, now);
+    gain.linearRampToValueAtTime(ducking, now + transition);
+  }
+
   public setMuted(muted: boolean): void {
     this.muted = muted;
 
@@ -311,7 +349,7 @@ export class SoundEngine {
         masterGain.gain.value = this.muted || this.platformPaused ? 0 : this.volume;
         masterGain.connect(context.destination);
         const musicBus = context.createGain();
-        musicBus.gain.value = 1;
+        musicBus.gain.value = this.musicDucking;
         musicBus.connect(masterGain);
 
         this.context = context;
@@ -631,6 +669,8 @@ export class SoundEngine {
     switch (theme) {
       case "menu":
         return 0.56;
+      case "story":
+        return 0.46;
       case "raid":
         return 0.48;
       case "boss":
@@ -642,7 +682,14 @@ export class SoundEngine {
     const cached = this.musicBuffers.get(theme);
     if (cached) return cached;
 
-    const bpm = theme === "menu" ? 72 : theme === "raid" ? 84 : 78;
+    const bpm =
+      theme === "story"
+        ? 64
+        : theme === "menu"
+          ? 72
+          : theme === "raid"
+            ? 84
+            : 78;
     const beatDuration = 60 / bpm;
     const beatCount = 16;
     const duration = beatDuration * beatCount;
@@ -657,6 +704,12 @@ export class SoundEngine {
         [46, 50, 53],
         [53, 57, 60],
         [48, 52, 55],
+      ],
+      story: [
+        [50, 53, 57],
+        [45, 50, 53],
+        [46, 50, 53],
+        [48, 53, 55],
       ],
       raid: [
         [50, 53, 57],
@@ -673,6 +726,9 @@ export class SoundEngine {
     };
     const motifs: Record<MusicTheme, readonly number[]> = {
       menu: [62, 65, 69, 65, 58, 62, 65, 62, 65, 69, 72, 69, 60, 64, 67, 64],
+      story: [
+        62, 65, 69, 65, 60, 64, 67, 64, 58, 62, 65, 69, 57, 60, 64, 62,
+      ],
       raid: [62, 69, 65, 69, 62, 70, 67, 65, 58, 65, 62, 65, 60, 67, 64, 67],
       boss: [50, 57, 53, 57, 51, 58, 55, 51, 48, 55, 51, 55, 49, 56, 53, 49],
     };
@@ -688,7 +744,7 @@ export class SoundEngine {
           chordStart,
           beatDuration * 3.9,
           this.midiToFrequency(midi),
-          theme === "boss" ? 0.055 : 0.045,
+          theme === "boss" ? 0.055 : theme === "story" ? 0.04 : 0.045,
           "pad",
           noteIndex * 0.012,
         );
@@ -700,7 +756,7 @@ export class SoundEngine {
         chordStart,
         beatDuration * 1.7,
         this.midiToFrequency(chord[0] - 12),
-        theme === "boss" ? 0.105 : 0.075,
+        theme === "boss" ? 0.105 : theme === "story" ? 0.06 : 0.075,
         "bass",
       );
       this.addMusicTone(
@@ -709,7 +765,7 @@ export class SoundEngine {
         chordStart + beatDuration * 2,
         beatDuration * 1.7,
         this.midiToFrequency(chord[0] - 12),
-        theme === "boss" ? 0.09 : 0.06,
+        theme === "boss" ? 0.09 : theme === "story" ? 0.052 : 0.06,
         "bass",
       );
     });
@@ -721,9 +777,9 @@ export class SoundEngine {
         samples,
         sampleRate,
         start,
-        beatDuration * (theme === "menu" ? 0.72 : 0.52),
+        beatDuration * (theme === "story" ? 0.82 : theme === "menu" ? 0.72 : 0.52),
         this.midiToFrequency(midi),
-        theme === "boss" ? 0.055 : 0.065,
+        theme === "boss" ? 0.055 : theme === "story" ? 0.052 : 0.065,
         "pluck",
       );
 
