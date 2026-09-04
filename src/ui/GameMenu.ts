@@ -1397,11 +1397,13 @@ export default class GameMenu {
             ${row.photoUrl
               ? `<img class="leaderboard-avatar" src="${escapeHtml(row.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
               : `<span class="leaderboard-avatar is-placeholder" aria-hidden="true">${escapeHtml(initials)}</span>`}
-            ${row.isCurrentUser && profilePatchFile ? `<img class="leaderboard-profile-patch" src="${asset(profilePatchFile)}" alt="" aria-hidden="true" />` : ""}
             ${row.isCurrentUser && profileFrameFile ? `<img class="leaderboard-profile-frame" src="${asset(profileFrameFile)}" alt="" aria-hidden="true" />` : ""}
           </span>
           <span class="leaderboard-name"><span><strong>${escapeHtml(fullName)}</strong>${row.isLocalOnly ? "<small>ЛОКАЛЬНО</small>" : row.isCurrentUser ? "<small>ВЫ</small>" : ""}</span>${row.isCurrentUser && profileTitle ? `<em>${escapeHtml(collectibleDisplayName(profileTitle.name))}</em>` : ""}</span>
-          <span class="leaderboard-level"><small>ЭТАП</small><strong>${row.level}</strong></span>
+          <span class="leaderboard-achievements ${row.isCurrentUser && profilePatchFile ? "has-patch" : ""}">
+            ${row.isCurrentUser && profilePatchFile ? `<span class="leaderboard-patch-slot" role="img" aria-label="Выбранная нашивка: ${escapeHtml(collectibleDisplayName(profilePatch?.name ?? ""))}"><img class="leaderboard-profile-patch" src="${asset(profilePatchFile)}" alt="" aria-hidden="true" /></span>` : ""}
+            <span class="leaderboard-level"><small>ЭТАП</small><strong>${row.level}</strong></span>
+          </span>
         </li>`;
     }).join("");
     const isLoading = this.leaderboard.status === "loading";
@@ -1538,9 +1540,12 @@ export default class GameMenu {
                   </div>
                 </section>`
               : `<article class="profile-showcase workshop-profile ${profileClass}">
-                  <div class="workshop-avatar">${avatar}${patchFile ? `<img class="profile-patch" src="${asset(patchFile)}" alt="" />` : ""}${frameFile ? `<img class="profile-frame-art" src="${asset(frameFile)}" alt="" />` : ""}</div>
+                  <div class="workshop-avatar">${avatar}${frameFile ? `<img class="profile-frame-art" src="${asset(frameFile)}" alt="" />` : ""}</div>
                   <div class="workshop-profile-name"><small>${this.profile ? "ПРОФИЛЬ VK" : "ЛОКАЛЬНЫЙ ПРОФИЛЬ"}</small><strong>${escapeHtml(fullName)}</strong><span>${title ? escapeHtml(collectibleDisplayName(title.name)) : "Без титула"}</span></div>
-                  <div class="profile-record"><span>Лучший этап</span><strong>${this.state.highestStageCleared || "—"}</strong></div>
+                  <div class="profile-showcase-side ${patchFile ? "has-patch" : ""}">
+                    ${patchFile ? `<div class="profile-showcase-patch" role="img" aria-label="Выбранная нашивка: ${escapeHtml(collectibleDisplayName(patch?.name ?? ""))}"><img src="${asset(patchFile)}" alt="" aria-hidden="true" /></div>` : ""}
+                    <div class="profile-record"><span>Лучший этап</span><strong>${this.state.highestStageCleared || "—"}</strong></div>
+                  </div>
                 </article>
                 <div class="profile-stat-row" aria-label="Прогресс профиля">
                   <div><small>Коллекция</small><strong>${collectionSummary.collectedCount}/${collectionSummary.totalCollectibleCount}</strong></div>

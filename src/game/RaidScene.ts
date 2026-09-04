@@ -42,6 +42,7 @@ import { isAngleBlocked, normalizeAngle } from "./geometry";
 import {
   HERO_CROSSBOW_FRAMES,
   getHeroNeedleLayout,
+  getHeroXForVerticalLaunch,
 } from "./heroAnimation";
 import { getAlphaSurfaceRadius, type AlphaMask } from "./silhouette";
 import { isSentinelHelmetHit } from "./sentinelArmor";
@@ -78,6 +79,10 @@ import {
   recordNeedleMasteryVictory,
   type NeedleMasteryVictoryKind,
 } from "./NeedleMastery";
+import {
+  getNeedleImpactVfxProfile,
+  type NeedleImpactVfxProfile,
+} from "./NeedleImpactEffects";
 import {
   WORKSHOP_IMPACT_ART,
   getWorkshopCollectible,
@@ -124,6 +129,8 @@ const MONSTER_RADIUS = 78;
 const WORLD_HIT_ANGLE = Math.PI / 2;
 const BASE_NEEDLE_GAP = 0.085;
 const BASE_PROJECTILE_DURATION = 175;
+const HERO_ART_SIZE = 278;
+const HERO_RELEASE_FRAME_INDEX = 2;
 
 type NeedleCosmeticKind = Extract<
   WorkshopCollectibleKind,
@@ -271,6 +278,7 @@ export class RaidScene extends Phaser.Scene {
   private heroArtwork!: Phaser.GameObjects.Image;
   private heroLoadedNeedle!: Phaser.GameObjects.Image;
   private heroFrameTimers: Phaser.Time.TimerEvent[] = [];
+  private activeImpactVfxGroups: Phaser.GameObjects.Container[][] = [];
   private healthBar!: Phaser.GameObjects.Rectangle;
   private healthText!: Phaser.GameObjects.Text;
   private stageText!: Phaser.GameObjects.Text;
@@ -403,6 +411,7 @@ export class RaidScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutExpandedViewport, this);
       this.heroFrameTimers.forEach((timer) => timer.remove(false));
+      this.clearImpactVfxLayers();
       this.menu.destroy();
       this.sfx.destroy();
     });
@@ -921,11 +930,20 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private createHero(): void {
-    this.hero = this.add.container(WIDTH / 2, 627).setDepth(8);
+    this.hero = this.add
+      .container(
+        getHeroXForVerticalLaunch(
+          MONSTER_X,
+          HERO_RELEASE_FRAME_INDEX,
+          HERO_ART_SIZE,
+        ),
+        627,
+      )
+      .setDepth(8);
     const shadow = this.add.ellipse(0, 116, 142, 19, 0x091316, 0.18);
     this.heroArtwork = this.add
       .image(0, 0, HERO_CROSSBOW_FRAMES[0].textureKey)
-      .setDisplaySize(278, 278);
+      .setDisplaySize(HERO_ART_SIZE, HERO_ART_SIZE);
     const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
     this.heroLoadedNeedle = this.add
       .image(0, 0, needleSkin.textureKey)
@@ -1009,6 +1027,7 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private createMonster(): void {
+    this.clearImpactVfxLayers();
     if (this.monster?.active) this.monster.destroy(true);
     if (this.monsterShadow?.active) this.monsterShadow.destroy();
 
@@ -1528,7 +1547,7 @@ export class RaidScene extends Phaser.Scene {
     this.sfx.shoot();
     const needleSkin = getNeedleSkin(this.progression.equippedNeedle);
     const releaseAnchor = getHeroNeedleLayout(
-      2,
+      HERO_RELEASE_FRAME_INDEX,
       this.heroArtwork.displayWidth,
       this.heroArtwork.displayHeight,
     );
@@ -2149,6 +2168,614 @@ export class RaidScene extends Phaser.Scene {
     });
   }
 
+  private clearImpactVfxLayers(): void {
+    for (const group of this.activeImpactVfxGroups) {
+      for (const layer of group) {
+        if (layer.active) layer.destroy(true);
+      }
+    }
+    this.activeImpactVfxGroups = [];
+  }
+
+  private createImpactVfxGroup(
+    depths: readonly number[],
+    lifetimeMs: number,
+  ): Phaser.GameObjects.Container[] {
+    const group = depths.map((depth) =>
+      this.add.container(this.monster.x, this.monster.y).setDepth(depth),
+    );
+    this.activeImpactVfxGroups.push(group);
+    while (this.activeImpactVfxGroups.length > 8) {
+      const oldest = this.activeImpactVfxGroups.shift();
+      for (const layer of oldest ?? []) {
+        if (layer.active) layer.destroy(true);
+      }
+    }
+    this.time.delayedCall(lifetimeMs, () => {
+      this.activeImpactVfxGroups = this.activeImpactVfxGroups.filter(
+        (candidate) => candidate !== group,
+      );
+      for (const layer of group) {
+        if (layer.active) layer.destroy(true);
+      }
+    });
+    return group;
+  }
+
+  private getImpactVfxSurfacePoint(
+    worldAngle: number,
+    offset = 0,
+  ): Phaser.Math.Vector2 {
+    const localAngle = normalizeAngle(worldAngle - this.monster.rotation);
+    const surface = this.getMonsterSurfaceRadius(localAngle) + offset;
+    return new Phaser.Math.Vector2(
+      Math.cos(worldAngle) * surface,
+      Math.sin(worldAngle) * surface,
+    );
+  }
+
+  private spawnImpactVfxPulse(
+    layer: Phaser.GameObjects.Container,
+    radius: number,
+    color: number,
+    duration: number,
+    delay = 0,
+  ): void {
+    const pulse = this.add
+      .circle(0, 0, radius, color, 0.025)
+      .setStrokeStyle(2, color, 0.66)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setScale(0.82)
+      .setAlpha(0.72);
+    layer.add(pulse);
+    this.tweens.add({
+      targets: pulse,
+      alpha: 0,
+      scale: 1.18,
+      duration,
+      delay,
+      ease: "Cubic.Out",
+    });
+  }
+
+  private spawnMonsterImpactReaction(
+    profile: NeedleImpactVfxProfile,
+    isEmpowered: boolean,
+  ): void {
+    const duration = profile.durationMs;
+    const count = profile.particleCount +
+      (isEmpowered ? Math.max(2, Math.ceil(profile.particleCount * 0.38)) : 0);
+    const sizeBoost = isEmpowered ? 1.12 : 1;
+    const sampledRadius = Array.from({ length: 8 }, (_, index) => {
+      const worldAngle = (Math.PI * 2 * index) / 8;
+      return this.getMonsterSurfaceRadius(
+        normalizeAngle(worldAngle - this.monster.rotation),
+      );
+    }).reduce((sum, radius) => sum + radius, 0) / 8;
+    const radius = Phaser.Math.Clamp(sampledRadius, 72, 128) * sizeBoost;
+    const needsBackLayer =
+      profile.reaction === "wool-smoke" ||
+      profile.reaction === "moon-mist";
+    const groupLifetime = duration + count * 30 + 160;
+    const [front, back = null] = this.createImpactVfxGroup(
+      needsBackLayer ? [13, 5] : [13],
+      groupLifetime,
+    );
+
+    this.spawnImpactVfxPulse(
+      front,
+      radius * 0.78,
+      profile.secondary,
+      Math.min(duration, 460),
+    );
+    if (isEmpowered) {
+      this.spawnImpactVfxPulse(
+        front,
+        radius * 0.68,
+        profile.accent,
+        Math.min(duration, 520),
+        55,
+      );
+    }
+
+    if (profile.reaction === "wool-smoke") {
+      const haze = this.add
+        .ellipse(0, 2, radius * 1.72, radius * 1.38, profile.primary, 0.1)
+        .setScale(0.82)
+        .setAlpha(0.72);
+      (back ?? front).add(haze);
+      this.tweens.add({
+        targets: haze,
+        alpha: 0,
+        scaleX: 1.18,
+        scaleY: 1.28,
+        y: haze.y - 12,
+        duration,
+        ease: "Sine.Out",
+      });
+      for (let index = 0; index < count; index += 1) {
+        const angle =
+          (Math.PI * 2 * index) / count + Phaser.Math.FloatBetween(-0.16, 0.16);
+        const point = this.getImpactVfxSurfacePoint(angle, 3);
+        const puffSize = Phaser.Math.Between(11, 17) * sizeBoost;
+        const puff = this.add.container(point.x, point.y);
+        puff.add([
+          this.add.ellipse(0, 0, puffSize * 1.45, puffSize, profile.primary, 0.24),
+          this.add.circle(
+            puffSize * 0.32,
+            -puffSize * 0.18,
+            puffSize * 0.38,
+            profile.secondary,
+            0.18,
+          ),
+        ]);
+        (index % 2 === 0 ? back ?? front : front).add(puff);
+        const distance = Phaser.Math.Between(18, 29) * sizeBoost;
+        this.tweens.add({
+          targets: puff,
+          x: puff.x + Math.cos(angle) * distance,
+          y: puff.y + Math.sin(angle) * distance - Phaser.Math.Between(8, 16),
+          alpha: 0,
+          scale: Phaser.Math.FloatBetween(1.25, 1.65),
+          rotation: Phaser.Math.FloatBetween(-0.35, 0.35),
+          duration: Phaser.Math.Between(duration - 100, duration + 40),
+          delay: Phaser.Math.Between(0, 70),
+          ease: "Sine.Out",
+        });
+      }
+      for (let index = 0; index < 4; index += 1) {
+        const angle = (Math.PI * 2 * index) / 4 + Math.PI / 4;
+        const point = this.getImpactVfxSurfacePoint(angle, 4);
+        const fibre = this.add
+          .rectangle(point.x, point.y, 2, 13, profile.accent, 0.78)
+          .setRotation(angle + 0.35)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        front.add(fibre);
+        this.tweens.add({
+          targets: fibre,
+          x: fibre.x + Math.cos(angle) * 24,
+          y: fibre.y + Math.sin(angle) * 24,
+          alpha: 0,
+          scaleY: 0.35,
+          duration: 420,
+          ease: "Cubic.Out",
+        });
+      }
+      return;
+    }
+
+    if (profile.reaction === "button-sparks") {
+      for (let index = 0; index < count; index += 1) {
+        const angle =
+          (Math.PI * 2 * index) / count + Phaser.Math.FloatBetween(-0.12, 0.12);
+        const point = this.getImpactVfxSurfacePoint(angle, 1);
+        const color = index % 4 === 0 ? profile.accent :
+          index % 2 === 0 ? profile.secondary : profile.primary;
+        const spark = this.add
+          .star(point.x, point.y, 4, 1.3, Phaser.Math.Between(5, 8), color, 0.96)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setRotation(angle);
+        front.add(spark);
+        const distance = Phaser.Math.Between(23, 39) * sizeBoost;
+        this.tweens.add({
+          targets: spark,
+          x: spark.x + Math.cos(angle) * distance,
+          y: spark.y + Math.sin(angle) * distance,
+          alpha: 0,
+          scale: 0.18,
+          rotation: spark.rotation + Phaser.Math.FloatBetween(0.6, 1.4),
+          duration: Phaser.Math.Between(300, duration + 20),
+          delay: Phaser.Math.Between(0, 90),
+          ease: "Cubic.Out",
+        });
+      }
+      return;
+    }
+
+    if (profile.reaction === "golden-thread") {
+      for (let loopIndex = 0; loopIndex < 3; loopIndex += 1) {
+        const loop = this.add.graphics();
+        loop.lineStyle(
+          loopIndex === 1 ? 2.2 : 1.5,
+          loopIndex === 2 ? profile.accent : profile.primary,
+          0.78,
+        );
+        loop.beginPath();
+        loop.arc(
+          0,
+          0,
+          radius * (0.82 + loopIndex * 0.1),
+          -Math.PI * (0.82 - loopIndex * 0.1),
+          Math.PI * (0.74 + loopIndex * 0.12),
+        );
+        loop.strokePath();
+        loop.setRotation(loopIndex * 0.9 - 0.65).setScale(1.16);
+        front.add(loop);
+        this.tweens.add({
+          targets: loop,
+          alpha: 0,
+          scale: 0.9,
+          rotation: loop.rotation + (loopIndex % 2 === 0 ? 0.62 : -0.58),
+          duration,
+          ease: "Sine.InOut",
+        });
+      }
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
+        const point = this.getImpactVfxSurfacePoint(angle, 5);
+        const bead = this.add
+          .circle(point.x, point.y, index % 2 === 0 ? 3.2 : 2.2, profile.secondary, 0.9)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        front.add(bead);
+        const tangentX = -Math.sin(angle) * 18;
+        const tangentY = Math.cos(angle) * 18;
+        this.tweens.add({
+          targets: bead,
+          x: bead.x + tangentX,
+          y: bead.y + tangentY,
+          alpha: 0,
+          scale: 0.45,
+          duration: duration - Phaser.Math.Between(20, 100),
+          delay: index * 18,
+          ease: "Sine.Out",
+        });
+      }
+      return;
+    }
+
+    if (profile.reaction === "silk-stars") {
+      for (let loopIndex = 0; loopIndex < 2; loopIndex += 1) {
+        const ribbon = this.add.graphics();
+        ribbon.lineStyle(1.5, loopIndex === 0 ? profile.primary : profile.secondary, 0.6);
+        ribbon.beginPath();
+        ribbon.arc(0, 0, radius * (0.82 + loopIndex * 0.13), -2.45, 1.65);
+        ribbon.strokePath();
+        ribbon.setRotation(loopIndex * 1.35).setScale(0.9, 0.78);
+        front.add(ribbon);
+        this.tweens.add({
+          targets: ribbon,
+          alpha: 0,
+          rotation: ribbon.rotation + (loopIndex === 0 ? 0.52 : -0.46),
+          scaleX: 1.12,
+          scaleY: 0.94,
+          duration,
+          ease: "Sine.Out",
+        });
+      }
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count - Math.PI * 0.75;
+        const point = this.getImpactVfxSurfacePoint(angle, 2);
+        const star = this.add
+          .star(point.x, point.y, 4, 1.4, Phaser.Math.Between(5, 9), index % 3 === 0 ? profile.accent : profile.primary, 0.92)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.25);
+        front.add(star);
+        const tangent = Phaser.Math.Between(18, 30);
+        this.tweens.add({
+          targets: star,
+          x: star.x - Math.sin(angle) * tangent,
+          y: star.y + Math.cos(angle) * tangent - 9,
+          alpha: 0,
+          scale: Phaser.Math.FloatBetween(0.9, 1.3),
+          rotation: Phaser.Math.FloatBetween(-0.8, 0.8),
+          duration: duration - Phaser.Math.Between(0, 100),
+          delay: index * 26,
+          ease: "Sine.Out",
+        });
+      }
+      return;
+    }
+
+    if (profile.reaction === "gem-shards") {
+      const gemColors = [profile.primary, profile.secondary, profile.accent, 0xb388ff];
+      for (let index = 0; index < count; index += 1) {
+        const angle =
+          (Math.PI * 2 * index) / count + Phaser.Math.FloatBetween(-0.1, 0.1);
+        const point = this.getImpactVfxSurfacePoint(angle, 0);
+        const gem = this.add
+          .triangle(
+            point.x,
+            point.y,
+            0,
+            -Phaser.Math.Between(6, 10),
+            Phaser.Math.Between(4, 7),
+            5,
+            -Phaser.Math.Between(3, 6),
+            4,
+            gemColors[index % gemColors.length],
+            0.92,
+          )
+          .setStrokeStyle(1, profile.secondary, 0.62)
+          .setRotation(angle + Math.PI / 2);
+        front.add(gem);
+        const distance = Phaser.Math.Between(27, 45) * sizeBoost;
+        const tangent = Phaser.Math.Between(-10, 10);
+        this.tweens.add({
+          targets: gem,
+          x: gem.x + Math.cos(angle) * distance - Math.sin(angle) * tangent,
+          y: gem.y + Math.sin(angle) * distance + Math.cos(angle) * tangent,
+          alpha: 0,
+          scale: 0.3,
+          rotation: gem.rotation + Phaser.Math.FloatBetween(-1.4, 1.4),
+          duration: Phaser.Math.Between(360, duration),
+          delay: Phaser.Math.Between(0, 65),
+          ease: "Cubic.Out",
+        });
+      }
+      return;
+    }
+
+    if (profile.reaction === "stitch-crown") {
+      const crown = this.add.graphics();
+      const crownY = -radius * 0.78;
+      const crownWidth = Math.min(118, radius * 1.22);
+      crown.lineStyle(3, profile.primary, 0.92);
+      crown.beginPath();
+      crown.moveTo(-crownWidth / 2, crownY + 18);
+      for (let pointIndex = 0; pointIndex < 5; pointIndex += 1) {
+        const x = -crownWidth / 2 + (crownWidth * pointIndex) / 4;
+        crown.lineTo(x, crownY + (pointIndex % 2 === 0 ? 2 : 14));
+      }
+      crown.lineTo(crownWidth / 2, crownY + 18);
+      crown.strokePath();
+      crown.lineStyle(1.5, profile.secondary, 0.82);
+      crown.lineBetween(-crownWidth / 2, crownY + 22, crownWidth / 2, crownY + 22);
+      for (let pointIndex = 0; pointIndex < 5; pointIndex += 1) {
+        const x = -crownWidth / 2 + (crownWidth * pointIndex) / 4;
+        crown.fillStyle(profile.secondary, 0.9);
+        crown.fillCircle(x, crownY + (pointIndex % 2 === 0 ? 2 : 14), 3);
+      }
+      front.add(crown);
+      this.tweens.add({
+        targets: crown,
+        y: crown.y - 12,
+        alpha: 0,
+        scaleX: 1.08,
+        scaleY: 1.08,
+        duration,
+        delay: 70,
+        ease: "Sine.Out",
+      });
+      for (let index = 0; index < Math.max(4, Math.floor(count / 2)); index += 1) {
+        const side = index % 2 === 0 ? -1 : 1;
+        const scrap = this.add
+          .rectangle(
+            side * (radius * 0.72 + Phaser.Math.Between(0, 12)),
+            -radius * 0.45 + Phaser.Math.Between(-8, 30),
+            Phaser.Math.Between(4, 7),
+            Phaser.Math.Between(9, 15),
+            index % 3 === 0 ? profile.secondary : profile.accent,
+            0.82,
+          )
+          .setRotation(Phaser.Math.FloatBetween(-0.7, 0.7));
+        front.add(scrap);
+        this.tweens.add({
+          targets: scrap,
+          y: scrap.y + Phaser.Math.Between(24, 42),
+          x: scrap.x + side * Phaser.Math.Between(7, 16),
+          alpha: 0,
+          rotation: scrap.rotation + Phaser.Math.FloatBetween(-1.2, 1.2),
+          duration: duration - Phaser.Math.Between(30, 120),
+          ease: "Sine.In",
+        });
+      }
+      return;
+    }
+
+    if (profile.reaction === "moon-mist") {
+      const mistRibbon = this.add.graphics();
+      mistRibbon.lineStyle(8, profile.primary, 0.12);
+      mistRibbon.beginPath();
+      mistRibbon.arc(0, 0, radius * 0.9, Math.PI * 0.38, Math.PI * 1.62);
+      mistRibbon.strokePath();
+      mistRibbon.lineStyle(3, profile.secondary, 0.36);
+      mistRibbon.beginPath();
+      mistRibbon.arc(0, 0, radius * 1.02, -Math.PI * 0.58, Math.PI * 0.48);
+      mistRibbon.strokePath();
+      (back ?? front).add(mistRibbon);
+      this.tweens.add({
+        targets: mistRibbon,
+        alpha: 0,
+        rotation: -0.38,
+        scaleX: 1.13,
+        scaleY: 1.06,
+        y: -11,
+        duration,
+        ease: "Sine.Out",
+      });
+      for (let index = 0; index < count; index += 1) {
+        const angle =
+          Math.PI * 0.18 + (Math.PI * 1.64 * index) / Math.max(1, count - 1);
+        const point = this.getImpactVfxSurfacePoint(angle, 1);
+        if (index % 3 === 0) {
+          const pearl = this.add
+            .star(point.x, point.y, 4, 1.2, 5.5, profile.secondary, 0.86)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          front.add(pearl);
+          this.tweens.add({
+            targets: pearl,
+            x: pearl.x - Math.sin(angle) * 22,
+            y: pearl.y + Math.cos(angle) * 22 - 12,
+            alpha: 0,
+            scale: 0.3,
+            rotation: -0.7,
+            duration: duration - Phaser.Math.Between(70, 160),
+            delay: index * 18,
+            ease: "Sine.Out",
+          });
+        } else {
+          const mist = this.add
+            .ellipse(0, 0, Phaser.Math.Between(15, 24), Phaser.Math.Between(8, 13), profile.primary, 0.16);
+          const puff = this.add.container(point.x, point.y, mist);
+          (index % 2 === 0 ? back ?? front : front).add(puff);
+          this.tweens.add({
+            targets: puff,
+            x: puff.x - Math.sin(angle) * Phaser.Math.Between(13, 24),
+            y: puff.y - Phaser.Math.Between(16, 30),
+            alpha: 0,
+            scale: Phaser.Math.FloatBetween(1.35, 1.75),
+            rotation: Phaser.Math.FloatBetween(-0.32, 0.32),
+            duration: duration - Phaser.Math.Between(0, 100),
+            delay: index * 14,
+            ease: "Sine.Out",
+          });
+        }
+      }
+      return;
+    }
+
+    if (profile.reaction === "runic-shards") {
+      const runes = this.add.graphics();
+      runes.lineStyle(2, profile.secondary, 0.8);
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count;
+        const inner = radius * 0.82;
+        const outer = radius * 0.97;
+        const tangentX = -Math.sin(angle) * 4;
+        const tangentY = Math.cos(angle) * 4;
+        const x = Math.cos(angle) * inner;
+        const y = Math.sin(angle) * inner;
+        runes.lineBetween(x - tangentX, y - tangentY, x + tangentX, y + tangentY);
+        runes.lineBetween(
+          Math.cos(angle) * inner,
+          Math.sin(angle) * inner,
+          Math.cos(angle) * outer,
+          Math.sin(angle) * outer,
+        );
+      }
+      front.add(runes);
+      this.tweens.add({
+        targets: runes,
+        alpha: 0,
+        rotation: 0.5,
+        scale: 1.12,
+        duration,
+        ease: "Cubic.Out",
+      });
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count + 0.18;
+        const point = this.getImpactVfxSurfacePoint(angle, 0);
+        const shard = this.add
+          .triangle(point.x, point.y, 0, -8, 5, 5, -4, 4, index % 2 === 0 ? profile.primary : profile.accent, 0.88)
+          .setStrokeStyle(1, profile.secondary, 0.7)
+          .setRotation(angle + Math.PI / 2);
+        front.add(shard);
+        const distance = Phaser.Math.Between(20, 34);
+        this.tweens.add({
+          targets: shard,
+          x: shard.x + Math.cos(angle) * distance,
+          y: shard.y + Math.sin(angle) * distance + Phaser.Math.Between(4, 14),
+          alpha: 0,
+          rotation: shard.rotation + Phaser.Math.FloatBetween(-1.1, 1.1),
+          scale: 0.35,
+          duration: duration - Phaser.Math.Between(50, 160),
+          delay: index * 30,
+          ease: "Cubic.Out",
+        });
+      }
+      return;
+    }
+
+    if (profile.reaction === "lightning-wrap") {
+      const lightning = this.add.graphics();
+      lightning.lineStyle(isEmpowered ? 3.2 : 2.4, profile.primary, 0.96);
+      lightning.beginPath();
+      const nodes = 14;
+      for (let index = 0; index <= nodes; index += 1) {
+        const angle = (Math.PI * 2 * index) / nodes;
+        const localRadius = radius * 0.9 + (index % 2 === 0 ? 8 : -5);
+        const x = Math.cos(angle) * localRadius;
+        const y = Math.sin(angle) * localRadius;
+        if (index === 0) lightning.moveTo(x, y);
+        else lightning.lineTo(x, y);
+      }
+      lightning.strokePath();
+      lightning.lineStyle(1.4, profile.accent, 0.9);
+      for (let boltIndex = 0; boltIndex < 3; boltIndex += 1) {
+        const angle = -Math.PI * 0.7 + boltIndex * Math.PI * 0.7;
+        const from = this.getImpactVfxSurfacePoint(angle, 4);
+        const to = this.getImpactVfxSurfacePoint(angle + 0.72, 4);
+        lightning.beginPath();
+        lightning.moveTo(from.x, from.y);
+        lightning.lineTo((from.x + to.x) / 2 + Phaser.Math.Between(-10, 10), (from.y + to.y) / 2 + Phaser.Math.Between(-10, 10));
+        lightning.lineTo(to.x, to.y);
+        lightning.strokePath();
+      }
+      lightning.setBlendMode(Phaser.BlendModes.ADD);
+      front.add(lightning);
+      this.tweens.add({
+        targets: lightning,
+        alpha: { from: 1, to: 0.22 },
+        scaleX: { from: 0.94, to: 1.04 },
+        scaleY: { from: 1.03, to: 0.96 },
+        duration: 55,
+        yoyo: true,
+        repeat: 1,
+        onComplete: () => {
+          if (!lightning.active) return;
+          this.tweens.add({
+            targets: lightning,
+            alpha: 0,
+            scale: 1.08,
+            duration: Math.max(100, duration - 220),
+            ease: "Cubic.Out",
+          });
+        },
+      });
+      for (let index = 0; index < count; index += 1) {
+        const angle = (Math.PI * 2 * index) / count;
+        const point = this.getImpactVfxSurfacePoint(angle, 2);
+        const spark = this.add
+          .star(point.x, point.y, 4, 1, 5, index % 2 === 0 ? profile.secondary : profile.primary, 0.94)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        front.add(spark);
+        this.tweens.add({
+          targets: spark,
+          x: spark.x + Math.cos(angle) * Phaser.Math.Between(18, 31),
+          y: spark.y + Math.sin(angle) * Phaser.Math.Between(18, 31),
+          alpha: 0,
+          scale: 0.15,
+          duration: Phaser.Math.Between(210, duration),
+          delay: Phaser.Math.Between(0, 55),
+          ease: "Cubic.Out",
+        });
+      }
+      return;
+    }
+
+    for (let index = 0; index < count; index += 1) {
+      const angle =
+        (Math.PI * 2 * index) / count - Math.PI / 2 + Phaser.Math.FloatBetween(-0.08, 0.08);
+      const point = this.getImpactVfxSurfacePoint(angle, 1);
+      const petal = this.add
+        .ellipse(
+          point.x,
+          point.y,
+          Phaser.Math.Between(7, 11),
+          Phaser.Math.Between(15, 22),
+          index % 2 === 0 ? profile.primary : profile.secondary,
+          0.88,
+        )
+        .setRotation(angle + Math.PI / 2)
+        .setScale(0.55);
+      front.add(petal);
+      const outward = Phaser.Math.Between(22, 38) * sizeBoost;
+      const swirl = Phaser.Math.Between(15, 28);
+      this.tweens.add({
+        targets: petal,
+        x: petal.x + Math.cos(angle) * outward - Math.sin(angle) * swirl,
+        y: petal.y + Math.sin(angle) * outward + Math.cos(angle) * swirl - 11,
+        alpha: 0,
+        scaleX: 0.22,
+        scaleY: 1.08,
+        rotation: petal.rotation + Phaser.Math.FloatBetween(0.75, 1.35),
+        duration: duration - Phaser.Math.Between(0, 120),
+        delay: index * 24,
+        ease: "Sine.Out",
+      });
+    }
+  }
+
   private spawnEquippedNeedleImpact(
     localAngle: number,
     isEmpowered = false,
@@ -2306,14 +2933,30 @@ export class RaidScene extends Phaser.Scene {
     artFileName: string,
     isEmpowered: boolean,
   ): void {
-    const palette = getNeedleCosmeticPalette(collectible.id);
+    const vfxProfile = getNeedleImpactVfxProfile(collectible.id);
+    const palette = vfxProfile ?? getNeedleCosmeticPalette(collectible.id);
     const motif = getNeedleImpactMotif(collectible.id);
     const worldAngle = localAngle + this.monster.rotation;
     const surface = this.getMonsterSurfaceRadius(localAngle);
     const impactX = this.monster.x + Math.cos(worldAngle) * surface;
     const impactY = this.monster.y + Math.sin(worldAngle) * surface;
-    const displaySize = isEmpowered ? 96 : motif === "crown" ? 90 : 82;
-    const duration = motif === "lightning" ? 210 : motif === "crown" ? 330 : 270;
+    const baseDisplaySize =
+      vfxProfile?.reaction === "stitch-crown" ? 94 :
+        vfxProfile?.reaction === "lightning-wrap" ? 92 :
+          vfxProfile?.reaction === "dawn-petals" ||
+          vfxProfile?.reaction === "moon-mist" ? 90 : 84;
+    const displaySize = baseDisplaySize + (isEmpowered ? 10 : 0);
+    const duration = vfxProfile
+      ? Math.min(390, Math.round(vfxProfile.durationMs * 0.55))
+      : motif === "lightning" ? 210 : motif === "crown" ? 330 : 270;
+    const baseRotation = vfxProfile?.reaction === "stitch-crown"
+      ? 0
+      : worldAngle - Math.PI / 2;
+    const entryRotationOffset =
+      vfxProfile?.reaction === "golden-thread" ? -0.34 :
+        vfxProfile?.reaction === "dawn-petals" ? -0.28 :
+          vfxProfile?.reaction === "button-sparks" ? -0.2 :
+            vfxProfile?.reaction === "silk-stars" ? 0.14 : 0;
 
     const artwork = this.add
       .image(
@@ -2322,12 +2965,19 @@ export class RaidScene extends Phaser.Scene {
         getWorkshopImpactTextureKey(artFileName),
       )
       .setDepth(15)
-      .setRotation(worldAngle - Math.PI / 2)
+      .setRotation(baseRotation + entryRotationOffset)
       .setDisplaySize(displaySize, displaySize)
       .setAlpha(0.34);
     const finalScaleX = artwork.scaleX;
     const finalScaleY = artwork.scaleY;
-    artwork.setScale(finalScaleX * 0.28, finalScaleY * 0.28);
+    artwork.setScale(
+      finalScaleX * (vfxProfile?.reaction === "lightning-wrap" ? 0.18 : 0.28),
+      finalScaleY * (vfxProfile?.reaction === "lightning-wrap" ? 0.58 : 0.28),
+    );
+
+    if (vfxProfile) {
+      this.spawnMonsterImpactReaction(vfxProfile, isEmpowered);
+    }
 
     const contact = this.add
       .circle(impactX, impactY, isEmpowered ? 7 : 5, palette.secondary, 0.96)
@@ -2363,12 +3013,20 @@ export class RaidScene extends Phaser.Scene {
       duration: 78,
       ease: "Back.Out",
       onComplete: () => {
+        const exitScale = vfxProfile?.reaction === "golden-thread"
+          ? 0.88
+          : isEmpowered ? 1.34 : 1.2;
+        const exitRotation =
+          vfxProfile?.reaction === "stitch-crown" ? 0 :
+            vfxProfile?.reaction === "lightning-wrap" ? baseRotation + 0.04 :
+              baseRotation + 0.12;
         this.tweens.add({
           targets: artwork,
           alpha: 0,
-          scaleX: finalScaleX * (isEmpowered ? 1.34 : 1.2),
-          scaleY: finalScaleY * (isEmpowered ? 1.34 : 1.2),
-          rotation: artwork.rotation + (motif === "lightning" ? 0.04 : 0.12),
+          scaleX: finalScaleX * exitScale,
+          scaleY: finalScaleY * exitScale,
+          rotation: exitRotation,
+          y: vfxProfile?.reaction === "stitch-crown" ? impactY - 11 : impactY,
           duration,
           ease: "Quad.Out",
           onComplete: () => artwork.destroy(),
@@ -2376,7 +3034,7 @@ export class RaidScene extends Phaser.Scene {
       },
     });
 
-    const fragmentCount = isEmpowered ? 8 : 5;
+    const fragmentCount = vfxProfile ? 0 : isEmpowered ? 8 : 5;
     for (let index = 0; index < fragmentCount; index += 1) {
       const spread = index / (fragmentCount - 1) - 0.5;
       const fragmentAngle =
@@ -2609,6 +3267,7 @@ export class RaidScene extends Phaser.Scene {
           : `Нить оборвалась на этапе ${this.stage} · рекорд ${this.progression.highestStageCleared}`,
       );
       this.closeOverlay();
+      this.clearImpactVfxLayers();
       this.state = "menu";
       this.sfx.setMusicTheme("menu");
       this.menu.show(
@@ -2674,6 +3333,7 @@ export class RaidScene extends Phaser.Scene {
 
       this.persistProgress();
       this.closeOverlay();
+      this.clearImpactVfxLayers();
       this.state = "menu";
       this.setCombatHudVisible(false);
       this.sfx.ui();
@@ -2696,6 +3356,7 @@ export class RaidScene extends Phaser.Scene {
 
     if (destination.persistProgress) this.persistProgress();
     this.closeOverlay();
+    this.clearImpactVfxLayers();
     this.state = "menu";
     this.setCombatHudVisible(false);
     this.tipText.setText(`Путь сохранён после этапа ${this.stage}`);
@@ -2724,6 +3385,7 @@ export class RaidScene extends Phaser.Scene {
     heading = "Мастерская Эли",
   ): void {
     this.closeOverlay();
+    this.clearImpactVfxLayers();
     this.state = "workshop";
     this.setCombatHudVisible(false);
 

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { HERO_CROSSBOW_FRAMES, getHeroNeedleLayout } from "./heroAnimation";
+import {
+  HERO_CROSSBOW_FRAMES,
+  getHeroNeedleLayout,
+  getHeroXForVerticalLaunch,
+} from "./heroAnimation";
 
 describe("hero crossbow animation", () => {
   it("keeps three frames on a shared canvas with a stable horizontal anchor", () => {
@@ -20,5 +24,13 @@ describe("hero crossbow animation", () => {
     expect(crouched.x).toBeCloseTo(19.0708, 3);
     expect(crouched.tipY).toBeCloseTo(-182.2568, 3);
     expect(crouched.tailY).toBeCloseTo(-58.5468, 3);
+  });
+
+  it("aligns the release needle with a strictly vertical launch axis", () => {
+    const release = getHeroNeedleLayout(2, 278, 278);
+    const heroX = getHeroXForVerticalLaunch(216, 2, 278);
+
+    expect(heroX).toBeCloseTo(206.4646, 3);
+    expect(heroX + release.x).toBeCloseTo(216, 6);
   });
 });

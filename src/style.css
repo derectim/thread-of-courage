@@ -1171,7 +1171,7 @@ button {
 
 .leaderboard-row {
   display: grid;
-  grid-template-columns: 35px 46px minmax(0, 1fr) 54px;
+  grid-template-columns: 35px 46px minmax(0, 1fr) auto;
   min-height: 58px;
   align-items: center;
   gap: 9px;
@@ -1260,14 +1260,31 @@ button {
 }
 
 .leaderboard-profile-patch {
-  position: absolute;
-  z-index: 3;
-  right: -7px;
-  bottom: -7px;
-  width: 24px;
-  height: 24px;
+  display: block;
+  width: 40px;
+  height: 40px;
   object-fit: contain;
   filter: drop-shadow(0 2px 2px rgba(35, 20, 30, 0.48));
+}
+
+.leaderboard-achievements {
+  display: grid;
+  grid-auto-columns: 54px;
+  grid-auto-flow: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.leaderboard-patch-slot {
+  display: grid;
+  width: 54px;
+  min-height: 44px;
+  box-sizing: border-box;
+  place-items: center;
+  border: 1px solid rgba(80, 57, 76, 0.28);
+  border-radius: 11px;
+  background: radial-gradient(circle, rgba(255, 245, 205, 0.82), rgba(103, 75, 101, 0.18));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.68);
 }
 
 .leaderboard-name {
@@ -1339,6 +1356,9 @@ button {
 
 .leaderboard-level {
   display: grid;
+  width: 54px;
+  min-height: 44px;
+  box-sizing: border-box;
   justify-items: center;
   padding: 5px 4px;
   border: 1px solid rgba(110, 70, 41, 0.22);
@@ -1606,9 +1626,44 @@ button {
   font-size: 11px;
 }
 
+.profile-showcase-side {
+  display: grid;
+  grid-template-columns: 80px;
+  align-self: center;
+  justify-self: end;
+  gap: 8px;
+}
+
+.profile-showcase-side.has-patch {
+  grid-template-columns: repeat(2, 80px);
+}
+
+.profile-showcase-patch {
+  display: grid;
+  width: 80px;
+  height: 62px;
+  box-sizing: border-box;
+  place-items: center;
+  border: 1px solid rgba(91, 62, 86, 0.3);
+  border-radius: 14px;
+  background: radial-gradient(circle, rgba(255, 245, 207, 0.86), rgba(100, 76, 102, 0.2));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.68), 0 3px 0 rgba(83, 59, 76, 0.18);
+}
+
+.profile-showcase-patch img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgba(38, 24, 34, 0.4));
+}
+
 .profile-record {
   display: grid;
+  width: 80px;
+  height: 62px;
   min-width: 80px;
+  box-sizing: border-box;
   align-self: center;
   justify-items: center;
   gap: 2px;
@@ -2945,7 +3000,7 @@ button {
   .leaderboard-list { gap: 5px; }
 
   .leaderboard-row {
-    grid-template-columns: 30px 40px minmax(0, 1fr) 48px;
+    grid-template-columns: 30px 40px minmax(0, 1fr) auto;
     min-height: 51px;
     gap: 6px;
     padding: 5px 6px;
@@ -2955,7 +3010,10 @@ button {
   .leaderboard-place { width: 27px; height: 27px; font-size: 9px; }
   .leaderboard-avatar-shell,
   .leaderboard-avatar { width: 38px; height: 38px; border-radius: 11px; font-size: 11px; }
-  .leaderboard-profile-patch { right: -5px; bottom: -5px; width: 20px; height: 20px; }
+  .leaderboard-achievements { grid-auto-columns: 44px; gap: 4px; }
+  .leaderboard-patch-slot,
+  .leaderboard-level { width: 44px; min-height: 38px; }
+  .leaderboard-profile-patch { width: 34px; height: 34px; }
   .leaderboard-name strong { font-size: 10px; }
   .leaderboard-name small { font-size: 6px; }
   .leaderboard-name em { font-size: 7px; }
@@ -5331,11 +5389,29 @@ button {
     font-size: clamp(14px, 4.6vw, 18px);
   }
 
-  .profile-record {
+  .profile-showcase-side {
     grid-column: 1 / -1;
-    grid-row: auto;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    justify-self: stretch;
+  }
+
+  .profile-showcase-side.has-patch {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-showcase-patch,
+  .profile-showcase-side .profile-record {
+    grid-column: auto;
+    width: auto;
+    height: 42px;
     min-width: 0;
-    min-height: 38px;
+    min-height: 42px;
+  }
+
+  .profile-showcase-patch img { width: 38px; height: 38px; }
+
+  .profile-record {
     grid-template-columns: auto auto;
     align-items: center;
     justify-content: space-between;

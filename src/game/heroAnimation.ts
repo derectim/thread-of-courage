@@ -50,3 +50,16 @@ export function getHeroNeedleLayout(
     tailY: (frame.needle.tailY - 0.5) * displayHeight,
   };
 }
+
+/** Positions the hero so the selected release-frame needle sits on a world-space launch axis. */
+export function getHeroXForVerticalLaunch(
+  launchX: number,
+  frameIndex: number,
+  displayWidth: number,
+): number {
+  const frame =
+    HERO_CROSSBOW_FRAMES[
+      Math.max(0, Math.min(HERO_CROSSBOW_FRAMES.length - 1, frameIndex))
+    ] ?? HERO_CROSSBOW_FRAMES[0];
+  return launchX - (frame.needle.x - 0.5) * displayWidth;
+}
