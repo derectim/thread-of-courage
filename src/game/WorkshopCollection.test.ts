@@ -103,9 +103,9 @@ describe("WorkshopCollection catalog", () => {
 
   it("has an individual generated image for every collectible patch", () => {
     const patches = WORKSHOP_COLLECTIBLES.filter((item) => item.kind === "patch");
-    expect(patches).toHaveLength(20);
+    expect(patches).toHaveLength(21);
     expect(
-      patches.every((patch) => getWorkshopPatchArtFileName(patch.id)?.endsWith(".webp")),
+      patches.every((patch) => /\.(webp|svg)$/.test(getWorkshopPatchArtFileName(patch.id) ?? "")),
     ).toBe(true);
     expect(
       Object.fromEntries(
@@ -163,6 +163,8 @@ describe("WorkshopCollection catalog", () => {
       "living-thread-01-premium-6": "ornament-golden-shuttle.webp",
       "living-thread-01-premium-12": "ornament-seamstress-clock.webp",
       "living-thread-01-premium-18": "ornament-golden-machine-heart.webp",
+      "activity-ornament-keepsake": "activity-ornament-keepsake.svg",
+      "activity-ornament-quilt": "activity-ornament-quilt.svg",
     });
     expect(Object.keys(WORKSHOP_ORNAMENT_ART)).toHaveLength(ornaments.length);
     expect(

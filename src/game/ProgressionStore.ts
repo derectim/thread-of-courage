@@ -54,6 +54,8 @@ import {
 } from "./WorkshopCollection";
 import { getCosmeticShopOffer } from "./CosmeticShop";
 import { DEFAULT_MUSIC_VOLUME, DEFAULT_EFFECTS_VOLUME, normalizeVolume } from "../audio/AudioSettings";
+import { createActivityProgress, normalizeActivityProgress, startActivity, moveActivity, type ActivityProgress, type ActivityKind, type ActivityMove } from "./WorkshopActivities";
+import { earnedActivityCollectibles } from "./ActivityRewards";
 import { createCampaignStory, normalizeCampaignStory, offerCampaignStory, type CampaignStoryState } from "./CampaignStory";
 import { isDetourStage, normalizeCampaignDetour, getDetourReward, type CampaignDetour } from "./CampaignDetour";
 import { createCampaignBoonsState, normalizeCampaignBoons, offerCampaignBoon, type CampaignBoonsState } from "./CampaignBoons";
@@ -87,6 +89,7 @@ export interface ProgressionState {
   readonly muted: boolean;
   readonly musicVolume: number;
   readonly effectsVolume: number;
+  readonly activityProgress: ActivityProgress;
   /** The opening story has been completed or deliberately skipped. */
   readonly introSeen: boolean;
   readonly upgrades: UpgradeLevels;
@@ -158,6 +161,7 @@ export function createDefaultState(): ProgressionState {
     muted: false,
     musicVolume: DEFAULT_MUSIC_VOLUME,
     effectsVolume: DEFAULT_EFFECTS_VOLUME,
+    activityProgress: createActivityProgress(),
     introSeen: false,
     upgrades: createUpgradeLevels(),
     stats: {
@@ -310,7 +314,8 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
   const weeklyRouteDefinition = createWeeklyRoute(new Date());
   const needleMastery = normalizeNeedleMasteryState(value.needleMastery);
   const ownedSeasonCosmetics = normalizeStringList(value.ownedSeasonCosmetics);
-  const workshopCollection = normalizeWorkshopCollectionState(value.workshopCollection, { ownedSeasonCosmeticIds: ownedSeasonCosmetics, needleMastery });
+  const activityProgress = normalizeActivityProgress(value.activityProgress);
+  const workshopCollection = normalizeWorkshopCollectionState(value.workshopCollection, { ownedSeasonCosmeticIds: ownedSeasonCosmetics, needleMastery, additionalCollectibleIds: earnedActivityCollectibles(activityProgress) });
   const cosmeticGoalId = typeof value.cosmeticGoalId === "string" && getCosmeticShopOffer(value.cosmeticGoalId) && !workshopCollection.ownedCollectibleIds.includes(value.cosmeticGoalId) ? value.cosmeticGoalId : null;
 
   return {
@@ -322,6 +327,7 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
     muted: value.muted === true,
     musicVolume: normalizeVolume(value.musicVolume, DEFAULT_MUSIC_VOLUME),
     effectsVolume: normalizeVolume(value.effectsVolume, DEFAULT_EFFECTS_VOLUME),
+    activityProgress,
     introSeen: value.introSeen === true,
     upgrades: {
       power: normalizeUpgradeLevel(upgrades.power),
@@ -452,6 +458,18 @@ export function purchaseThreadCosmetic(state: ProgressionState, id: string): Pro
 export function setCosmeticGoal(state: ProgressionState, id: string | null): ProgressionState {
   if (id !== null && (!getCosmeticShopOffer(id) || state.workshopCollection.ownedCollectibleIds.includes(id))) return state;
   return state.cosmeticGoalId === id ? state : { ...state, cosmeticGoalId: id };
+}
+
+export function startWorkshopActivity(state: ProgressionState, kind: ActivityKind, level: number, daily = false, date = new Date()): ProgressionState {
+  const activityProgress = startActivity(state.activityProgress, kind, level, daily, date);
+  return activityProgress === state.activityProgress ? state : { ...state, activityProgress };
+}
+
+export function makeWorkshopMove(state: ProgressionState, action: ActivityMove, date = new Date()): ProgressionState {
+  const result = moveActivity(state.activityProgress, action, date);
+  if (result.progress === state.activityProgress) return state;
+  return { ...state, thread: state.thread + result.reward, activityProgress: result.progress,
+    workshopCollection: normalizeWorkshopCollectionState(state.workshopCollection, { additionalCollectibleIds: earnedActivityCollectibles(result.progress) }) };
 }
 
 export function chooseCampaignDetour(state: ProgressionState, accept: boolean): ProgressionState {

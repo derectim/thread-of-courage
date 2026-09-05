@@ -143,6 +143,7 @@ export interface GameMenuCallbacks {
   readonly onStateChange: (state: ProgressionState) => void;
   readonly onSoundSettings: () => void;
   readonly onCurrencyHelp: (kind: CurrencyKind) => void;
+  readonly onWorkshopActivities: () => void;
   readonly onFullscreen: () => void;
   readonly onLoadLeaderboard: () => Promise<LeaderboardViewModel>;
   readonly onLoadProfile?: () => Promise<PlatformUserProfile | null>;
@@ -537,6 +538,11 @@ const GUIDE_PAGES: readonly GuidePage[] = [
     visualSymbol: "✦",
     points: [
       {
+        iconFileName: "activity-patch-golden-weave.svg",
+        title: "Мини-игры и находки",
+        copy: "Круглая кнопка с лоскутом справа, под Книгой мастерской, открывает Уголок: узоры, комод и заказы Эли. Вход и повторы бесплатны. Первые прохождения дают нити и истории, завершённые серии — украшения. Узор дня приносит 5 нитей раз в день.",
+      },
+      {
         symbol: "☀",
         title: "Каждый день",
         copy: "Три поручения обновляются ежедневно. Раз в день весь набор можно заменить за просмотр видео, пока ни одна награда не получена. Прогресс заменённых поручений сбросится.",
@@ -885,6 +891,7 @@ export default class GameMenu {
       this.callbacks.onSoundSettings();
       return;
     }
+    if (action === "activities-open") { this.callbacks.onWorkshopActivities(); return; }
     if (action === "currency-help") {
       this.callbacks.onCurrencyHelp(target.dataset.id === "premium" ? "premium" : "thread");
       return;
@@ -1553,6 +1560,7 @@ export default class GameMenu {
         <button class="menu-shortcut menu-workshop-trigger" data-action="workshop-open" aria-haspopup="dialog" aria-label="Открыть Книгу мастерской">
           <span class="menu-shortcut-medallion" aria-hidden="true">${renderMenuShortcutIcon("workshop")}</span><strong>Награды</strong>
         </button>
+        <button class="menu-shortcut menu-activities-trigger" data-action="activities-open" aria-haspopup="dialog" aria-label="Мини-игры: Уголок мастерской" title="Уголок мастерской · мини-игры и находки"><span class="menu-shortcut-medallion" aria-hidden="true">${renderMenuShortcutIcon("activities")}</span><strong>Мини-игры</strong></button>
         <button class="menu-shortcut menu-profile-trigger" data-action="profile-open" aria-haspopup="dialog" aria-label="Открыть профиль и гардероб">
           <span class="menu-shortcut-medallion" aria-hidden="true">${this.profile?.photoUrl
             ? `<img class="is-vk-photo" src="${escapeHtml(this.profile.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
@@ -1652,6 +1660,7 @@ export default class GameMenu {
   }
 
   private getCollectibleAcquisition(collectible: WorkshopCollectible): string {
+    if (collectible.source === "workshop-activity") return collectible.sourceId === "patterns" ? "Уголок мастерской · все 12 узоров" : collectible.sourceId === "drawers" ? "Уголок мастерской · 6 уровней комода" : collectible.sourceId === "orders" ? "Уголок мастерской · 6 заказов Эли" : "Уголок мастерской · все три серии мини-игр";
     if (collectible.source === "fragment-shop") return `Лавка · ${getCosmeticShopOffer(collectible.id)?.cost ?? 0} нитей`;
     if (collectible.source === "season") {
       const [track, tier = "?"] = collectible.sourceId.split("-");

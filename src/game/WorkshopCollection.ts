@@ -13,6 +13,7 @@ import {
   resolveWeeklyRouteCollectibleId,
 } from "./WeeklyRoute";
 import { COSMETIC_SHOP_OFFERS } from "./CosmeticShop";
+import { ACTIVITY_COLLECTIBLES } from "./ActivityRewards";
 
 export const WORKSHOP_COLLECTION_VERSION = 1 as const;
 export const WORKSHOP_COLLECTION_SAVE_KEY = "thread-of-courage-workshop-v1";
@@ -36,7 +37,9 @@ export type WorkshopCollectibleSource =
   | "needle-mastery"
   | "weekly-route"
   | "fragment-shop"
-  | "workshop-milestone";
+  | "workshop-milestone"
+  | "workshop-activity";
+// Mini-game keepsakes use the same collection and equipment as existing rewards.
 export type WorkshopCollectibleRarity =
   | "common"
   | "rare"
@@ -248,6 +251,7 @@ export const WORKSHOP_COLLECTIBLES: readonly WorkshopCollectible[] = [
   ...WEEKLY_ROUTE_COLLECTIBLES,
   ...MILESTONE_COLLECTIBLES,
   ...COSMETIC_SHOP_OFFERS.map((offer) => offer.collectible),
+  ...ACTIVITY_COLLECTIBLES,
 ];
 
 export const WORKSHOP_LEVELS: readonly WorkshopLevelDefinition[] = [
@@ -305,8 +309,9 @@ const COLLECTIBLE_BY_ID = new Map(
   WORKSHOP_COLLECTIBLES.map((collectible) => [collectible.id, collectible]),
 );
 
-/** Every patch is a real generated, transparent game asset rather than a glyph. */
+/** Every patch has a dedicated transparent illustration. */
 export const WORKSHOP_PATCH_ART: Readonly<Record<string, string>> = {
+  "activity-patch-golden-weave": "activity-patch-golden-weave.svg",
   "living-thread-01-free-1": "patch-first-stitch.webp",
   "living-thread-01-free-4": "patch-copper-button.webp",
   "living-thread-01-free-8": "patch-patchwork-path.webp",
@@ -342,6 +347,8 @@ export const WORKSHOP_FRAME_ART: Readonly<Record<string, string>> = {
 
 /** Runtime art for every collectible ornament placed in the workshop. */
 export const WORKSHOP_ORNAMENT_ART: Readonly<Record<string, string>> = {
+  "activity-ornament-keepsake": "activity-ornament-keepsake.svg",
+  "activity-ornament-quilt": "activity-ornament-quilt.svg",
   "living-thread-01-free-6": "ornament-small-spool.webp",
   "living-thread-01-free-12": "ornament-apprentice-scissors.webp",
   "living-thread-01-free-19": "ornament-moon-pattern.webp",

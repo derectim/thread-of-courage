@@ -9,6 +9,7 @@ import GameMenu from "../ui/GameMenu";
 import CampaignEventDialog from "../ui/CampaignEventDialog";
 import VictoryDialog from "../ui/VictoryDialog";
 import GameUtilityDialog from "../ui/GameUtilityDialog";
+import WorkshopActivitiesDialog from "../ui/WorkshopActivitiesDialog";
 import type { AudioSettings } from "../audio/AudioSettings";
 import { finishCampaignStory, getCampaignChapter } from "./CampaignStory";
 import { DETOUR_EXTRA_HITS, DETOUR_SPEED_MULTIPLIER, getDetourReward } from "./CampaignDetour";
@@ -301,6 +302,9 @@ export class RaidScene extends Phaser.Scene {
   private campaignEventDialog!: CampaignEventDialog;
   private victoryDialog!: VictoryDialog;
   private utilityDialog!: GameUtilityDialog;
+  private workshopActivitiesDialog!: WorkshopActivitiesDialog;
+  private activityInputWasEnabled = true;
+  private activitySceneWasPaused = false;
   private weeklyRoute: WeeklyRouteDefinition = createWeeklyRoute(new Date());
   private weeklyNode: WeeklyRouteNode | null = null;
   private weeklyModifier: WeeklyModifierDefinition | null = null;
@@ -471,6 +475,13 @@ export class RaidScene extends Phaser.Scene {
       onStateChange: (state) => this.applyMenuProgress(state),
       onSoundSettings: () => this.openAudioSettings(),
       onCurrencyHelp: (kind) => this.utilityDialog.showCurrency(kind),
+      onWorkshopActivities: () => {
+        this.activityInputWasEnabled = this.input.enabled;
+        this.activitySceneWasPaused = this.scene.isPaused();
+        this.input.enabled = false;
+        if (!this.activitySceneWasPaused) this.scene.pause();
+        this.workshopActivitiesDialog.show(this.progression);
+      },
       onFullscreen: () => this.requestFullscreen(),
       onLoadLeaderboard: () => this.loadLeaderboardForMenu(),
       onLoadProfile: () => this.platform.getUserInfo(),
@@ -481,6 +492,16 @@ export class RaidScene extends Phaser.Scene {
     this.campaignEventDialog = new CampaignEventDialog(gameFrame);
     this.victoryDialog = new VictoryDialog(gameFrame);
     this.utilityDialog = new GameUtilityDialog(gameFrame, () => this.sfx.hit());
+    this.workshopActivitiesDialog = new WorkshopActivitiesDialog(gameFrame, {
+      onChange: state => { this.progression = state; this.persistProgress(); },
+      onClose: () => {
+        this.applyMenuProgress(this.progression);
+        this.menu.show(this.progression, "home");
+        this.input.enabled = this.activityInputWasEnabled;
+        if (!this.activitySceneWasPaused) this.scene.resume();
+      },
+      onSound: sound => this.sfx.play(sound),
+    });
 
     this.input.on("pointerdown", this.handlePointerDown, this);
     this.input.keyboard?.on("keydown-SPACE", this.handleKeyboardShot, this);
@@ -497,6 +518,7 @@ export class RaidScene extends Phaser.Scene {
       this.campaignEventDialog.destroy();
       this.victoryDialog.destroy();
       this.utilityDialog.destroy();
+      this.workshopActivitiesDialog.destroy();
       this.sfx.destroy();
     });
 
@@ -684,7 +706,7 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private openAudioSettings(): void {
-    if (!this.utilityDialog || this.utilityDialog.isOpen || this.rewardedAbilityRun.requestInFlight) return;
+    if (!this.utilityDialog || document.querySelector("dialog[open]") || this.rewardedAbilityRun.requestInFlight) return;
     const wasPaused = this.scene.isPaused();
     if (!wasPaused) this.scene.pause();
     this.utilityDialog.showAudio(this.progression, settings => this.applyAudioSettings(settings), () => {

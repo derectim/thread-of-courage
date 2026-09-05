@@ -1,5 +1,6 @@
 /** Small, font-independent symbols with a shared optical size and brass outline. */
 const ICON_PATHS = {
+  activities: '<path d="M5 5h22v22H5Z" fill="#3b8981"/><path d="M8 8h16v16H8Z" fill="none" stroke="#fff1b4" stroke-dasharray="2 3"/><path d="m16 8 3 5 5 3-5 3-3 5-3-5-5-3 5-3Z" fill="#fff1b4"/><path d="M3 13h3m20 6h3M13 3v3m6 20v3"/>',
   guide: '<path d="M11 11a5 5 0 0 1 10 0c0 4-5 4-5 8" fill="none" stroke-width="3"/><circle cx="16" cy="24" r="1.8" stroke="none" fill="currentColor"/>',
   leaderboard: '<path d="m5 10 5 4 6-8 6 8 5-4-3 13H8Z" fill="#fff1b4"/><path d="M9 26h14M9 20h14"/><path d="m16 13 2 3-2 3-2-3Z" fill="#3b8981"/><circle cx="5" cy="8" r="1.5" fill="currentColor" stroke="none"/><circle cx="16" cy="4" r="1.5" fill="currentColor" stroke="none"/><circle cx="27" cy="8" r="1.5" fill="currentColor" stroke="none"/>',
   story: '<path d="M10 5h14a3 3 0 0 1 0 6h-3v12a4 4 0 0 1-4 4H8a3 3 0 0 1 0-6h3V9a4 4 0 0 0-4-4Z" fill="#fff1b4"/><path d="M21 11V8a3 3 0 0 1 3-3M8 21a3 3 0 0 1 0 6M14 13h4M14 17h4" fill="none"/>',
