@@ -14,6 +14,7 @@ import "./style.css";
 import "./ui/menu-polish.css";
 import "./ui/progression-menu.css";
 import "./ui/reward-feedback.css";
+import "./ui/home-shortcuts.css";
 
 const loading = document.querySelector<HTMLElement>("#loading");
 

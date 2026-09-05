@@ -1,3 +1,4 @@
+import { renderMenuShortcutIcon } from "./MenuShortcutIcon";
 import {
   MAX_UPGRADE_LEVEL,
   UPGRADE_DEFINITIONS,
@@ -1521,23 +1522,23 @@ export default class GameMenu {
           <div class="currency-chip premium"><img src="${asset("currency-moon-button.webp")}" alt="" aria-hidden="true" /><strong>${this.state.premium}</strong><small>пуговицы</small></div>
           <button class="round-tool" data-action="sound" aria-label="${this.state.muted ? "Включить звук и музыку" : "Выключить звук и музыку"}">${this.state.muted ? "🔇" : "♪"}</button>
         </header>
-        <button class="menu-guide-trigger" data-action="guide-open" aria-haspopup="dialog" aria-label="Открыть мини-гайд «Как играть»">
-          <span aria-hidden="true">?</span><strong>Как играть</strong>
+        <button class="menu-shortcut menu-guide-trigger" data-action="guide-open" aria-haspopup="dialog" aria-label="Открыть мини-гайд «Как играть»">
+          <span class="menu-shortcut-medallion" aria-hidden="true">${renderMenuShortcutIcon("guide")}</span><strong>Как играть</strong>
         </button>
-        <button class="menu-leaderboard-trigger" data-action="leaderboard-open" aria-haspopup="dialog" aria-label="Открыть таблицу лидеров">
-          <span aria-hidden="true">♛</span><strong>Рейтинг</strong>
+        <button class="menu-shortcut menu-leaderboard-trigger" data-action="leaderboard-open" aria-haspopup="dialog" aria-label="Открыть таблицу лидеров">
+          <span class="menu-shortcut-medallion" aria-hidden="true">${renderMenuShortcutIcon("leaderboard")}</span><strong>Рейтинг</strong>
         </button>
-        <button class="menu-workshop-trigger" data-action="workshop-open" aria-haspopup="dialog" aria-label="Открыть Книгу мастерской">
-          <img src="${asset("ui-workshop-book.webp")}" alt="" aria-hidden="true" draggable="false" /><strong>Награды</strong>
+        <button class="menu-shortcut menu-workshop-trigger" data-action="workshop-open" aria-haspopup="dialog" aria-label="Открыть Книгу мастерской">
+          <span class="menu-shortcut-medallion" aria-hidden="true">${renderMenuShortcutIcon("workshop")}</span><strong>Награды</strong>
         </button>
-        <button class="menu-profile-trigger" data-action="profile-open" aria-haspopup="dialog" aria-label="Открыть профиль и гардероб">
-          ${this.profile?.photoUrl
+        <button class="menu-shortcut menu-profile-trigger" data-action="profile-open" aria-haspopup="dialog" aria-label="Открыть профиль и гардероб">
+          <span class="menu-shortcut-medallion" aria-hidden="true">${this.profile?.photoUrl
             ? `<img class="is-vk-photo" src="${escapeHtml(this.profile.photoUrl)}" alt="" referrerpolicy="no-referrer" />`
-            : `<img class="is-hero-fallback" src="${asset("hero-elya.webp")}" alt="" />`}
+            : renderMenuShortcutIcon("profile")}</span>
           <strong>Профиль</strong>
         </button>
-        <button class="menu-story-trigger" data-action="story-open" aria-haspopup="dialog" aria-label="Посмотреть историю мира">
-          <span aria-hidden="true">✦</span><strong>Пролог</strong>
+        <button class="menu-shortcut menu-story-trigger" data-action="story-open" aria-haspopup="dialog" aria-label="Посмотреть историю мира">
+          <span class="menu-shortcut-medallion" aria-hidden="true">${renderMenuShortcutIcon("story")}</span><strong>Пролог</strong>
         </button>
         <section class="menu-hero-copy">
           <span class="menu-kicker">ТКАНЕВЫЙ РЕЙД</span>
@@ -2383,9 +2384,10 @@ export default class GameMenu {
 
   private renderNextGoal(): string {
     const goal = getNextGoal(this.state);
+    const eyebrow = goal.ready ? (goal.destination === "cosmetics" ? "ДОСТУПНО В ЛАВКЕ" : "НАГРАДА ЖДЁТ") : "ТВОЯ БЛИЖАЙШАЯ ЦЕЛЬ";
     const percent = Math.max(0, Math.min(100, goal.progress / Math.max(1, goal.target) * 100));
     return `<button class="menu-next-goal ${goal.ready ? "is-ready" : ""}" data-action="next-goal" aria-label="${escapeHtml(`${goal.title}. ${goal.detail}. ${goal.buttonLabel}`)}">
-      <img src="${asset(goal.iconFileName)}" alt="" /><span class="next-goal-copy"><small>${goal.ready ? "НАГРАДА ЖДЁТ" : "ТВОЯ БЛИЖАЙШАЯ ЦЕЛЬ"}</small><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.detail)}</span><span class="next-goal-progress" aria-hidden="true"><i style="width:${percent}%"></i></span></span><b>${goal.buttonLabel} →</b>
+      <img src="${asset(goal.iconFileName)}" alt="" /><span class="next-goal-copy"><small>${eyebrow}</small><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.detail)}</span><span class="next-goal-progress" aria-hidden="true"><i style="width:${percent}%"></i></span></span><b>${goal.buttonLabel} →</b>
     </button>`;
   }
 

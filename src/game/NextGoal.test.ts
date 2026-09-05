@@ -16,10 +16,10 @@ describe("one next goal", () => {
     expect(getNextGoal({...initial,seasonPass:addSeasonPassXp(initial.seasonPass,100)})).toMatchObject({destination:"season",ready:true});
   });
   it("moves the collection goal forward after purchase", () => {
-    const initial = {...createDefaultState(),thread:30};
+    const initial = {...createDefaultState(),thread:COSMETIC_SHOP_OFFERS[0].cost};
     expect(getNextGoal(initial)).toMatchObject({destination:"cosmetics",ready:true,title:COSMETIC_SHOP_OFFERS[0].collectible.name});
     const next = {...purchaseThreadCosmetic(initial,COSMETIC_SHOP_OFFERS[0].collectible.id),thread:20};
-    expect(getNextGoal(next)).toMatchObject({destination:"cosmetics",ready:false,target:60,progress:20,title:COSMETIC_SHOP_OFFERS[1].collectible.name});
+    expect(getNextGoal(next)).toMatchObject({destination:"cosmetics",ready:false,target:COSMETIC_SHOP_OFFERS[1].cost,progress:20,title:COSMETIC_SHOP_OFFERS[1].collectible.name});
   });
   it("surfaces a nearby ability unlock with its real threshold", () => {
     expect(getNextGoal({...createDefaultState(),highestStageCleared:4,campaignResumeStage:5})).toMatchObject({destination:"abilities",target:6,progress:4,title:"Магнитный стежок"});

@@ -64,10 +64,6 @@
 }
 
 @media (orientation: portrait), (max-width: 780px), (pointer: coarse) {
-  .game-menu .menu-profile-trigger { top: max(66px, calc(var(--safe-top) + 60px)); }
-  .game-menu .menu-story-trigger { top: max(118px, calc(var(--safe-top) + 112px)); left: max(11px, calc(var(--safe-left) + 7px)); }
-  .game-menu .menu-guide-trigger { top: max(170px, calc(var(--safe-top) + 164px)); }
-  .game-menu :is(.menu-profile-trigger, .menu-story-trigger, .menu-guide-trigger, .menu-leaderboard-trigger, .menu-workshop-trigger) { width: 44px; height: 44px; }
   .game-menu .menu-nav small { font-size: 11px; overflow: visible; text-overflow: clip; }
   .game-menu .menu-nav button { padding-inline: 1px; }
 }
