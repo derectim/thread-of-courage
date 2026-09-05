@@ -2489,16 +2489,18 @@ export default class GameMenu {
       const unlocked = tier.tier <= status.unlockedTier;
       const available = !claimed && unlocked && (track === "free" || enabled);
       const equipped = collection.equipped[collectible.kind] === collectible.id;
-      const label = claimed ? "✓ Получено" : available ? "Можно забрать" : track === "premium" && !enabled ? "Золотая дорожка" : `Уровень ${tier.tier}`;
+      const applyLabel = equipped ? "Снять" : collectible.kind === "workshop-ornament" ? "Поставить" : collectible.kind.startsWith("needle-") ? "Включить" : "Надеть";
+      const label = claimed ? `${applyLabel}: ${reward.name}. Получено.` : available ? `Забрать: ${reward.name}` : `${reward.name}. Нужен уровень ${tier.tier}, ${tier.requiredXp} XP${track === "premium" && !enabled ? " и золотая дорожка" : ""}.`;
       const displayName = collectibleDisplayName(collectible.name).replace(/^(Нашивка|Рамка)\s*/, "").replace(/^«|»$/g, "");
-      return `<div class="pass-reward ${track === "free" ? "is-free" : "is-gold"} ${claimed ? "is-claimed" : available ? "is-ready" : "is-locked"}">
-        <div class="pass-reward-art">${collectible.kind === "title" ? '<span class="pass-title-art" aria-hidden="true"><span>♛</span><b>Эля</b><i>✦ ✦ ✦</i></span>' : this.renderCollectiblePreview(collectible)}<span class="pass-reward-seal" aria-hidden="true">${claimed ? "✓" : available ? "✦" : '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="10" width="14" height="11" rx="3" fill="currentColor" stroke="none"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v3" stroke="#766353"/></svg>'}</span></div>
-        <small class="pass-reward-kind">${WORKSHOP_KIND_LABELS[collectible.kind]}</small><h4>${escapeHtml(displayName)}</h4>
-        <span class="pass-reward-status">${label}</span>
-        ${claimed
-          ? `<button data-action="workshop-toggle" data-id="${collectible.id}" aria-pressed="${equipped}">${equipped ? "✓ Выбрано · снять" : collectible.kind === "workshop-ornament" ? "Поставить" : collectible.kind.startsWith("needle-") ? "Включить" : "Надеть"}</button>`
-          : `<button data-action="season-claim" data-tier="${tier.tier}" data-track="${track}" ${available ? "" : "disabled"} aria-label="${available ? "Забрать" : "Закрыто:"} ${escapeHtml(reward.name)}${available ? "" : `, нужен уровень ${tier.tier}${track === "premium" && !enabled ? " и золотая дорожка" : ""}`}">${available ? "Забрать" : track === "premium" && !enabled ? "Нужна золотая" : `Нужно ${tier.requiredXp} XP`}</button>`}
-      </div>`;
+      return `<button type="button" class="pass-reward ${track === "free" ? "is-free" : "is-gold"} ${claimed ? "is-claimed" : available ? "is-ready" : "is-locked"}" aria-label="${escapeHtml(label)}" ${claimed
+        ? `data-action="workshop-toggle" data-id="${collectible.id}" aria-pressed="${equipped}"`
+        : `data-action="season-claim" data-tier="${tier.tier}" data-track="${track}" ${available ? "" : "disabled"}`}>
+        <span class="pass-reward-art">${collectible.kind === "title" ? '<span class="pass-title-art" aria-hidden="true"><span>♛</span><b>Эля</b><i>✦ ✦ ✦</i></span>' : this.renderCollectiblePreview(collectible)}<span class="pass-reward-seal" aria-hidden="true">${claimed
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 5L19 7"/></svg>'
+          : available ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12m-5-5 5 5 5-5M5 19h14"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="10" width="14" height="11" rx="3" fill="currentColor" stroke="none"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v3" stroke="#766353"/></svg>'}</span></span>
+        <strong class="pass-reward-name">${escapeHtml(displayName)}</strong><small class="pass-reward-kind">${WORKSHOP_KIND_LABELS[collectible.kind]}</small>
+      </button>`;
     };
 
     return `<section class="pass-album" aria-labelledby="season-album-title">
@@ -2514,7 +2516,7 @@ export default class GameMenu {
           <button data-action="shop-page" data-page="tasks">Как получить опыт? →</button>
         </div>
       </div>
-      <div class="pass-route-note"><span>${ready ? `✦ Ждут наград: ${ready}` : "Украшения за игру"}</span><button data-action="season-jump">${ready ? "К награде ↓" : "К своему уровню ↓"}</button></div>
+      <div class="pass-route-note"><span>Нажми на награду: забрать или примерить</span><button data-action="season-jump">${ready ? `К наградам · ${ready} ↓` : "К своему уровню ↓"}</button></div>
       <div class="pass-track-headings"><div><strong>Бесплатно</strong><small>Играй и забирай</small></div><span aria-hidden="true">✦</span><div><strong>Золотая нить</strong><small>${enabled ? "✓ Дорожка открыта" : `Вся дорожка · ${SEASON_PREMIUM_COST} пуговиц`}</small></div></div>
       <div class="pass-tier-list">${SEASON_PASS_TIERS.map((tier) => {
         const unlocked = tier.tier <= status.unlockedTier;
