@@ -52,6 +52,21 @@ function getQuest(id: QuestId) {
 }
 
 describe("ProgressionStore v3 persistence", () => {
+  it("saves separate audio levels, including zero, without changing wallets", () => {
+    const storage = new MemoryStorage();
+    const state = createState({ musicVolume: 0, effectsVolume: 0.37, muted: true, thread: 270, premium: 9 });
+    save(state, storage);
+    expect(load(storage)).toEqual(state);
+  });
+
+  it("adds safe audio defaults to older saves and clamps malformed levels", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(PROGRESSION_SAVE_KEY, JSON.stringify({ version: 3, thread: 270, premium: 9, muted: true }));
+    expect(load(storage)).toMatchObject({ musicVolume: 0.7, effectsVolume: 0.8, muted: true, thread: 270, premium: 9 });
+    storage.setItem(PROGRESSION_SAVE_KEY, JSON.stringify({ ...createState(), musicVolume: -2, effectsVolume: 3 }));
+    expect(load(storage)).toMatchObject({ musicVolume: 0, effectsVolume: 1 });
+  });
+
   it("returns independent fresh defaults when storage is unavailable", () => {
     const first = load(null);
     const second = load(null);

@@ -7,6 +7,9 @@ import type {
 } from "../platform/PlatformAdapter";
 import GameMenu from "../ui/GameMenu";
 import CampaignEventDialog from "../ui/CampaignEventDialog";
+import VictoryDialog from "../ui/VictoryDialog";
+import GameUtilityDialog from "../ui/GameUtilityDialog";
+import type { AudioSettings } from "../audio/AudioSettings";
 import { finishCampaignStory, getCampaignChapter } from "./CampaignStory";
 import { DETOUR_EXTRA_HITS, DETOUR_SPEED_MULTIPLIER, getDetourReward } from "./CampaignDetour";
 import StoryIntro, {
@@ -296,6 +299,8 @@ export class RaidScene extends Phaser.Scene {
   private stage = 1;
   private raidMode: RaidMode = "campaign";
   private campaignEventDialog!: CampaignEventDialog;
+  private victoryDialog!: VictoryDialog;
+  private utilityDialog!: GameUtilityDialog;
   private weeklyRoute: WeeklyRouteDefinition = createWeeklyRoute(new Date());
   private weeklyNode: WeeklyRouteNode | null = null;
   private weeklyModifier: WeeklyModifierDefinition | null = null;
@@ -426,6 +431,8 @@ export class RaidScene extends Phaser.Scene {
     );
     this.shieldCharges = this.getStartingWardCharges();
     this.sfx.setMuted(this.progression.muted);
+    this.sfx.setMusicVolume(this.progression.musicVolume);
+    this.sfx.setEffectsVolume(this.progression.effectsVolume);
     this.sfx.setMusicTheme("menu");
 
     this.currentRoom = getRoomForStage(this.stage);
@@ -462,11 +469,8 @@ export class RaidScene extends Phaser.Scene {
       onStartWeekly: () => void this.startWeeklyRouteFromMenu(),
       onShowStory: () => void this.replayStoryFromMenu(),
       onStateChange: (state) => this.applyMenuProgress(state),
-      onToggleSound: (muted) => {
-        this.sfx.setMuted(muted);
-        this.soundButton.setText(muted ? "🔇" : "♪");
-        this.sfx.ui();
-      },
+      onSoundSettings: () => this.openAudioSettings(),
+      onCurrencyHelp: (kind) => this.utilityDialog.showCurrency(kind),
       onFullscreen: () => this.requestFullscreen(),
       onLoadLeaderboard: () => this.loadLeaderboardForMenu(),
       onLoadProfile: () => this.platform.getUserInfo(),
@@ -475,6 +479,8 @@ export class RaidScene extends Phaser.Scene {
     this.menu.show(this.progression);
     this.bossBoonDialog = new BossBoonDialog(menuRoot.parentElement!, (id, destination) => this.resolveBossBoon(id, destination));
     this.campaignEventDialog = new CampaignEventDialog(gameFrame);
+    this.victoryDialog = new VictoryDialog(gameFrame);
+    this.utilityDialog = new GameUtilityDialog(gameFrame, () => this.sfx.hit());
 
     this.input.on("pointerdown", this.handlePointerDown, this);
     this.input.keyboard?.on("keydown-SPACE", this.handleKeyboardShot, this);
@@ -489,6 +495,8 @@ export class RaidScene extends Phaser.Scene {
       this.menu.destroy();
       this.bossBoonDialog.destroy();
       this.campaignEventDialog.destroy();
+      this.victoryDialog.destroy();
+      this.utilityDialog.destroy();
       this.sfx.destroy();
     });
 
@@ -673,6 +681,29 @@ export class RaidScene extends Phaser.Scene {
     this.threadText?.setText("✦ " + this.progression.thread + " нитей");
     this.drawLoadedHeroNeedle(0, true);
     if (this.currentRoom) this.updateRoomBackground(this.currentRoom);
+  }
+
+  private openAudioSettings(): void {
+    if (!this.utilityDialog || this.utilityDialog.isOpen || this.rewardedAbilityRun.requestInFlight) return;
+    const wasPaused = this.scene.isPaused();
+    if (!wasPaused) this.scene.pause();
+    this.utilityDialog.showAudio(this.progression, settings => this.applyAudioSettings(settings), () => {
+      this.inputCooldownUntil = this.time.now + 240;
+      if (!wasPaused) this.scene.resume();
+    });
+  }
+
+  private applyAudioSettings(settings: AudioSettings): void {
+    const muteChanged = this.progression.muted !== settings.muted;
+    this.progression = { ...this.progression, muted: settings.muted, musicVolume: settings.musicVolume, effectsVolume: settings.effectsVolume };
+    this.sfx.setMusicVolume(settings.musicVolume);
+    this.sfx.setEffectsVolume(settings.effectsVolume);
+    if (muteChanged) this.sfx.setMuted(settings.muted);
+    this.soundButton.setText(settings.muted ? "🔇" : "♪");
+    this.menu.syncAudioSettings(settings);
+    // Audio preferences are still writable during a reward-free practice fight.
+    saveProgression(this.progression);
+    this.game.events.emit(PROGRESSION_SAVED_EVENT, this.progression);
   }
 
   private async loadLeaderboardForMenu(): Promise<LeaderboardViewModel> {
@@ -1020,14 +1051,7 @@ export class RaidScene extends Phaser.Scene {
         event: Phaser.Types.Input.EventData,
       ) => {
         event.stopPropagation();
-        this.sfx.setMuted(!this.sfx.isMuted());
-        this.soundButton.setText(this.sfx.isMuted() ? "🔇" : "♪");
-        this.sfx.ui();
-        this.progression = {
-          ...this.progression,
-          muted: this.sfx.isMuted(),
-        };
-        this.persistProgress();
+        this.openAudioSettings();
       },
     );
 
@@ -3825,13 +3849,13 @@ export class RaidScene extends Phaser.Scene {
       this.sfx.win();
       this.time.delayedCall(420, () => {
         if (this.state !== "won") return;
-        this.showVictoryOverlay("Тайник открыт!", `Награда: ${reward} нитей.\nОсновной путь продолжается с этапа ${this.progression.campaignResumeStage}.`, this.currentRoom.accentColor, "РИСК ОПРАВДАЛСЯ");
+        this.showVictoryOverlay("Тайник открыт!", "Страж побеждён, и катушка теперь твоя.", "РИСК ОПРАВДАЛСЯ", reward);
       });
       return;
     }
     if (this.raidMode === "practice") {
       this.sfx.win();
-      this.time.delayedCall(420, () => this.showVictoryOverlay("Узор разгадан!", "Тренировка завершена.\nНаграды и рекорд не меняются.\nПовтори бой, чтобы закрепить навык.", this.currentRoom.accentColor, "ТРЕНИРОВКА"));
+      this.time.delayedCall(420, () => this.showVictoryOverlay("Узор разгадан!", "Тренировка завершена.\nПовтори бой, чтобы закрепить навык.", "ТРЕНИРОВКА"));
       return;
     }
     const firstWeeklyClear =
@@ -3940,17 +3964,14 @@ export class RaidScene extends Phaser.Scene {
             ? "Мини-босс зашит!"
             : "Кошмар зашит!",
         this.currentMonster.name +
-          " больше не тревожит комнату.\n" +
-          (reward > 0
-            ? `Награда: ${reward} нитей`
-            : "Повторный узел: без дополнительных нитей") +
+          " больше не тревожит комнату." +
           weeklyProgress,
-        this.currentRoom.accentColor,
         this.currentMonster.isBoss
           ? "КОМНАТА ОЧИЩЕНА"
           : this.currentMonster.isMiniBoss
             ? "ПРОМЕЖУТОЧНАЯ УГРОЗА СНЯТА"
             : "ПОБЕДА",
+        reward,
       );
     });
   }
@@ -4339,148 +4360,26 @@ export class RaidScene extends Phaser.Scene {
   private showVictoryOverlay(
     title: string,
     body: string,
-    accent: number,
-    eyebrow?: string,
+    eyebrow = "ПОБЕДА",
+    reward: number | null = null,
   ): void {
+    if (this.state !== "won") return;
     this.closeOverlay();
-
-    const overlay = this.add.container(0, 0).setDepth(100);
-    const shade = this.add
-      .rectangle(
-        WIDTH / 2,
-        HEIGHT / 2,
-        this.scale.gameSize.width,
-        this.scale.gameSize.height,
-        0x091316,
-        0.68,
-      )
-      .setName("viewport-shade")
-      .setInteractive();
-    const card = this.add.graphics();
-    card.fillStyle(0x25324a, 0.98);
-    card.fillRoundedRect(38, 174, WIDTH - 76, 420, 26);
-    card.lineStyle(3, accent, 0.58);
-    card.strokeRoundedRect(38, 174, WIDTH - 76, 420, 26);
-
-    const eyebrowText = this.add
-      .text(WIDTH / 2, 215, eyebrow ?? "РЕЙД ЗАВЕРШЁН", {
-        fontFamily: "Inter, Segoe UI, sans-serif",
-        fontSize: "11px",
-        fontStyle: "bold",
-        color: Phaser.Display.Color.IntegerToColor(accent).rgba,
-        letterSpacing: 1.2,
-        align: "center",
-        wordWrap: { width: 310 },
-      })
-      .setOrigin(0.5);
-    const titleText = this.add
-      .text(WIDTH / 2, 267, title, {
-        fontFamily: "Georgia, serif",
-        fontSize: "30px",
-        fontStyle: "bold",
-        color: "#fff6db",
-        align: "center",
-        wordWrap: { width: 310 },
-      })
-      .setOrigin(0.5);
-    const bodyText = this.add
-      .text(WIDTH / 2, 355, body, {
-        fontFamily: "Inter, Segoe UI, sans-serif",
-        fontSize: "14px",
-        color: "#d9ddce",
-        align: "center",
-        lineSpacing: 7,
-        wordWrap: { width: 294 },
-      })
-      .setOrigin(0.5);
-    const continueButton = this.add
-      .rectangle(WIDTH / 2, 469, 284, 58, accent, 1)
-      .setStrokeStyle(2, 0xf2e3c6, 0.3)
-      .setInteractive({ useHandCursor: true });
-    const continueText = this.add
-      .text(
-        WIDTH / 2,
-        469,
-        this.raidMode === "practice" ? "Повторить тренировку" : this.raidMode === "weekly" && this.weeklyNode?.order === 5
-          ? "Завершить маршрут"
-          : "Продолжить путь",
-        {
-        fontFamily: "Inter, Segoe UI, sans-serif",
-        fontSize: "16px",
-        fontStyle: "bold",
-        color: "#182033",
-        },
-      )
-      .setOrigin(0.5);
-    const menuButton = this.add
-      .rectangle(WIDTH / 2, 539, 284, 50, 0x182033, 0.92)
-      .setStrokeStyle(2, accent, 0.72)
-      .setInteractive({ useHandCursor: true });
-    const menuText = this.add
-      .text(WIDTH / 2, 539, "В меню", {
-        fontFamily: "Inter, Segoe UI, sans-serif",
-        fontSize: "15px",
-        fontStyle: "bold",
-        color: "#f2e3c6",
-      })
-      .setOrigin(0.5);
-
-    continueButton.on("pointerover", () => continueButton.setScale(1.02));
-    continueButton.on("pointerout", () => continueButton.setScale(1));
-    menuButton.on("pointerover", () => menuButton.setScale(1.02));
-    menuButton.on("pointerout", () => menuButton.setScale(1));
-
-    let choiceResolved = false;
-    const choose = (choice: VictoryChoice): void => {
-      if (choiceResolved) return;
-      choiceResolved = true;
-      continueButton.disableInteractive();
-      menuButton.disableInteractive();
-      this.resolveVictory(choice);
-    };
-
-    continueButton.on(
-      "pointerdown",
-      (
-        _pointer: Phaser.Input.Pointer,
-        _localX: number,
-        _localY: number,
-        event: Phaser.Types.Input.EventData,
-      ) => {
-        event.stopPropagation();
-        continueButton.setScale(0.98);
-        choose("continue");
-      },
-    );
-    menuButton.on(
-      "pointerdown",
-      (
-        _pointer: Phaser.Input.Pointer,
-        _localX: number,
-        _localY: number,
-        event: Phaser.Types.Input.EventData,
-      ) => {
-        event.stopPropagation();
-        menuButton.setScale(0.98);
-        choose("menu");
-      },
-    );
-
-    overlay.add([
-      shade,
-      card,
-      eyebrowText,
-      titleText,
-      bodyText,
-      continueButton,
-      continueText,
-      menuButton,
-      menuText,
-    ]);
-    this.overlay = overlay;
+    const practice = this.raidMode === "practice";
+    const weeklyFinal = this.raidMode === "weekly" && this.weeklyNode?.order === 5;
+    this.victoryDialog.show({
+      title, body, eyebrow, reward,
+      monsterArt: `${this.currentMonster.textureKeys?.[0] ?? "menu-icon-bestiary"}.webp`,
+      monsterName: this.currentMonster.name,
+      continueLabel: practice ? "Повторить тренировку" : weeklyFinal ? "Завершить маршрут" : "Продолжить путь",
+      nextStep: practice ? "Прогресс похода сохранён" : weeklyFinal ? "Пять узлов позади · эмблема ждёт" : this.raidMode === "weekly" ? `Дальше: узел ${(this.weeklyNode?.order ?? 1) + 1} из 5` : `Дальше: этап ${this.progression.campaignResumeStage}`,
+    }, choice => {
+      if (this.state === "won") this.resolveVictory(choice);
+    });
   }
 
   private closeOverlay(): void {
+    this.victoryDialog?.hide();
     this.overlay?.destroy(true);
     this.overlay = null;
   }

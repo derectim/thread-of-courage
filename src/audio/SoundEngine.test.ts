@@ -262,7 +262,7 @@ describe('SoundEngine without browser audio APIs', () => {
 
     const context = FakeAudioContext.instances[0];
     const storySource = musicSources(context)[0];
-    const storyVoice = context.gains[2].gain;
+    const storyVoice = context.gains[3].gain;
     expect(storySource.loopEnd).toBeCloseTo(15, 3);
     expect(storyVoice.exponentialRampToValueAtTime).toHaveBeenCalledWith(
       1.1,
@@ -512,6 +512,58 @@ describe('SoundEngine without browser audio APIs', () => {
     expect(() => engine.boss()).not.toThrow();
     await expect(engine.unlock()).resolves.toBe(false);
 
+    engine.destroy();
+  });
+
+  it('retains independent volumes selected before unlock, including a silent music channel', async () => {
+    const fakeDocument = installFakeBrowserAudio();
+    const engine = new SoundEngine();
+    engine.setMusicVolume(0);
+    engine.setEffectsVolume(0.4);
+    engine.setMusicTheme('raid');
+    expect(FakeAudioContext.instances).toHaveLength(0);
+    fakeDocument.dispatchEvent(new Event('pointerdown'));
+    await settleAudioPromises();
+    const context = FakeAudioContext.instances[0];
+    expect(context.gains[1].gain.value).toBe(0);
+    expect(context.gains[2].gain.value).toBeCloseTo(0.5);
+    engine.setMusicDucking(0.32);
+    expect(context.gains[1].gain.value).toBe(0);
+    engine.setMusicVolume(0.35);
+    expect(context.gains[1].gain.value).toBeCloseTo(0.16);
+    expect(context.gains[2].gain.value).toBeCloseTo(0.5);
+    engine.setEffectsVolume(0);
+    expect(context.gains[2].gain.value).toBe(0);
+    expect(context.gains[1].gain.value).toBeCloseTo(0.16);
+    engine.destroy();
+  });
+
+  it('preserves both levels through mute and platform resume, and bounds invalid levels', async () => {
+    const fakeDocument = installFakeBrowserAudio();
+    const engine = new SoundEngine();
+    engine.setMusicTheme('menu');
+    fakeDocument.dispatchEvent(new Event('pointerdown'));
+    await settleAudioPromises();
+    const context = FakeAudioContext.instances[0];
+    engine.setMusicVolume(1);
+    engine.setEffectsVolume(0.24);
+    engine.setMuted(true);
+    engine.pauseForPlatform();
+    engine.setMuted(false);
+    expect(context.gains[0].gain.value).toBe(0);
+    engine.resumeForPlatform();
+    fakeDocument.dispatchEvent(new Event('pointerdown'));
+    await settleAudioPromises();
+    expect(context.gains[1].gain.value).toBeCloseTo(1 / 0.7);
+    expect(context.gains[2].gain.value).toBeCloseTo(0.3);
+    engine.setMusicVolume(-1);
+    engine.setEffectsVolume(2);
+    expect(context.gains[1].gain.value).toBe(0);
+    expect(context.gains[2].gain.value).toBeCloseTo(1.25);
+    engine.setMusicVolume(NaN);
+    engine.setEffectsVolume(Infinity);
+    expect(context.gains[1].gain.value).toBe(1);
+    expect(context.gains[2].gain.value).toBe(1);
     engine.destroy();
   });
 

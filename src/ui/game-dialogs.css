@@ -1,0 +1,95 @@
+.game-utility-dialog, .victory-dialog { box-sizing: border-box; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); margin: auto; padding: 0; overflow: hidden; border: 2px solid #d7b77e; border-radius: 28px; box-shadow: 0 24px 90px #0009; color: #fff2d5; background: #302940; }
+.game-utility-dialog[open], .victory-dialog[open] { display: flex; flex-direction: column; }
+.game-utility-dialog::backdrop, .victory-dialog::backdrop { background: #0c1422bd; backdrop-filter: blur(5px); }
+.game-utility-dialog button, .victory-dialog button { cursor: pointer; font-family: inherit; }
+.game-utility-dialog button:focus-visible, .game-utility-dialog input:focus-visible, .victory-dialog button:focus-visible { outline: 3px solid #fff1a1; outline-offset: 3px; }
+.game-utility-dialog { background: linear-gradient(135deg, #51405c, #254e51); }
+.game-utility-dialog header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px 0; }
+.utility-kicker { font-size: 11px; letter-spacing: .13em; font-weight: 850; color: #e9c789; }
+.utility-close { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 2px solid #faadb0; box-shadow: 0 3px 0 #771b35; background: linear-gradient(#e75266, #b82040); color: #fff6de; font-size: 27px; }
+.utility-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 24px 22px; }
+.game-utility-dialog h2 { font: bold 29px/1.15 Georgia, serif; margin: 8px 0 12px; }
+.game-utility-dialog p { font-size: 16px; line-height: 1.5; }
+.game-utility-dialog small { font-size: 14px; line-height: 1.4; }
+.game-utility-dialog footer { flex: none; padding: 16px 24px 20px; border-top: 1px dashed #e9c78980; background: #15282a38; }
+.utility-primary { width: 100%; min-height: 48px; border: 2px solid #ffe6a1; border-radius: 16px; background: linear-gradient(#ffdc73, #df982f); color: #51361f; box-shadow: 0 4px 0 #936134; font-size: 17px; font-weight: 850; }
+.currency-explanation { text-align: center; }
+.utility-medallion { display: grid; place-items: center; width: 110px; height: 110px; margin: 12px auto 18px; border: 2px dashed #d7b77e; outline: 5px solid #eac17e21; border-radius: 50%; background: radial-gradient(circle, #dab46e61, #e7c78908); }
+.utility-medallion img { width: 76px; height: 84px; object-fit: contain; filter: drop-shadow(0 5px 7px #0006); }
+.utility-coming-soon { display: inline-block; margin-top: 8px; padding: 8px 15px; border: 1px solid #d9c89b66; border-radius: 30px; background: #15252d60; font-size: 14px; color: #f3d9aa; }
+.audio-intro { color: #e0dbca; margin-bottom: 22px; }
+.audio-setting { margin: 16px 0; padding: 14px 16px; border: 1px solid #edd1a743; border-radius: 16px; background: #121c2b52; }
+.audio-setting label { display: flex; align-items: center; gap: 10px; }
+.audio-setting label > span:nth-child(2) { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.audio-setting strong { font-size: 17px; line-height: 1.2; }
+.audio-setting small { color: #d9d6c9; font-size: 12px; }
+.audio-setting-symbol { font-size: 29px; color: #f6d887; }
+.audio-setting output { min-width: 44px; text-align: right; font-size: 17px; font-weight: 800; color: #ffe1a2; font-variant-numeric: tabular-nums; }
+.audio-setting input { appearance: none; -webkit-appearance: none; display: block; width: 100%; height: 30px; margin: 10px 0 0; background: transparent; cursor: pointer; touch-action: pan-y; }
+.audio-setting input::-webkit-slider-runnable-track { height: 8px; border-radius: 8px; background: linear-gradient(to right, #f3ca71 var(--level), #192633 var(--level)); }
+.audio-setting input::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; margin-top: -9px; border: 3px solid #ffeab8; border-radius: 50%; background: #e5b45c; box-shadow: 0 3px 5px #0005; }
+.audio-setting input::-moz-range-track { height: 8px; border-radius: 8px; background: #192633; }
+.audio-setting input::-moz-range-progress { height: 8px; border-radius: 8px; background: #f3ca71; }
+.audio-setting input::-moz-range-thumb { width: 22px; height: 22px; border: 3px solid #ffeab8; border-radius: 50%; background: #e5b45c; }
+.audio-mute { width: 100%; min-height: 46px; border: 1px solid #d9c39882; border-radius: 12px; color: #ffedc7; background: #19283360; font-size: 14px; font-weight: 750; }
+.audio-mute[aria-pressed="true"] { background: #ad49674d; border-color: #df9caf; }
+.audio-save-note { display: block; color: #d5d8c9; margin-top: 14px; }
+
+.victory-dialog { width: min(450px, calc(100% - 24px)); background: radial-gradient(ellipse at 50% 14%, #56888155, transparent 55%), repeating-linear-gradient(45deg, #ffffff03 0 1px, transparent 1px 5px), linear-gradient(145deg, #433249, #183d43); }
+.victory-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 22px 28px 18px; text-align: center; }
+.victory-ribbon { display: inline-flex; align-items: center; gap: 12px; max-width: 100%; padding: 8px 15px; border: 1px solid #ebc97c6b; border-radius: 30px; background: #f4ce7d15; color: #f6d892; font-size: 11px; line-height: 1.3; font-weight: 850; letter-spacing: .12em; }
+.victory-ribbon span { color: #ffe9b5; font-size: 15px; }
+.victory-portrait { position: relative; width: 134px; height: 134px; margin: 20px auto 16px; display: grid; place-items: center; border: 2px dashed #e6c38c; border-radius: 50%; outline: 7px solid #eec99212; background: radial-gradient(circle, #f5d4934d, #8cb4a114 65%); }
+.victory-portrait img { width: 116px; height: 116px; object-fit: contain; filter: drop-shadow(0 6px 8px #081b2580); animation: victory-unfold .35s ease-out both; }
+.victory-seal { position: absolute; right: -5px; bottom: 0; display: grid; place-items: center; width: 36px; height: 36px; border: 2px solid #ffebbb; border-radius: 50%; background: #498b72; box-shadow: 0 3px 0 #224839; color: #fff4cf; font-size: 23px; }
+.victory-dialog h2 { font: 800 31px/1.12 Georgia, serif; margin: 0 0 12px; color: #fff0c6; text-shadow: 0 3px 0 #172b354f; }
+.victory-story { margin: 0 auto 18px; max-width: 350px; color: #e0e1d3; font-size: 15px; line-height: 1.5; }
+.victory-reward { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 14px 18px; border: 1px solid #edc77d8c; border-radius: 17px; background: linear-gradient(110deg, #f5d79025, #b5dace17); text-align: left; box-shadow: inset 0 1px #ffffff15; }
+.victory-reward img { width: 48px; height: 64px; object-fit: contain; filter: drop-shadow(0 3px 4px #0004); }
+.victory-reward > span { display: grid; gap: 5px; }
+.victory-reward small { font-size: 10px; letter-spacing: .12em; font-weight: 800; color: #f7d99e; }
+.victory-reward strong { font-size: 27px; line-height: 1.15; color: #ffe3a5; }
+.victory-reward em { font-style: normal; font-size: 12px; line-height: 1.3; color: #e4e6d7; }
+.victory-practice-note { padding: 14px; border: 1px dashed #c4d5b85c; border-radius: 14px; color: #dddfcd; font-size: 14px; }
+.victory-dialog footer { flex: none; display: grid; gap: 10px; padding: 16px 26px 20px; border-top: 1px dashed #d1b67b66; background: #111d293b; text-align: center; }
+.victory-dialog footer > small { color: #d9dec9; font-size: 13px; margin-bottom: 3px; }
+.victory-continue { min-height: 52px; padding: 10px 14px; border: 2px solid #ffe5a2; border-radius: 16px; color: #54321d; background: linear-gradient(#ffe181, #eeae3d 60%, #d58c30); box-shadow: 0 4px 0 #925129, inset 0 2px #fff2b7; font-size: 17px; font-weight: 850; }
+.victory-continue > span { margin-left: 6px; }
+.victory-menu { min-height: 40px; padding: 7px 14px; border: 1px solid #d6c39370; border-radius: 13px; color: #ecdfc0; background: #1930396b; font-size: 14px; font-weight: 750; }
+.victory-continue:hover, .utility-primary:hover { filter: brightness(1.07); }
+.victory-continue:active, .utility-primary:active { transform: translateY(2px); box-shadow: 0 2px 0 #925129; }
+.game-menu button.currency-chip { cursor: pointer; font-family: inherit; text-align: left; }
+.game-menu button.currency-chip:focus-visible { outline: 3px solid #ffe2a0; outline-offset: 3px; }
+.game-menu button.currency-chip:hover { border-color: #dfc692a3; }
+
+/* The larger profile label must fit together with the record number. */
+.game-menu .profile-showcase-side { align-items: stretch; }
+.game-menu .profile-showcase-side .profile-record { height: auto; min-height: 84px; align-self: stretch; align-content: center; gap: 6px; padding: 10px 7px; text-align: center; }
+.game-menu .profile-showcase-side .profile-record span { font-size: 12px; line-height: 1.2; letter-spacing: .02em; }
+.game-menu .profile-showcase-side .profile-record strong { font-size: 25px; line-height: 1.1; overflow-wrap: anywhere; }
+.game-menu .profile-showcase-patch { align-self: center; }
+@keyframes victory-unfold { from { transform: scale(.85) rotate(-5deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (max-width: 480px) {
+  .utility-scroll { padding-inline: 18px; }
+  .game-utility-dialog h2 { font-size: 27px; }
+  .audio-setting { padding-inline: 12px; }
+  .game-menu .profile-showcase-side .profile-record { min-height: 48px; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 8px 10px; text-align: left; }
+  .game-menu .profile-showcase-side .profile-record strong { font-size: 23px; }
+}
+@media (max-height: 700px) {
+  .victory-scroll { padding: 16px 20px 14px; }
+  .victory-portrait { width: 94px; height: 94px; margin: 14px auto; }
+  .victory-portrait img { width: 84px; height: 84px; }
+  .victory-dialog h2 { font-size: 28px; }
+  .victory-story { margin-bottom: 12px; font-size: 14px; }
+  .victory-reward { padding: 10px 14px; }
+  .victory-reward img { height: 48px; width: 38px; }
+  .victory-dialog footer { padding: 12px 20px 16px; gap: 8px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .victory-dialog { width: min(680px, calc(100% - 24px)); }
+  .victory-dialog[open] { flex-direction: row; align-items: stretch; }
+  .victory-scroll { flex: 1; }
+  .victory-dialog footer { width: 240px; justify-content: stretch; align-content: center; border-top: 0; border-left: 1px dashed #d1b67b66; }
+}
+@media (prefers-reduced-motion: reduce) { .victory-portrait img { animation: none; } }

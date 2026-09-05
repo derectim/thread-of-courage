@@ -53,6 +53,7 @@ import {
   type WorkshopCollectionState,
 } from "./WorkshopCollection";
 import { getCosmeticShopOffer } from "./CosmeticShop";
+import { DEFAULT_MUSIC_VOLUME, DEFAULT_EFFECTS_VOLUME, normalizeVolume } from "../audio/AudioSettings";
 import { createCampaignStory, normalizeCampaignStory, offerCampaignStory, type CampaignStoryState } from "./CampaignStory";
 import { isDetourStage, normalizeCampaignDetour, getDetourReward, type CampaignDetour } from "./CampaignDetour";
 import { createCampaignBoonsState, normalizeCampaignBoons, offerCampaignBoon, type CampaignBoonsState } from "./CampaignBoons";
@@ -84,6 +85,8 @@ export interface ProgressionState {
   readonly thread: number;
   readonly premium: number;
   readonly muted: boolean;
+  readonly musicVolume: number;
+  readonly effectsVolume: number;
   /** The opening story has been completed or deliberately skipped. */
   readonly introSeen: boolean;
   readonly upgrades: UpgradeLevels;
@@ -153,6 +156,8 @@ export function createDefaultState(): ProgressionState {
     thread: 0,
     premium: 0,
     muted: false,
+    musicVolume: DEFAULT_MUSIC_VOLUME,
+    effectsVolume: DEFAULT_EFFECTS_VOLUME,
     introSeen: false,
     upgrades: createUpgradeLevels(),
     stats: {
@@ -315,6 +320,8 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
     thread: normalizeInteger(value.thread, 0) + normalizeInteger(value.cosmeticFragments, 0) * 5,
     premium: normalizeInteger(value.premium, 0),
     muted: value.muted === true,
+    musicVolume: normalizeVolume(value.musicVolume, DEFAULT_MUSIC_VOLUME),
+    effectsVolume: normalizeVolume(value.effectsVolume, DEFAULT_EFFECTS_VOLUME),
     introSeen: value.introSeen === true,
     upgrades: {
       power: normalizeUpgradeLevel(upgrades.power),

@@ -1,4 +1,6 @@
 import { renderMenuShortcutIcon } from "./MenuShortcutIcon";
+import type { AudioSettings } from "../audio/AudioSettings";
+import type { CurrencyKind } from "./GameUtilityDialog";
 import {
   MAX_UPGRADE_LEVEL,
   UPGRADE_DEFINITIONS,
@@ -139,7 +141,8 @@ export interface GameMenuCallbacks {
   readonly onStartWeekly: () => void;
   readonly onShowStory?: () => void;
   readonly onStateChange: (state: ProgressionState) => void;
-  readonly onToggleSound: (muted: boolean) => void;
+  readonly onSoundSettings: () => void;
+  readonly onCurrencyHelp: (kind: CurrencyKind) => void;
   readonly onFullscreen: () => void;
   readonly onLoadLeaderboard: () => Promise<LeaderboardViewModel>;
   readonly onLoadProfile?: () => Promise<PlatformUserProfile | null>;
@@ -669,6 +672,12 @@ export default class GameMenu {
     this.focusFeedback();
   }
 
+  public syncAudioSettings(settings: AudioSettings): void {
+    this.state = { ...this.state, muted: settings.muted, musicVolume: settings.musicVolume, effectsVolume: settings.effectsVolume };
+    const button = this.root.querySelector('[data-action="sound"]');
+    if (button) button.textContent = settings.muted ? "🔇" : "♪";
+  }
+
   private revealRewards(ids: readonly string[]): void {
     this.feedback = { kind: "rewards", ids };
     this.render();
@@ -873,8 +882,11 @@ export default class GameMenu {
       return;
     }
     if (action === "sound") {
-      this.commit({ ...this.state, muted: !this.state.muted });
-      this.callbacks.onToggleSound(this.state.muted);
+      this.callbacks.onSoundSettings();
+      return;
+    }
+    if (action === "currency-help") {
+      this.callbacks.onCurrencyHelp(target.dataset.id === "premium" ? "premium" : "thread");
       return;
     }
     if (action === "home") {
@@ -1529,9 +1541,8 @@ export default class GameMenu {
         <div class="menu-vignette" aria-hidden="true"></div>
         <header class="menu-topbar">
           <button class="round-tool desktop-fullscreen" data-action="fullscreen" aria-label="На весь экран">⛶</button>
-          <div class="currency-chip"><img src="${asset("currency-thread-spool.webp")}" alt="" aria-hidden="true" /><strong>${this.state.thread}</strong><small>нити</small></div>
-          <div class="currency-chip premium"><img src="${asset("currency-moon-button.webp")}" alt="" aria-hidden="true" /><strong>${this.state.premium}</strong><small>пуговицы</small></div>
-          <button class="round-tool" data-action="sound" aria-label="${this.state.muted ? "Включить звук и музыку" : "Выключить звук и музыку"}">${this.state.muted ? "🔇" : "♪"}</button>
+          ${this.renderCurrencyChips()}
+          <button class="round-tool" data-action="sound" aria-label="Настройки звука и музыки" aria-haspopup="dialog">${this.state.muted ? "🔇" : "♪"}</button>
         </header>
         <button class="menu-shortcut menu-guide-trigger" data-action="guide-open" aria-haspopup="dialog" aria-label="Открыть мини-гайд «Как играть»">
           <span class="menu-shortcut-medallion" aria-hidden="true">${renderMenuShortcutIcon("guide")}</span><strong>Как играть</strong>
@@ -1934,14 +1945,18 @@ export default class GameMenu {
       </div>`;
   }
 
+  private renderCurrencyChips(): string {
+    return `<button class="currency-chip" data-action="currency-help" data-id="thread" aria-haspopup="dialog" aria-label="Нити: ${this.state.thread}. Как получить нити" title="Нити можно получить за победы над существами"><img src="${asset("currency-thread-spool.webp")}" alt="" /><strong>${this.state.thread}</strong><small>нити</small></button>
+      <button class="currency-chip premium" data-action="currency-help" data-id="premium" aria-haspopup="dialog" aria-label="Пуговицы: ${this.state.premium}. О платной валюте" title="Пуговицы — платная валюта. Покупка станет доступна позже"><img src="${asset("currency-moon-button.webp")}" alt="" /><strong>${this.state.premium}</strong><small>пуговицы</small></button>`;
+  }
+
   private renderPanel(): string {
     const tab = this.tab as Exclude<MenuTab, "home">;
     return `
       ${this.renderWorld(true)}
       <div class="menu-vignette is-heavy" aria-hidden="true"></div>
       <header class="menu-topbar panel-wallet">
-        <div class="currency-chip"><img src="${asset("currency-thread-spool.webp")}" alt="" aria-hidden="true" /><strong>${this.state.thread}</strong><small>нити</small></div>
-        <div class="currency-chip premium"><img src="${asset("currency-moon-button.webp")}" alt="" aria-hidden="true" /><strong>${this.state.premium}</strong><small>пуговицы</small></div>
+        ${this.renderCurrencyChips()}
       </header>
       <section class="menu-panel" data-menu-tab="${tab}" data-panel-key="${this.getPanelKey()}" aria-label="${TAB_LABELS[tab].label}">
         <header class="panel-heading">

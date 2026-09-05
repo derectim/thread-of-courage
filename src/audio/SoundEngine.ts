@@ -1,3 +1,5 @@
+import { DEFAULT_MUSIC_VOLUME, DEFAULT_EFFECTS_VOLUME, normalizeVolume } from "./AudioSettings";
+
 export type SoundName =
   | "shoot"
   | "hit"
@@ -23,6 +25,9 @@ export class SoundEngine {
   private context: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private musicBus: GainNode | null = null;
+  private effectsBus: GainNode | null = null;
+  private musicVolume = DEFAULT_MUSIC_VOLUME;
+  private effectsVolume = DEFAULT_EFFECTS_VOLUME;
   private musicDucking = 1;
   private musicSource: AudioBufferSourceNode | null = null;
   private musicVoiceGain: GainNode | null = null;
@@ -228,13 +233,14 @@ export class SoundEngine {
       ? Math.max(0, Math.min(10, transitionSeconds))
       : 0.18;
     this.musicDucking = ducking;
+    const target = ducking * (this.musicVolume / DEFAULT_MUSIC_VOLUME);
 
     const context = this.context;
     const gain = this.musicBus?.gain;
     if (!context || !gain) return;
 
     const now = context.currentTime;
-    const currentValue = Math.max(0.0001, gain.value);
+    const currentValue = Math.max(0, gain.value);
     gain.cancelScheduledValues(now);
     if (
       transition <= 0 ||
@@ -243,12 +249,28 @@ export class SoundEngine {
       context.state !== "running" ||
       !this.isDocumentVisible()
     ) {
-      gain.setValueAtTime(ducking, now);
+      gain.setValueAtTime(target, now);
       return;
     }
 
     gain.setValueAtTime(currentValue, now);
-    gain.linearRampToValueAtTime(ducking, now + transition);
+    gain.linearRampToValueAtTime(target, now + transition);
+  }
+
+  /** Defaults preserve the original mix, with room to increase either channel. */
+  public setMusicVolume(value: number): void {
+    if (this.destroyed) return;
+    this.musicVolume = normalizeVolume(value, DEFAULT_MUSIC_VOLUME);
+    this.setMusicDucking(this.musicDucking, 0.08);
+  }
+
+  public setEffectsVolume(value: number): void {
+    if (this.destroyed) return;
+    this.effectsVolume = normalizeVolume(value, DEFAULT_EFFECTS_VOLUME);
+    if (!this.context || !this.effectsBus) return;
+    const gain = this.effectsBus.gain, now = this.context.currentTime;
+    gain.cancelScheduledValues(now);
+    gain.setTargetAtTime(this.effectsVolume / DEFAULT_EFFECTS_VOLUME, now, 0.015);
   }
 
   public setMuted(muted: boolean): void {
@@ -324,6 +346,7 @@ export class SoundEngine {
     this.context = null;
     this.masterGain = null;
     this.musicBus = null;
+    this.effectsBus = null;
 
     if (context && context.state !== "closed") {
       void context.close().catch(() => undefined);
@@ -349,12 +372,16 @@ export class SoundEngine {
         masterGain.gain.value = this.muted || this.platformPaused ? 0 : this.volume;
         masterGain.connect(context.destination);
         const musicBus = context.createGain();
-        musicBus.gain.value = this.musicDucking;
+        musicBus.gain.value = this.musicDucking * (this.musicVolume / DEFAULT_MUSIC_VOLUME);
         musicBus.connect(masterGain);
+        const effectsBus = context.createGain();
+        effectsBus.gain.value = this.effectsVolume / DEFAULT_EFFECTS_VOLUME;
+        effectsBus.connect(masterGain);
 
         this.context = context;
         this.masterGain = masterGain;
         this.musicBus = musicBus;
+        this.effectsBus = effectsBus;
         this.musicBuffers.clear();
         this.needsAudioPrime = true;
         context.onstatechange = this.handleAudioContextStateChange;
@@ -1003,7 +1030,7 @@ export class SoundEngine {
     type: OscillatorType;
   }): void {
     const context = this.context;
-    const output = this.masterGain;
+    const output = this.effectsBus;
     if (!context || !output) return;
 
     const oscillator = context.createOscillator();
@@ -1040,7 +1067,7 @@ export class SoundEngine {
     filterType: BiquadFilterType,
   ): void {
     const context = this.context;
-    const output = this.masterGain;
+    const output = this.effectsBus;
     if (!context || !output) return;
 
     const sampleCount = Math.max(1, Math.ceil(context.sampleRate * duration));
