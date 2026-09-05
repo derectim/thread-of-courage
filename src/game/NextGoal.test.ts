@@ -8,8 +8,8 @@ describe("one next goal", () => {
   it("gives a new player a concrete boss and a playable destination", () => {
     expect(getNextGoal(createDefaultState())).toMatchObject({destination:"run",target:5,progress:0,ready:false});
   });
-  it("prioritizes an unchosen boss reward over other goals", () => {
-    expect(getNextGoal(recordVictory(createDefaultState(),5,true,3))).toMatchObject({destination:"run",ready:true,title:"Выбери узор похода"});
+  it("prioritizes the saved first boss story before its boon choice", () => {
+    expect(getNextGoal(recordVictory(createDefaultState(),5,true,3))).toMatchObject({destination:"run",ready:true,title:"Тишина после бури"});
   });
   it("points to earned season rewards instead of sending the player to grind more", () => {
     const initial = createDefaultState();

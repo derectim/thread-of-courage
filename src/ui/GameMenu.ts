@@ -13,6 +13,7 @@ import {
   getUpgradeCost,
   purchaseUpgrade,
   purchaseThreadCosmetic,
+  setCosmeticGoal,
   unlockRandomNeedle,
   unlockBackground,
   type ProgressionState,
@@ -742,6 +743,16 @@ export default class GameMenu {
       else if (goal.destination === "needles") { this.tab = "needles"; }
       else { this.tab = "upgrades"; this.upgradePage = goal.destination === "talents" ? "passive" : "active"; }
       this.render();
+      if (goal.destination === "cosmetics" && this.state.cosmeticGoalId) {
+        const scroll = this.root.querySelector<HTMLElement>(".panel-scroll");
+        const offer = this.root.querySelector<HTMLElement>(`[data-offer="${this.state.cosmeticGoalId}"]`);
+        if (scroll && offer) scroll.scrollTop += offer.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 12;
+      }
+      return;
+    }
+    if (action === "cosmetic-goal") {
+      const id = target.dataset.id ?? "";
+      this.commit(setCosmeticGoal(this.state, this.state.cosmeticGoalId === id ? null : id));
       return;
     }
     if (action === "cosmetic-purchase") {
@@ -2384,7 +2395,7 @@ export default class GameMenu {
 
   private renderNextGoal(): string {
     const goal = getNextGoal(this.state);
-    const eyebrow = goal.ready ? (goal.destination === "cosmetics" ? "ДОСТУПНО В ЛАВКЕ" : "НАГРАДА ЖДЁТ") : "ТВОЯ БЛИЖАЙШАЯ ЦЕЛЬ";
+    const eyebrow = goal.destination === "run" && goal.ready ? "ПУТЬ ПРОДОЛЖАЕТСЯ" : goal.destination === "cosmetics" && this.state.cosmeticGoalId ? "ТВОЯ ВЫБРАННАЯ ЦЕЛЬ" : goal.ready ? (goal.destination === "cosmetics" ? "ДОСТУПНО В ЛАВКЕ" : "НАГРАДА ЖДЁТ") : "ТВОЯ БЛИЖАЙШАЯ ЦЕЛЬ";
     const percent = Math.max(0, Math.min(100, goal.progress / Math.max(1, goal.target) * 100));
     return `<button class="menu-next-goal ${goal.ready ? "is-ready" : ""}" data-action="next-goal" aria-label="${escapeHtml(`${goal.title}. ${goal.detail}. ${goal.buttonLabel}`)}">
       <img src="${asset(goal.iconFileName)}" alt="" /><span class="next-goal-copy"><small>${eyebrow}</small><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.detail)}</span><span class="next-goal-progress" aria-hidden="true"><i style="width:${percent}%"></i></span></span><b>${goal.buttonLabel} →</b>
@@ -2415,6 +2426,7 @@ export default class GameMenu {
         return `<article class="fragment-offer ${owned ? "is-owned" : ""} ${equipped ? "is-equipped" : ""}" data-offer="${item.id}">
           <div class="fragment-preview">${this.renderCollectiblePreview(item)}</div><small>${WORKSHOP_KIND_LABELS[item.kind]}</small><h4>${escapeHtml(collectibleDisplayName(item.name))}</h4><p>${item.description}</p>
           <span class="fragment-offer-status">${equipped ? "✓ Уже украшает твой образ" : owned ? "✓ В твоей коллекции" : missing ? `Осталось накопить ${missing} нитей` : "Можно купить прямо сейчас"}</span>
+          ${!owned ? `<button class="cosmetic-goal-button" data-action="cosmetic-goal" data-id="${item.id}" aria-pressed="${this.state.cosmeticGoalId === item.id}">${this.state.cosmeticGoalId === item.id ? "★ Твоя цель · убрать" : "☆ Хочу накопить"}</button>` : ""}
           ${owned ? `<button data-action="workshop-toggle" data-id="${item.id}" aria-pressed="${equipped}">${equipped ? "Снять украшение" : "Применить"}</button>` : `<button data-action="cosmetic-purchase" data-id="${item.id}" ${missing ? "disabled" : ""} aria-label="Потратить ${offer.cost} нитей на ${escapeHtml(item.name)}">Купить · ✦ ${offer.cost}</button>`}
         </article>`;
       }).join("")}</div>

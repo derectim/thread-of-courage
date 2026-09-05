@@ -53,6 +53,8 @@ import {
   type WorkshopCollectionState,
 } from "./WorkshopCollection";
 import { getCosmeticShopOffer } from "./CosmeticShop";
+import { createCampaignStory, normalizeCampaignStory, offerCampaignStory, type CampaignStoryState } from "./CampaignStory";
+import { isDetourStage, normalizeCampaignDetour, getDetourReward, type CampaignDetour } from "./CampaignDetour";
 import { createCampaignBoonsState, normalizeCampaignBoons, offerCampaignBoon, type CampaignBoonsState } from "./CampaignBoons";
 import { MONSTERS, ROOMS, getMonsterForStage } from "./content";
 
@@ -102,6 +104,9 @@ export interface ProgressionState {
   readonly workshopCollection: WorkshopCollectionState;
   readonly adCadence: AdCadenceState;
   readonly campaignBoons: CampaignBoonsState;
+  readonly cosmeticGoalId: string | null;
+  readonly campaignStory: CampaignStoryState;
+  readonly campaignDetour: CampaignDetour | null;
 }
 
 export interface ProgressionStorage {
@@ -178,6 +183,9 @@ export function createDefaultState(): ProgressionState {
     workshopCollection: createWorkshopCollectionState(),
     adCadence: createAdCadenceState(),
     campaignBoons: createCampaignBoonsState(),
+    cosmeticGoalId: null,
+    campaignStory: createCampaignStory(),
+    campaignDetour: null,
   };
 }
 
@@ -297,6 +305,8 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
   const weeklyRouteDefinition = createWeeklyRoute(new Date());
   const needleMastery = normalizeNeedleMasteryState(value.needleMastery);
   const ownedSeasonCosmetics = normalizeStringList(value.ownedSeasonCosmetics);
+  const workshopCollection = normalizeWorkshopCollectionState(value.workshopCollection, { ownedSeasonCosmeticIds: ownedSeasonCosmetics, needleMastery });
+  const cosmeticGoalId = typeof value.cosmeticGoalId === "string" && getCosmeticShopOffer(value.cosmeticGoalId) && !workshopCollection.ownedCollectibleIds.includes(value.cosmeticGoalId) ? value.cosmeticGoalId : null;
 
   return {
     version: PROGRESSION_SAVE_VERSION,
@@ -333,12 +343,12 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
     weeklyRoute: syncWeeklyRouteProgress(value.weeklyRoute, weeklyRouteDefinition),
     seasonPass: syncSeasonPassState(value.seasonPass),
     ownedSeasonCosmetics,
-    workshopCollection: normalizeWorkshopCollectionState(value.workshopCollection, {
-      ownedSeasonCosmeticIds: ownedSeasonCosmetics,
-      needleMastery,
-    }),
+    workshopCollection,
     adCadence: normalizeAdCadenceState(value.adCadence),
     campaignBoons: normalizeCampaignBoons(value.campaignBoons, campaignResumeStage),
+    cosmeticGoalId,
+    campaignStory: normalizeCampaignStory(value.campaignStory, highestStageCleared),
+    campaignDetour: normalizeCampaignDetour(value.campaignDetour, campaignResumeStage),
   };
 }
 
@@ -428,7 +438,25 @@ export function purchaseThreadCosmetic(state: ProgressionState, id: string): Pro
   });
   if (collection.ownedCollectibleIds.includes(id)) return state;
   return { ...state, thread: state.thread - offer.cost,
+    cosmeticGoalId: state.cosmeticGoalId === id ? null : state.cosmeticGoalId,
     workshopCollection: grantWorkshopCollectible(collection, id) };
+}
+
+export function setCosmeticGoal(state: ProgressionState, id: string | null): ProgressionState {
+  if (id !== null && (!getCosmeticShopOffer(id) || state.workshopCollection.ownedCollectibleIds.includes(id))) return state;
+  return state.cosmeticGoalId === id ? state : { ...state, cosmeticGoalId: id };
+}
+
+export function chooseCampaignDetour(state: ProgressionState, accept: boolean): ProgressionState {
+  const offer = normalizeCampaignDetour(state.campaignDetour, state.campaignResumeStage);
+  if (!offer || offer.status !== "offered") return state;
+  return { ...state, campaignDetour: accept ? { ...offer, status: "active" } : null };
+}
+
+/** A detour pays once, without advancing the campaign or other reward systems. */
+export function completeCampaignDetour(state: ProgressionState): ProgressionState {
+  const encounter = normalizeCampaignDetour(state.campaignDetour, state.campaignResumeStage);
+  return !encounter || encounter.status !== "active" ? state : { ...state, campaignDetour: null, thread: state.thread + getDetourReward(encounter.stage) };
 }
 
 export function purchaseUpgrade(state: ProgressionState, upgrade: UpgradeId): ProgressionState {
@@ -561,6 +589,8 @@ export function recordVictory(
     highestStageCleared,
     campaignResumeStage: Math.max(1, Math.floor(stage) + 1),
     campaignBoons: isBoss ? offerCampaignBoon(state.campaignBoons, stage) : state.campaignBoons,
+    campaignStory: isBoss ? offerCampaignStory(state.campaignStory, stage) : state.campaignStory,
+    campaignDetour: isDetourStage(stage) ? { stage, status: "offered" } : null,
     thread: state.thread + reward,
     ownedNeedles,
     unlockedSkills,
@@ -576,9 +606,9 @@ export function recordVictory(
 export function resetCampaignAfterDefeat(
   state: ProgressionState,
 ): ProgressionState {
-  return state.campaignResumeStage === 1 && !state.campaignBoons.choices.length && state.campaignBoons.pendingBossStage === null
+  return state.campaignResumeStage === 1 && !state.campaignBoons.choices.length && state.campaignBoons.pendingBossStage === null && state.campaignDetour === null
     ? state
-    : { ...state, campaignResumeStage: 1, campaignBoons: createCampaignBoonsState() };
+    : { ...state, campaignResumeStage: 1, campaignBoons: createCampaignBoonsState(), campaignDetour: null };
 }
 
 /** Awards a side-route victory without moving the player's main campaign checkpoint. */

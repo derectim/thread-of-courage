@@ -17,6 +17,8 @@
 .fragment-offer > button { min-height: 46px; padding: 9px; border: 1px solid #623a60; border-radius: 12px; color: #fff3d7; background: linear-gradient(#9b587f, #674267); box-shadow: 0 3px 0 #493147; font-size: 15px; font-weight: 800; cursor: pointer; }
 .fragment-offer.is-owned > button { border-color: #386558; background: linear-gradient(#54937a, #34695f); box-shadow: 0 3px 0 #2b5249; }
 .fragment-offer > button:disabled { color: #77645a; background: #d5c5b9; box-shadow: none; border-color: #bba393; cursor: default; }
+.fragment-offer > .cosmetic-goal-button { color: #674364; background: #fff0d8; border-color: #bb8ca3; box-shadow: none; }
+.fragment-offer > .cosmetic-goal-button[aria-pressed="true"] { color: #245e55; background: #cce6d8; border-color: #468574; }
 .fragment-shop-note { padding: 0 20px; color: #745044; }
 
 /* One compact, actionable goal sits directly above the main play button. */

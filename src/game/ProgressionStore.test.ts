@@ -112,6 +112,7 @@ describe("ProgressionStore v3 persistence", () => {
       createState({
         highestStageCleared: 11,
         campaignResumeStage: 12,
+        campaignStory: { seenBossIds: ["sewing-storm", "moth-mask"], pendingBossId: null },
         thread: 275,
         muted: true,
         upgrades: { power: 2, precision: 1, speed: 3, ward: 1 },
@@ -142,6 +143,7 @@ describe("ProgressionStore v3 persistence", () => {
       createState({
         highestStageCleared: 8,
         campaignResumeStage: 9,
+        campaignStory: { seenBossIds: ["sewing-storm"], pendingBossId: null },
         thread: 123,
         muted: true,
         stats: {

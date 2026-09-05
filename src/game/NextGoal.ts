@@ -1,6 +1,8 @@
 import type { ProgressionState } from "./ProgressionStore";
 import { ACTIVE_ABILITIES } from "./ActiveAbilities";
-import { COSMETIC_SHOP_OFFERS } from "./CosmeticShop";
+import { COSMETIC_SHOP_OFFERS, getCosmeticShopOffer, type CosmeticShopOffer } from "./CosmeticShop";
+import { getCampaignChapter } from "./CampaignStory";
+import { getDetourReward } from "./CampaignDetour";
 import { NEEDLE_SKINS, SKILLS } from "./meta";
 import { getMonsterForStage } from "./content";
 import { getClaimableSeasonPassRewards, getSeasonPassStatus } from "./SeasonPass";
@@ -19,10 +21,15 @@ export interface NextGoal {
 
 /** One actionable goal: earned rewards first, then a nearby unlock or a visible collection target. */
 export function getNextGoal(state: ProgressionState): NextGoal {
+  const chapter = getCampaignChapter(state.campaignStory.pendingBossId);
+  if (chapter) return { title: chapter.title, detail: "Победа сохранена. Узнай, что Эля нашла после боя.", progress: 1, target: 1, destination: "run", buttonLabel: "К истории", iconFileName: "ui-season-album.webp", ready: true };
   if (state.campaignBoons.pendingBossStage !== null) return {
     title: "Выбери узор похода", detail: `Босс этапа ${state.campaignBoons.pendingBossStage} побеждён. Тебя ждёт бонус.`,
     progress: 1, target: 1, destination: "run", buttonLabel: "Выбрать", iconFileName: "upgrade-power.webp", ready: true,
   };
+  if (state.campaignDetour) return { title: state.campaignDetour.status === "active" ? "Испытание у тайника" : "Тайник на развилке", detail: state.campaignDetour.status === "active" ? "Дополнительный бой ждёт. Основной путь продолжится после победы." : `Пройти мимо или рискнуть ради ${getDetourReward(state.campaignDetour.stage)} нитей?`, progress: 1, target: 1, destination: "run", buttonLabel: state.campaignDetour.status === "active" ? "К бою" : "Выбрать", iconFileName: "ui-streak-chest.webp", ready: true };
+  const pinned = state.cosmeticGoalId ? getCosmeticShopOffer(state.cosmeticGoalId) : undefined;
+  if (pinned && !state.workshopCollection.ownedCollectibleIds.includes(pinned.collectible.id)) return cosmeticGoal(pinned, state.thread);
   const claimable = getClaimableSeasonPassRewards(state.seasonPass);
   if (claimable.length) return { title: "В альбоме ждёт награда", detail: `Украшений можно забрать: ${claimable.length}`,
     progress: 1, target: 1, destination: "season", buttonLabel: "К награде", iconFileName: "ui-season-album.webp", ready: true };
@@ -64,4 +71,10 @@ export function getNextGoal(state: ProgressionState): NextGoal {
   const bossStage = Array.from({ length: 10 }, (_, index) => currentStage + index).find((stage) => getMonsterForStage(stage).isBoss) ?? currentStage;
   return { title: `Босс впереди · этап ${bossStage}`, detail: `${getMonsterForStage(bossStage).name} · ещё побед: ${bossStage - currentStage + 1}`,
     progress: currentStage - 1, target: bossStage, destination: "run", buttonLabel: "В путь", iconFileName: "menu-icon-bestiary.webp", ready: false };
+}
+
+function cosmeticGoal(offer: CosmeticShopOffer, thread: number): NextGoal {
+  const ready = thread >= offer.cost;
+  return { title: offer.collectible.name, detail: ready ? `Нитей хватает: ${thread} / ${offer.cost}` : `Нити: ${thread} / ${offer.cost} · осталось ${offer.cost - thread}`,
+    progress: Math.min(thread, offer.cost), target: offer.cost, destination: "cosmetics", buttonLabel: ready ? "В лавку" : "К цели", iconFileName: "menu-icon-shop.webp", ready };
 }

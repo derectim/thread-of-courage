@@ -6,6 +6,9 @@ import type {
   RewardedAdResult,
 } from "../platform/PlatformAdapter";
 import GameMenu from "../ui/GameMenu";
+import CampaignEventDialog from "../ui/CampaignEventDialog";
+import { finishCampaignStory, getCampaignChapter } from "./CampaignStory";
+import { DETOUR_EXTRA_HITS, DETOUR_SPEED_MULTIPLIER, getDetourReward } from "./CampaignDetour";
 import StoryIntro, {
   type StoryIntroMode,
   type StoryIntroResult,
@@ -22,6 +25,8 @@ import {
   recordChallengeVictory,
   recordShot,
   recordVictory,
+  chooseCampaignDetour,
+  completeCampaignDetour,
   resetCampaignAfterDefeat,
   save as saveProgression,
   type ProgressionState,
@@ -290,6 +295,7 @@ export class RaidScene extends Phaser.Scene {
   private state: RaidState = "ready";
   private stage = 1;
   private raidMode: RaidMode = "campaign";
+  private campaignEventDialog!: CampaignEventDialog;
   private weeklyRoute: WeeklyRouteDefinition = createWeeklyRoute(new Date());
   private weeklyNode: WeeklyRouteNode | null = null;
   private weeklyModifier: WeeklyModifierDefinition | null = null;
@@ -468,6 +474,7 @@ export class RaidScene extends Phaser.Scene {
     });
     this.menu.show(this.progression);
     this.bossBoonDialog = new BossBoonDialog(menuRoot.parentElement!, (id, destination) => this.resolveBossBoon(id, destination));
+    this.campaignEventDialog = new CampaignEventDialog(gameFrame);
 
     this.input.on("pointerdown", this.handlePointerDown, this);
     this.input.keyboard?.on("keydown-SPACE", this.handleKeyboardShot, this);
@@ -481,6 +488,7 @@ export class RaidScene extends Phaser.Scene {
       this.storyIntro.destroy();
       this.menu.destroy();
       this.bossBoonDialog.destroy();
+      this.campaignEventDialog.destroy();
       this.sfx.destroy();
     });
 
@@ -586,15 +594,12 @@ export class RaidScene extends Phaser.Scene {
     this.closeOverlay();
     this.state = "transition";
     this.resetRunAbility();
-    this.stage = getRaidStartStage(this.progression.campaignResumeStage);
+    this.stage = this.progression.campaignDetour?.status === "active" ? this.progression.campaignDetour.stage : getRaidStartStage(this.progression.campaignResumeStage);
     this.shieldCharges = this.getStartingWardCharges();
     this.inputCooldownUntil = this.time.now + 260;
     this.createMonster();
-    if (this.progression.campaignBoons.pendingBossStage !== null) {
-      this.state = "won";
-      this.setCombatHudVisible(false);
-      this.bossBoonDialog.show(this.progression.campaignBoons);
-    } else this.beginPlaying("Не дай иглам столкнуться");
+    this.state = "won";
+    if (!this.showPendingCampaignEvent()) this.beginPlaying(this.isDetourBattle() ? `Тайник · +${getDetourReward(this.stage)} нитей за победу · враг быстрее на 20%` : "Не дай иглам столкнуться");
   }
 
   private async startBossPractice(monsterId: string): Promise<void> {
@@ -729,6 +734,62 @@ export class RaidScene extends Phaser.Scene {
 
   private getRunBoonEffects() {
     return getCampaignBoonEffects(this.raidMode === "campaign" ? this.progression.campaignBoons : createCampaignBoonsState());
+  }
+
+  private isDetourBattle(): boolean {
+    return this.raidMode === "campaign" && this.progression.campaignDetour?.status === "active" && this.progression.campaignDetour.stage === this.stage;
+  }
+
+  private returnFromCampaignEvent(): void {
+    this.closeOverlay();
+    this.clearImpactVfxLayers();
+    this.state = "menu";
+    this.setCombatHudVisible(false);
+    this.sfx.setMusicTheme("menu");
+    this.menu.show(this.progression, "home", "Путь сохранён. Продолжи, когда будешь готова.");
+  }
+
+  private continueCampaign(): void {
+    this.state = "transition";
+    this.stage = this.progression.campaignDetour?.status === "active" ? this.progression.campaignDetour.stage : getRaidStartStage(this.progression.campaignResumeStage);
+    this.createMonster();
+    this.beginPlaying(this.isDetourBattle() ? `Тайник · +${getDetourReward(this.stage)} нитей · враг быстрее на 20%` : "Путь продолжается. Не дай иглам столкнуться");
+  }
+
+  /** A saved choice is always resolved before entering the next campaign fight. */
+  private showPendingCampaignEvent(): boolean {
+    if (this.raidMode !== "campaign" || this.state !== "won") return false;
+    const chapter = getCampaignChapter(this.progression.campaignStory.pendingBossId);
+    if (chapter) {
+      this.setCombatHudVisible(false);
+      this.campaignEventDialog.showStory(chapter, decision => {
+        if (this.state !== "won" || this.raidMode !== "campaign" || this.progression.campaignStory.pendingBossId !== chapter.bossId) return;
+        if (decision === "menu") { this.returnFromCampaignEvent(); return; }
+        this.progression = { ...this.progression, campaignStory: finishCampaignStory(this.progression.campaignStory) };
+        this.persistProgress();
+        if (!this.showPendingCampaignEvent()) this.continueCampaign();
+      });
+      return true;
+    }
+    if (this.progression.campaignBoons.pendingBossStage !== null) {
+      this.setCombatHudVisible(false);
+      this.bossBoonDialog.show(this.progression.campaignBoons);
+      return true;
+    }
+    const detour = this.progression.campaignDetour;
+    if (detour?.status === "offered") {
+      this.setCombatHudVisible(false);
+      this.campaignEventDialog.showDetour(detour, decision => {
+        if (this.state !== "won" || this.raidMode !== "campaign" || this.progression.campaignDetour?.status !== "offered" || this.progression.campaignDetour.stage !== detour.stage) return;
+        if (decision === "menu") { this.returnFromCampaignEvent(); return; }
+        this.progression = chooseCampaignDetour(this.progression, decision === "accept");
+        // Save acceptance before starting; reload resumes this same optional fight.
+        this.persistProgress();
+        this.continueCampaign();
+      });
+      return true;
+    }
+    return false;
   }
 
   private resolveBossBoon(id: CampaignBoonId | null, destination: "continue" | "menu"): void {
@@ -1237,7 +1298,7 @@ export class RaidScene extends Phaser.Scene {
     this.requiredHits = Math.max(
       4,
       getRequiredHits(this.currentMonster, this.stage) +
-        (this.weeklyModifier?.effects.requiredHitsDelta ?? 0),
+        (this.weeklyModifier?.effects.requiredHitsDelta ?? 0) + (this.isDetourBattle() ? DETOUR_EXTRA_HITS : 0),
     );
     this.hits = 0;
     this.hitAngles = [];
@@ -1262,7 +1323,7 @@ export class RaidScene extends Phaser.Scene {
       needleSpeed *
       bossSpeedMultiplier *
       this.getRunBoonEffects().rotationMultiplier *
-      (this.weeklyModifier?.effects.rotationSpeedMultiplier ?? 1);
+      (this.weeklyModifier?.effects.rotationSpeedMultiplier ?? 1) * (this.isDetourBattle() ? DETOUR_SPEED_MULTIPLIER : 1);
     if (this.weeklyModifier?.effects.reverseRotation) this.patternDirection *= -1;
     this.baseRotation = 0;
     this.currentDamageStage = 0;
@@ -1289,7 +1350,7 @@ export class RaidScene extends Phaser.Scene {
     this.warmMonsterSilhouetteMasks();
 
     this.stageText.setText(
-      this.raidMode === "weekly" && this.weeklyNode
+      this.isDetourBattle() ? "ТАЙНИК · ДОПОЛНИТЕЛЬНЫЙ БОЙ" : this.raidMode === "weekly" && this.weeklyNode
         ? `НЕДЕЛЯ · УЗЕЛ ${this.weeklyNode.order}/5`
         : "СТЕЖОК " +
             this.stage +
@@ -1723,7 +1784,7 @@ export class RaidScene extends Phaser.Scene {
 
     this.shotInFlight = true;
     this.shotDirectionAtLaunch = this.patternDirection;
-    if (this.raidMode !== "practice") {
+    if (this.raidMode !== "practice" && !this.isDetourBattle()) {
       this.progression = recordShot(this.progression);
       this.persistProgress();
     }
@@ -1963,7 +2024,7 @@ export class RaidScene extends Phaser.Scene {
     this.shotInFlight = false;
     this.sfx.hit();
     this.game.events.emit(CONFIRMED_HIT_EVENT);
-    if (this.raidMode !== "practice") this.progression = {
+    if (this.raidMode !== "practice" && !this.isDetourBattle()) this.progression = {
       ...this.progression,
       dailySystems: recordDailyGameplayEvent(
         this.progression.dailySystems,
@@ -3756,6 +3817,18 @@ export class RaidScene extends Phaser.Scene {
     this.state = "won";
     this.setCombatHudVisible(false);
     this.roomEffectText.setAlpha(0);
+    if (this.isDetourBattle()) {
+      const reward = getDetourReward(this.stage);
+      this.progression = completeCampaignDetour(this.progression);
+      this.persistProgress();
+      this.threadText.setText("✦ " + this.progression.thread + " нитей");
+      this.sfx.win();
+      this.time.delayedCall(420, () => {
+        if (this.state !== "won") return;
+        this.showVictoryOverlay("Тайник открыт!", `Награда: ${reward} нитей.\nОсновной путь продолжается с этапа ${this.progression.campaignResumeStage}.`, this.currentRoom.accentColor, "РИСК ОПРАВДАЛСЯ");
+      });
+      return;
+    }
     if (this.raidMode === "practice") {
       this.sfx.win();
       this.time.delayedCall(420, () => this.showVictoryOverlay("Узор разгадан!", "Тренировка завершена.\nНаграды и рекорд не меняются.\nПовтори бой, чтобы закрепить навык.", this.currentRoom.accentColor, "ТРЕНИРОВКА"));
@@ -3855,10 +3928,7 @@ export class RaidScene extends Phaser.Scene {
 
     this.cameras.main.flash(240, 232, 180, 77, false);
     this.time.delayedCall(420, () => {
-      if (this.raidMode === "campaign" && this.progression.campaignBoons.pendingBossStage !== null) {
-        this.bossBoonDialog.show(this.progression.campaignBoons);
-        return;
-      }
+      if (this.state !== "won" || this.showPendingCampaignEvent()) return;
       const weeklyProgress =
         this.raidMode === "weekly" && this.weeklyNode
           ? `\nУзел ${this.weeklyNode.order}/5 завершён.`
