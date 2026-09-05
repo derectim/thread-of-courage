@@ -1,0 +1,47 @@
+.feedback-overlay {
+  position: absolute; inset: 0; z-index: 110; display: grid; place-items: center;
+  padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  background: #182033d9; backdrop-filter: blur(8px);
+}
+.feedback-dialog {
+  width: min(760px, 100%); max-height: 100%; min-height: 0; display: flex; flex-direction: column;
+  overflow: hidden; color: #493047; background: #fff1d5; border: 3px solid #b89060;
+  border-radius: 26px; box-shadow: 0 18px 80px #0007; outline: none;
+}
+.feedback-dialog.is-defeat { width: min(520px, 100%); }
+.feedback-dialog header { display: flex; align-items: center; gap: 14px; padding: 20px 22px; background: #472c51; color: #fff1d5; }
+.feedback-dialog header > div { flex: 1; min-width: 0; }
+.feedback-dialog header small { display: block; color: #efc98a; font-size: 12px; font-weight: 800; letter-spacing: 1px; }
+.feedback-dialog h2 { font: bold 26px/1.15 Georgia, serif; margin: 8px 0 0; }
+.feedback-dialog header > button { flex: 0 0 44px; border: 1px solid #ffffff60; border-radius: 50%; background: #ffffff15; color: white; height: 44px; font-size: 28px; cursor: pointer; }
+.feedback-scroll { overflow-y: auto; overscroll-behavior: contain; min-height: 0; padding: 22px; }
+.reward-reveal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(235px, 100%), 1fr)); gap: 18px; }
+.reward-reveal-card { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 20px; border: 2px dashed #c79b61; border-radius: 18px; background: #fffaf0; animation: reward-unfold .3s ease-out both; }
+.reward-reveal-card .collectible-preview { width: 168px; height: 140px; max-width: 100%; margin-bottom: 16px; background: radial-gradient(ellipse, #806582, #34293f 90%); border-radius: 16px; }
+.reward-reveal-card small { font-size: 13px; font-weight: 800; color: #735173; }
+.reward-reveal-card h3 { font: bold 22px/1.2 Georgia, serif; margin: 8px 0; overflow-wrap: anywhere; }
+.reward-reveal-card p, .defeat-copy p { font: 16px/1.5 "Segoe UI", sans-serif; margin: 8px 0 18px; }
+.reward-reveal-card button { margin-top: auto; }
+.feedback-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 22px; border-top: 2px dashed #c79b61; background: #f2dfba; }
+.feedback-dialog footer span { font-size: 14px; line-height: 1.4; }
+.feedback-dialog footer button, .reward-reveal-card button, .practice-button { min-height: 46px; border: 2px solid #356658; background: #487f6a; border-radius: 12px; padding: 10px 16px; color: #fff9e9; font: 800 15px/1.2 "Segoe UI", sans-serif; cursor: pointer; }
+.feedback-dialog footer .feedback-secondary { background: transparent; color: #493047; border-color: #9d7993; }
+.feedback-dialog button:focus-visible, .practice-button:focus-visible { outline: 3px solid #d5961f; outline-offset: 3px; }
+.defeat-copy { text-align: center; }
+.defeat-stitch { display: inline-grid; place-items: center; font-size: 46px; width: 84px; height: 84px; background: #f2cfca; border-radius: 50%; border: 2px dashed #b76872; }
+.defeat-copy h3 { font: bold 22px/1.25 Georgia, serif; margin: 18px 0 10px; }
+.defeat-kept { display: grid; gap: 7px; padding: 16px; background: #dce8cf; border-radius: 14px; color: #305647; font-size: 16px; }
+.defeat-kept span { font-size: 14px; }
+.practice-button { margin-top: 12px; }
+.practice-note { display: block; margin-top: 7px; font-size: 13px; line-height: 1.4; }
+@keyframes reward-unfold { from { transform: translateY(12px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (max-width: 480px) {
+  .feedback-dialog { border-radius: 20px; }
+  .feedback-dialog header, .feedback-dialog footer { padding: 14px; }
+  .feedback-dialog h2 { font-size: 23px; }
+  .feedback-scroll { padding: 14px; }
+  .feedback-dialog.is-rewards footer { flex-direction: column; text-align: center; }
+  .feedback-dialog footer button { flex: 1; }
+  .feedback-dialog.is-rewards footer button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .reward-reveal-card { animation: none; } }

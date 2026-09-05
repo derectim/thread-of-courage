@@ -101,6 +101,10 @@ import {
 } from "./WorkshopCollection";
 import { recordSeasonPassEvent } from "./SeasonPass";
 import { getStageRotationSpeed } from "./StagePacing";
+import { getBossPracticeStage } from "./BossPractice";
+import { getDefeatAdvice } from "./DefeatAdvice";
+import BossBoonDialog from "../ui/BossBoonDialog";
+import { chooseCampaignBoon, createCampaignBoonsState, getCampaignBoonEffects, type CampaignBoonId } from "./CampaignBoons";
 import {
   createLeaderboardViewModel,
   type LeaderboardViewModel,
@@ -264,7 +268,7 @@ type RaidState =
   | "workshop"
   | "transition";
 
-type RaidMode = "campaign" | "weekly";
+type RaidMode = "campaign" | "weekly" | "practice";
 
 interface UpgradePresentation {
   readonly name: string;
@@ -293,6 +297,7 @@ export class RaidScene extends Phaser.Scene {
   private requiredHits = 7;
   private shieldCharges = 0;
   private shotInFlight = false;
+  private shotDirectionAtLaunch = 1;
   private hitAngles: number[] = [];
   private progression!: ProgressionState;
   private currentMonster!: MonsterDefinition;
@@ -330,6 +335,8 @@ export class RaidScene extends Phaser.Scene {
   private abilityStateText!: Phaser.GameObjects.Text;
   private roomEffectText!: Phaser.GameObjects.Text;
   private overlay: Phaser.GameObjects.Container | null = null;
+  private bossBoonDialog!: BossBoonDialog;
+  private runBoonText!: Phaser.GameObjects.Text;
   private patternElapsed = 0;
   private roomElapsed = 0;
   private patternDirection = 1;
@@ -445,6 +452,7 @@ export class RaidScene extends Phaser.Scene {
     });
     this.menu = new GameMenu(menuRoot, this.progression, {
       onStart: () => void this.startRaidFromMenu(),
+      onStartPractice: (id) => void this.startBossPractice(id),
       onStartWeekly: () => void this.startWeeklyRouteFromMenu(),
       onShowStory: () => void this.replayStoryFromMenu(),
       onStateChange: (state) => this.applyMenuProgress(state),
@@ -456,8 +464,10 @@ export class RaidScene extends Phaser.Scene {
       onFullscreen: () => this.requestFullscreen(),
       onLoadLeaderboard: () => this.loadLeaderboardForMenu(),
       onLoadProfile: () => this.platform.getUserInfo(),
+      onRefreshDailyAd: () => this.platform.showRewardedAd(),
     });
     this.menu.show(this.progression);
+    this.bossBoonDialog = new BossBoonDialog(menuRoot.parentElement!, (id, destination) => this.resolveBossBoon(id, destination));
 
     this.input.on("pointerdown", this.handlePointerDown, this);
     this.input.keyboard?.on("keydown-SPACE", this.handleKeyboardShot, this);
@@ -470,6 +480,7 @@ export class RaidScene extends Phaser.Scene {
       this.clearImpactVfxLayers();
       this.storyIntro.destroy();
       this.menu.destroy();
+      this.bossBoonDialog.destroy();
       this.sfx.destroy();
     });
 
@@ -579,7 +590,30 @@ export class RaidScene extends Phaser.Scene {
     this.shieldCharges = this.getStartingWardCharges();
     this.inputCooldownUntil = this.time.now + 260;
     this.createMonster();
-    this.beginPlaying("Не дай иглам столкнуться");
+    if (this.progression.campaignBoons.pendingBossStage !== null) {
+      this.state = "won";
+      this.setCombatHudVisible(false);
+      this.bossBoonDialog.show(this.progression.campaignBoons);
+    } else this.beginPlaying("Не дай иглам столкнуться");
+  }
+
+  private async startBossPractice(monsterId: string): Promise<void> {
+    await this.waitForLossInterstitial();
+    const stage = getBossPracticeStage(monsterId, this.progression.highestStageCleared);
+    if (this.state !== "menu" || stage === null) return;
+    this.raidMode = "practice";
+    this.weeklyNode = null;
+    this.weeklyModifier = null;
+    this.stage = stage;
+    this.menu.hide();
+    this.closeOverlay();
+    this.state = "transition";
+    this.sfx.setMusicTheme("raid");
+    this.resetRunAbility();
+    this.shieldCharges = this.getStartingWardCharges();
+    this.createMonster();
+    this.beginPlaying("Тренировка · без наград · приём доступен без видео");
+    this.stageText.setText("ТРЕНИРОВКА · ЭТАП " + stage);
   }
 
   private async startWeeklyRouteFromMenu(): Promise<void> {
@@ -691,6 +725,34 @@ export class RaidScene extends Phaser.Scene {
     const needleBonus =
       getNeedleSkin(this.progression.equippedNeedle).modifiers.startingWardBonus ?? 0;
     return getWardCharges(this.progression.upgrades.ward) + skillBonus + needleBonus;
+  }
+
+  private getRunBoonEffects() {
+    return getCampaignBoonEffects(this.raidMode === "campaign" ? this.progression.campaignBoons : createCampaignBoonsState());
+  }
+
+  private resolveBossBoon(id: CampaignBoonId | null, destination: "continue" | "menu"): void {
+    if (this.state !== "won" || this.raidMode !== "campaign" || this.progression.campaignBoons.pendingBossStage === null) return;
+    if (id) {
+      const campaignBoons = chooseCampaignBoon(this.progression.campaignBoons, id);
+      if (campaignBoons === this.progression.campaignBoons) return;
+      this.progression = { ...this.progression, campaignBoons };
+      this.persistProgress();
+    }
+    if (destination === "continue" && this.progression.campaignBoons.pendingBossStage !== null) return;
+    this.bossBoonDialog.hide();
+    this.closeOverlay();
+    if (destination === "menu") {
+      this.state = "menu";
+      this.setCombatHudVisible(false);
+      this.sfx.setMusicTheme("menu");
+      this.menu.show(this.progression, "home", id ? "Узор вплетён. Бонус сохранён до конца похода." : "Путь сохранён. Выбери узор, когда продолжишь поход.");
+      return;
+    }
+    this.state = "transition";
+    this.stage = getRaidStartStage(this.progression.campaignResumeStage);
+    this.createMonster();
+    this.beginPlaying("Новый узор с тобой до конца похода");
   }
 
   private getEquippedActiveAbilityId(): ActiveAbilityId {
@@ -826,6 +888,10 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private createHud(): void {
+    this.runBoonText = this.add.text(WIDTH / 2, 756, "", {
+      fontFamily: "Inter, Segoe UI, sans-serif", fontSize: "12px", color: "#bce8d7",
+      backgroundColor: "#162637cc", padding: { x: 8, y: 3 }, align: "center",
+    }).setOrigin(0.5).setDepth(21).setVisible(false);
     const hudPlate = this.add.graphics().setDepth(20);
     hudPlate.fillStyle(0x162637, 0.82);
     hudPlate.fillRoundedRect(18, 18, WIDTH - 36, 94, 18);
@@ -1195,6 +1261,7 @@ export class RaidScene extends Phaser.Scene {
       skillSpeed *
       needleSpeed *
       bossSpeedMultiplier *
+      this.getRunBoonEffects().rotationMultiplier *
       (this.weeklyModifier?.effects.rotationSpeedMultiplier ?? 1);
     if (this.weeklyModifier?.effects.reverseRotation) this.patternDirection *= -1;
     this.baseRotation = 0;
@@ -1469,12 +1536,12 @@ export class RaidScene extends Phaser.Scene {
     this.rewardedAbilityRun = pending;
     const requestedRunSerial = this.activeRunSerial;
     const ability = getActiveAbility(this.abilityRuntime.id);
-    this.tipText.setText(`Видео откроет приём «${ability.shortName}» один раз за поход`);
+    if (this.raidMode !== "practice") this.tipText.setText(`Видео откроет приём «${ability.shortName}» один раз за поход`);
     this.refreshAbilityHud();
 
     let adResult: RewardedAdResult;
     try {
-      adResult = await this.platform.showRewardedAd();
+      adResult = this.raidMode === "practice" ? "rewarded" : await this.platform.showRewardedAd();
     } catch {
       adResult = "error";
     }
@@ -1579,6 +1646,7 @@ export class RaidScene extends Phaser.Scene {
 
   private setCombatHudVisible(visible: boolean): void {
     this.abilityButton?.setVisible(visible);
+    this.runBoonText?.setVisible(visible && this.raidMode === "campaign" && this.progression.campaignBoons.choices.length > 0);
     if (!visible) this.roomEffectText?.setAlpha(0);
   }
 
@@ -1654,8 +1722,11 @@ export class RaidScene extends Phaser.Scene {
     if (this.time.now < this.inputCooldownUntil) return;
 
     this.shotInFlight = true;
-    this.progression = recordShot(this.progression);
-    this.persistProgress();
+    this.shotDirectionAtLaunch = this.patternDirection;
+    if (this.raidMode !== "practice") {
+      this.progression = recordShot(this.progression);
+      this.persistProgress();
+    }
     void this.sfx.unlock();
     this.playHeroShotAnimation(() => this.launchNeedleProjectile());
   }
@@ -1835,7 +1906,7 @@ export class RaidScene extends Phaser.Scene {
           (needleModifiers.needleGapReduction ?? 0) -
           (skillModifiers.needleGapReduction ?? 0) +
           (needleModifiers.needleGapPenalty ?? 0)) *
-        (this.weeklyModifier?.effects.collisionToleranceMultiplier ?? 1),
+        (this.weeklyModifier?.effects.collisionToleranceMultiplier ?? 1) * this.getRunBoonEffects().gapMultiplier,
     );
 
     let magneticCorrection = false;
@@ -1862,7 +1933,7 @@ export class RaidScene extends Phaser.Scene {
       } else if (this.shieldCharges > 0) {
         this.absorbCollision();
       } else {
-        this.failRaid();
+        this.failRaid(this.shotDirectionAtLaunch !== this.patternDirection);
       }
       return;
     }
@@ -1892,7 +1963,7 @@ export class RaidScene extends Phaser.Scene {
     this.shotInFlight = false;
     this.sfx.hit();
     this.game.events.emit(CONFIRMED_HIT_EVENT);
-    this.progression = {
+    if (this.raidMode !== "practice") this.progression = {
       ...this.progression,
       dailySystems: recordDailyGameplayEvent(
         this.progression.dailySystems,
@@ -3685,13 +3756,18 @@ export class RaidScene extends Phaser.Scene {
     this.state = "won";
     this.setCombatHudVisible(false);
     this.roomEffectText.setAlpha(0);
+    if (this.raidMode === "practice") {
+      this.sfx.win();
+      this.time.delayedCall(420, () => this.showVictoryOverlay("Узор разгадан!", "Тренировка завершена.\nНаграды и рекорд не меняются.\nПовтори бой, чтобы закрепить навык.", this.currentRoom.accentColor, "ТРЕНИРОВКА"));
+      return;
+    }
     const firstWeeklyClear =
       this.raidMode === "weekly" && this.weeklyNode
         ? (this.progression.weeklyRoute.clearsByNode[this.weeklyNode.id] ?? 0) === 0
         : false;
     const reward =
       this.raidMode === "campaign"
-        ? getStageReward(this.stage)
+        ? getStageReward(this.stage) + this.getRunBoonEffects().extraThread
         : firstWeeklyClear
           ? this.currentMonster.isBoss || this.currentMonster.isMiniBoss
             ? 3
@@ -3779,6 +3855,10 @@ export class RaidScene extends Phaser.Scene {
 
     this.cameras.main.flash(240, 232, 180, 77, false);
     this.time.delayedCall(420, () => {
+      if (this.raidMode === "campaign" && this.progression.campaignBoons.pendingBossStage !== null) {
+        this.bossBoonDialog.show(this.progression.campaignBoons);
+        return;
+      }
       const weeklyProgress =
         this.raidMode === "weekly" && this.weeklyNode
           ? `\nУзел ${this.weeklyNode.order}/5 завершён.`
@@ -3805,12 +3885,22 @@ export class RaidScene extends Phaser.Scene {
     });
   }
 
-  private failRaid(): void {
+  private failRaid(changedDirection = false): void {
     if (this.state !== "playing") return;
 
     this.state = "failed";
     this.setCombatHudVisible(false);
     this.roomEffectText.setAlpha(0);
+    const advice = getDefeatAdvice(this.currentMonster, changedDirection);
+    if (this.raidMode === "practice") {
+      this.sfx.fail();
+      this.state = "menu";
+      this.clearImpactVfxLayers();
+      this.sfx.setMusicTheme("menu");
+      this.menu.show(this.progression, "bestiary");
+      this.menu.showDefeat(advice, this.stage, "practice", this.currentMonster.id, this.requiredHits - this.hits);
+      return;
+    }
     const lossCadence = recordLoss(this.progression.adCadence);
     const defeatProgression = {
       ...this.progression,
@@ -3851,6 +3941,7 @@ export class RaidScene extends Phaser.Scene {
           ? `Недельный путь оборвался на узле ${this.weeklyNode?.order ?? 1}`
           : `Поход окончен на этапе ${this.stage} · новый рейд с этапа 1`,
       );
+      this.menu.showDefeat(advice, this.stage, this.raidMode, this.currentMonster.id, this.requiredHits - this.hits);
       if (lossCadence.shouldShowInterstitial) {
         this.queueLossInterstitial();
       }
@@ -3898,6 +3989,15 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private resolveVictory(choice: VictoryChoice): void {
+    if (this.raidMode === "practice") {
+      this.closeOverlay();
+      this.clearImpactVfxLayers();
+      this.state = "menu";
+      if (choice === "continue") { void this.startBossPractice(this.currentMonster.id); return; }
+      this.sfx.setMusicTheme("menu");
+      this.menu.show(this.progression, "bestiary", "Тренировка завершена. Прогресс похода сохранён.");
+      return;
+    }
     if (this.raidMode === "weekly") {
       const finishedFirstLap = this.weeklyNode?.order === 5;
       if (choice === "continue" && !finishedFirstLap) {
@@ -3947,6 +4047,12 @@ export class RaidScene extends Phaser.Scene {
     this.closeOverlay();
     this.inputCooldownUntil = this.time.now + 240;
     this.state = "playing";
+    const boons = this.getRunBoonEffects();
+    this.runBoonText.setText([
+      boons.rotationMultiplier < 1 ? `Ход −${Math.round((1 - boons.rotationMultiplier) * 100)}%` : "",
+      boons.gapMultiplier < 1 ? `Зона игл −${Math.round((1 - boons.gapMultiplier) * 100)}%` : "",
+      boons.extraThread ? `+${boons.extraThread} нить за победу` : "",
+    ].filter(Boolean).join(" · "));
     this.setCombatHudVisible(true);
     this.refreshAbilityHud();
     this.tipText.setText(tip);
@@ -4225,7 +4331,7 @@ export class RaidScene extends Phaser.Scene {
       .text(
         WIDTH / 2,
         469,
-        this.raidMode === "weekly" && this.weeklyNode?.order === 5
+        this.raidMode === "practice" ? "Повторить тренировку" : this.raidMode === "weekly" && this.weeklyNode?.order === 5
           ? "Завершить маршрут"
           : "Продолжить путь",
         {
@@ -4310,6 +4416,7 @@ export class RaidScene extends Phaser.Scene {
   }
 
   private persistProgress(): void {
+    if (this.raidMode === "practice" && this.state !== "menu") return;
     saveProgression(this.progression);
     this.game.events.emit(PROGRESSION_SAVED_EVENT, this.progression);
   }

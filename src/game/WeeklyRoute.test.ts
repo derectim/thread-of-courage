@@ -75,7 +75,7 @@ describe("weekly route", () => {
       expect(getWeeklyModifier(node.modifierId)).toBeDefined();
     }
     expect(WEEKLY_MODIFIERS).toHaveLength(8);
-    expect(WEEKLY_ROUTE_BUTTON_REWARD).toBe(4);
+    expect(WEEKLY_ROUTE_BUTTON_REWARD).toBe(2);
     expect(first.finalReward).toMatchObject({
       id: "weekly-emblem-owl-eye",
       buttonReward: WEEKLY_ROUTE_BUTTON_REWARD,
@@ -146,7 +146,7 @@ describe("weekly route", () => {
     const firstClaim = claimWeeklyRouteReward(progress, route);
     expect(firstClaim.reward).toEqual(route.finalReward);
     expect(firstClaim.reward?.cosmeticOnly).toBe(true);
-    expect(firstClaim.reward?.buttonReward).toBe(4);
+    expect(firstClaim.reward?.buttonReward).toBe(2);
 
     progress = firstClaim.progress;
     const replayAttempt = completeWeeklyRouteNode(progress, route, route.nodes[0].id);
@@ -162,7 +162,7 @@ describe("weekly route", () => {
     expect(repeatedClaim.progress).toEqual(progress);
   });
 
-  it("grants four buttons again in a new week even when the emblem variant repeats", () => {
+  it("grants two buttons again in a new week even when the emblem variant repeats", () => {
     const firstRoute = createWeeklyRoute("2026-W19");
     const nextRoute = createWeeklyRoute("2026-W20");
     expect(nextRoute.finalReward.id).toBe(firstRoute.finalReward.id);
@@ -172,7 +172,7 @@ describe("weekly route", () => {
       progress = completeWeeklyRouteNode(progress, firstRoute, node.id);
     }
     const firstClaim = claimWeeklyRouteReward(progress, firstRoute);
-    expect(firstClaim.reward?.buttonReward).toBe(4);
+    expect(firstClaim.reward?.buttonReward).toBe(2);
 
     progress = syncWeeklyRouteProgress(firstClaim.progress, nextRoute);
     for (const node of nextRoute.nodes) {
@@ -180,7 +180,7 @@ describe("weekly route", () => {
     }
     const nextClaim = claimWeeklyRouteReward(progress, nextRoute);
     expect(nextClaim.reward?.id).toBe(firstClaim.reward?.id);
-    expect(nextClaim.reward?.buttonReward).toBe(4);
+    expect(nextClaim.reward?.buttonReward).toBe(2);
   });
 
   it("does not grant buttons before all five nodes are complete", () => {

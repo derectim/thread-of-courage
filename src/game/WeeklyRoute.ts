@@ -4,8 +4,8 @@ export const WEEKLY_ROUTE_VERSION = 2 as const;
 export const WEEKLY_ROUTE_NODE_COUNT = 5 as const;
 export const WEEKLY_RESET_WEEKDAY_UTC = 5 as const;
 const DAY_MS = 86_400_000;
-/** Four weekly finishes in a typical month award 16 buttons; a five-week month awards 20. */
-export const WEEKLY_ROUTE_BUTTON_REWARD = 4 as const;
+/** Rare free premium source: two buttons per completed week, never for replays. */
+export const WEEKLY_ROUTE_BUTTON_REWARD = 2 as const;
 export const WEEKLY_ROUTE_REWARD_VARIANTS = [
   {
     id: "weekly-emblem-moon-thimble",

@@ -270,7 +270,7 @@ describe("daily rewards", () => {
     );
     const firstClaim = claimDailyQuest(ready, "victories-2", TODAY);
 
-    expect(firstClaim.reward).toEqual({ thread: 5, cosmeticFragments: 1 });
+    expect(firstClaim.reward).toEqual({ thread: 10 });
     expect(firstClaim.state.daily.quests[0]?.claimed).toBe(true);
     const repeated = claimDailyQuest(firstClaim.state, "victories-2", TODAY);
     expect(repeated.reward).toBeNull();
@@ -298,7 +298,7 @@ describe("persistent victory-streak chests", () => {
         run: 1,
         milestone: 5,
         tier: "regular",
-        reward: { thread: 3, cosmeticFragments: 1, buttonReward: 1 },
+        reward: { thread: 8 },
       },
     ]);
   });
@@ -312,11 +312,9 @@ describe("persistent victory-streak chests", () => {
     expect(grand?.id).toBe("streak-1-10");
     expect(grand?.tier).toBe("grand");
     expect(grand?.reward.thread).toBeGreaterThan(regular?.reward.thread ?? 0);
-    expect(grand?.reward.cosmeticFragments).toBeGreaterThan(
-      regular?.reward.cosmeticFragments ?? 0,
-    );
-    expect(regular?.reward.buttonReward).toBe(1);
-    expect(grand?.reward.buttonReward).toBe(1);
+
+    expect(regular?.reward.buttonReward ?? 0).toBe(0);
+    expect(grand?.reward.buttonReward ?? 0).toBe(0);
     expect(getStreakChestReward(20).thread).toBeGreaterThan(
       getStreakChestReward(10).thread,
     );
@@ -326,7 +324,7 @@ describe("persistent victory-streak chests", () => {
     const five = recordVictories(createDailySystemsState(TODAY), 5);
     const claimed = claimStreakChest(five, "streak-1-5", TODAY);
 
-    expect(claimed.reward).toEqual({ thread: 3, cosmeticFragments: 1, buttonReward: 1 });
+    expect(claimed.reward).toEqual({ thread: 8 });
     expect(claimed.state.streak.pendingChests).toEqual([]);
     expect(claimed.state.streak.claimedChestIds).toEqual(["streak-1-5"]);
     expect(claimStreakChest(claimed.state, "streak-1-5", TODAY).reward).toBeNull();

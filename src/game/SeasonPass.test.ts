@@ -5,15 +5,36 @@ import {
   SEASON_PASS_TIERS,
   SEASON_TASKS,
   addSeasonPassXp,
+  claimAllSeasonPassRewards,
   claimSeasonPassReward,
   createSeasonPassState,
   getSeasonPassStatus,
+  getClaimableSeasonPassRewards,
   recordSeasonPassEvent,
   setPrototypePremiumAccess,
   syncSeasonPassState,
 } from "./SeasonPass";
 
 describe("season pass", () => {
+  it("claims all earned free rewards once without granting locked or premium rewards", () => {
+    const initial = addSeasonPassXp(createSeasonPassState(), 450);
+    const partial = claimSeasonPassReward(initial, 2, "free").state;
+    expect(getClaimableSeasonPassRewards(partial)).toEqual([{ tier: 1, track: "free" }, { tier: 3, track: "free" }]);
+    const result = claimAllSeasonPassRewards(partial);
+    expect(result.rewards.map((reward) => reward.id)).toEqual([SEASON_PASS_TIERS[0].freeReward.id, SEASON_PASS_TIERS[2].freeReward.id]);
+    expect(result.state.claimedFreeTiers).toEqual([2, 1, 3]);
+    expect(result.state.claimedPremiumTiers).toEqual([]);
+    expect(claimAllSeasonPassRewards(result.state)).toEqual({ state: result.state, rewards: [] });
+  });
+
+  it("collects earlier golden rewards after activating the track and never repeats free rewards", () => {
+    const free = claimAllSeasonPassRewards(addSeasonPassXp(createSeasonPassState(), 250));
+    const result = claimAllSeasonPassRewards(setPrototypePremiumAccess(free.state, true));
+    expect(result.rewards).toEqual(SEASON_PASS_TIERS.slice(0, 2).map((tier) => tier.premiumReward));
+    expect(result.state.claimedPremiumTiers).toEqual([1, 2]);
+    expect(result.state.claimedFreeTiers).toEqual([1, 2]);
+  });
+
   it("contains 20 free and premium cosmetic-only tiers", () => {
     expect(SEASON_PASS_TIERS).toHaveLength(20);
     expect(SEASON_PASS_TIERS.map((tier) => tier.requiredXp)).toEqual(

@@ -109,5 +109,8 @@ describe("menu panel scroll restoration", () => {
     expect(getMenuPanelKey("needles", "active", "weekly")).toBe("needles");
     expect(getMenuPanelKey("upgrades", "active", "daily")).toBe("upgrades:active");
     expect(getMenuPanelKey("quests", "permanent", "weekly")).toBe("quests:weekly");
+    expect(getMenuPanelKey("shop", "permanent", "daily", "album")).toBe("shop:album");
+    expect(getMenuPanelKey("shop", "permanent", "daily", "tasks")).toBe("shop:tasks");
+    expect(getMenuPanelKey("shop", "permanent", "daily", "backgrounds")).toBe("shop:backgrounds");
   });
 });

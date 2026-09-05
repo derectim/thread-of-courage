@@ -11,6 +11,7 @@ import {
   getRandomNeedleUnlockCost,
   getUpgradeCost,
   purchaseUpgrade,
+  purchaseThreadCosmetic,
   unlockRandomNeedle,
   unlockBackground,
   type ProgressionState,
@@ -39,7 +40,9 @@ import {
 import {
   SEASON_PASS_TIERS,
   SEASON_TASKS,
+  claimAllSeasonPassRewards,
   claimSeasonPassReward,
+  getClaimableSeasonPassRewards,
   getSeasonPassStatus,
   recordSeasonPassEvent,
   setPrototypePremiumAccess,
@@ -91,12 +94,16 @@ import {
   type QuestId,
   type SkillId,
 } from "../game/meta";
-import type { PlatformUserProfile } from "../platform/PlatformAdapter";
+import type { PlatformUserProfile, RewardedAdResult } from "../platform/PlatformAdapter";
+import { getBossPracticeStage } from "../game/BossPractice";
+import { COSMETIC_SHOP_OFFERS, getCosmeticShopOffer } from "../game/CosmeticShop";
+import { getNextGoal } from "../game/NextGoal";
 
 export type MenuTab = "home" | "upgrades" | "quests" | "needles" | "bestiary" | "shop";
 
 export type UpgradePage = "permanent" | "active" | "passive";
 export type QuestPage = "daily" | "weekly" | "chronicle";
+export type ShopPage = "album" | "cosmetics" | "tasks" | "backgrounds";
 export type WorkshopPage = "profile" | "needle" | "room";
 
 interface HiddenPanelView {
@@ -116,14 +123,17 @@ export function getMenuPanelKey(
   tab: MenuTab,
   upgradePage: UpgradePage,
   questPage: QuestPage,
+  shopPage: ShopPage = "album",
 ): string {
   if (tab === "upgrades") return `upgrades:${upgradePage}`;
   if (tab === "quests") return `quests:${questPage}`;
+  if (tab === "shop") return `shop:${shopPage}`;
   return tab;
 }
 
 export interface GameMenuCallbacks {
   readonly onStart: () => void;
+  readonly onStartPractice?: (monsterId: string) => void;
   readonly onStartWeekly: () => void;
   readonly onShowStory?: () => void;
   readonly onStateChange: (state: ProgressionState) => void;
@@ -131,6 +141,7 @@ export interface GameMenuCallbacks {
   readonly onFullscreen: () => void;
   readonly onLoadLeaderboard: () => Promise<LeaderboardViewModel>;
   readonly onLoadProfile?: () => Promise<PlatformUserProfile | null>;
+  readonly onRefreshDailyAd?: () => Promise<RewardedAdResult>;
 }
 
 const UPGRADE_NAMES: Readonly<Record<UpgradeId, { name: string; iconFileName: string }>> = {
@@ -164,12 +175,21 @@ export const WORKSHOP_PAGE_LABELS: Readonly<Record<WorkshopPage, string>> = {
   room: "Комната",
 };
 
+export const SHOP_PAGE_LABELS: Readonly<Record<ShopPage, string>> = {
+  album: "Альбом",
+  cosmetics: "Украшения",
+  tasks: "Задания",
+  backgrounds: "Фоны",
+};
+
 const QUEST_EMBLEMS: Readonly<Record<QuestId, string>> = {
   "first-fifty": "✦",
   "nightmare-hunter": "◉",
   "boss-breaker": "♜",
   "tenth-stitch": "Ⅹ",
   "needle-collector": "⌁",
+  "deep-path": "☾",
+  "master-path": "✧",
 };
 
 const DAILY_GROUP_SYMBOLS: Readonly<Record<DailyQuestGroup, string>> = {
@@ -257,6 +277,7 @@ function collectibleVariant(id: string): number {
     "workshop-glow-living-thread": 0,
     "workshop-font-hand-stitch": 2,
     "workshop-font-storybook": 0,
+    "fragment-glow-mint-silk": 1,
   };
   if (id in exactProfileVariants) return exactProfileVariants[id];
   return Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 5;
@@ -513,7 +534,7 @@ const GUIDE_PAGES: readonly GuidePage[] = [
       {
         symbol: "☀",
         title: "Каждый день",
-        copy: "Три поручения обновляются ежедневно; весь набор можно бесплатно заменить один раз за день.",
+        copy: "Три поручения обновляются ежедневно. Раз в день весь набор можно заменить за просмотр видео, пока ни одна награда не получена. Прогресс заменённых поручений сбросится.",
       },
       {
         symbol: "⌁",
@@ -527,8 +548,8 @@ const GUIDE_PAGES: readonly GuidePage[] = [
       },
       {
         symbol: "◆",
-        title: "Три игровых ресурса",
-        copy: "✦ нити идут на усиления и иглы, ◆ пуговицы — на фоны и Золотую дорожку, ◈ осколки приходят из поручений и сундуков. Реальной оплаты здесь нет.",
+        title: "Две валюты мастерской",
+        copy: "✦ Нити — обычная валюта за победы, поручения и сундуки: для усилений, игл и украшений. ◆ Пуговицы — премиальная валюта для Золотой дорожки и редких фонов. Бесплатно: 2 за недельный финал, 3 за этап 20 и 5 за этап 40 однократно. Покупка за деньги появится после подключения оплаты.",
       },
       {
         symbol: "✓",
@@ -579,6 +600,7 @@ export default class GameMenu {
   private state: ProgressionState;
   private tab: MenuTab = "home";
   private notice = "";
+  private feedback: { kind: "rewards"; ids: readonly string[] } | { kind: "defeat"; advice: string; stage: number; mode: "campaign" | "weekly" | "practice"; monsterId: string; remaining: number } | null = null;
   private guidePage: number | null = null;
   private leaderboardOpen = false;
   private leaderboardRequest = 0;
@@ -590,6 +612,8 @@ export default class GameMenu {
   private wardrobeKind: WorkshopCollectibleKind = "patch";
   private upgradePage: UpgradePage = "permanent";
   private questPage: QuestPage = "daily";
+  private shopPage: ShopPage = "album";
+  private dailyRefreshPending = false;
   private needlePreviewId: NeedleSkinId;
   private profileRequest = 0;
   private profile: PlatformUserProfile | null = null;
@@ -620,6 +644,7 @@ export default class GameMenu {
     this.state = state;
     this.tab = tab;
     this.notice = notice;
+    this.feedback = null;
     this.guidePage = null;
     this.leaderboardOpen = false;
     this.profileOpen = false;
@@ -636,7 +661,24 @@ export default class GameMenu {
     if (!this.profile) void this.loadProfile();
   }
 
+  public showDefeat(advice: string, stage: number, mode: "campaign" | "weekly" | "practice", monsterId: string, remaining: number): void {
+    this.feedback = { kind: "defeat", advice, stage, mode, monsterId, remaining };
+    this.render();
+    this.focusFeedback();
+  }
+
+  private revealRewards(ids: readonly string[]): void {
+    this.feedback = { kind: "rewards", ids };
+    this.render();
+    this.focusFeedback();
+  }
+
+  private focusFeedback(): void {
+    this.root.querySelector<HTMLElement>(".feedback-dialog")?.focus({ preventScroll: true });
+  }
+
   public hide(): void {
+    this.feedback = null;
     const panelScroll = this.root.querySelector<HTMLElement>(".panel-scroll");
     this.hiddenPanelView =
       this.tab !== "home" && panelScroll
@@ -670,8 +712,47 @@ export default class GameMenu {
   private readonly handleClick = (event: Event): void => {
     const target = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
     if (!target || target.disabled) return;
+    if (this.dailyRefreshPending) return;
 
     const action = target.dataset.action;
+    if (this.feedback && !target.closest(".feedback-dialog")) return;
+    if (action === "feedback-close") { this.feedback = null; this.render(); this.root.querySelector<HTMLElement>("button:not([disabled])")?.focus({ preventScroll: true }); return; }
+    if (action === "feedback-retry" && this.feedback?.kind === "defeat") {
+      const previous = this.feedback;
+      this.feedback = null;
+      this.render();
+      if (previous.mode === "practice") this.callbacks.onStartPractice?.(previous.monsterId);
+      else if (previous.mode === "weekly") this.callbacks.onStartWeekly();
+      else this.callbacks.onStart();
+      return;
+    }
+    if (action === "boss-practice") {
+      const id = target.dataset.id ?? "";
+      if (getBossPracticeStage(id, this.state.highestStageCleared) !== null) this.callbacks.onStartPractice?.(id);
+      return;
+    }
+    if (action === "next-goal") {
+      const goal = getNextGoal(this.state);
+      if (goal.destination === "run") { this.callbacks.onStart(); return; }
+      this.notice = "";
+      if (goal.destination === "cosmetics" || goal.destination === "season") {
+        this.tab = "shop"; this.shopPage = goal.destination === "cosmetics" ? "cosmetics" : "album";
+      } else if (goal.destination === "daily") { this.tab = "quests"; this.questPage = "daily"; }
+      else if (goal.destination === "needles") { this.tab = "needles"; }
+      else { this.tab = "upgrades"; this.upgradePage = goal.destination === "talents" ? "passive" : "active"; }
+      this.render();
+      return;
+    }
+    if (action === "cosmetic-purchase") {
+      const id = target.dataset.id ?? "";
+      const offer = getCosmeticShopOffer(id);
+      if (!offer) return;
+      const next = purchaseThreadCosmetic(this.state, id);
+      if (next === this.state) return;
+      this.commit(next, offer.collectible.name + " — в коллекции.");
+      this.revealRewards([id]);
+      return;
+    }
     if (action === "profile-open") {
       this.guidePage = null;
       this.leaderboardOpen = false;
@@ -822,6 +903,27 @@ export default class GameMenu {
       return;
     }
 
+    if (action === "shop-page") {
+      const page = target.dataset.page as ShopPage;
+      if (page in SHOP_PAGE_LABELS) {
+        this.shopPage = page;
+        this.notice = "";
+        this.render();
+      }
+      return;
+    }
+    if (action === "season-jump") {
+      const claimable = getClaimableSeasonPassRewards(this.state.seasonPass);
+      const tier = claimable[0]?.tier ?? Math.min(20, getSeasonPassStatus(this.state.seasonPass).unlockedTier + 1);
+      const scroll = this.root.querySelector<HTMLElement>(".panel-scroll");
+      const row = this.root.querySelector<HTMLElement>(`[data-season-tier="${tier}"]`);
+      const headingHeight = this.root.querySelector<HTMLElement>(".pass-track-headings")?.offsetHeight ?? 0;
+      if (scroll && row) {
+        scroll.scrollTo({ top: scroll.scrollTop + row.getBoundingClientRect().top - scroll.getBoundingClientRect().top - headingHeight, behavior: "instant" });
+      }
+      return;
+    }
+
     if (action === "upgrade") {
       const id = target.dataset.id as UpgradeId;
       this.commit(purchaseUpgrade(this.state, id));
@@ -915,19 +1017,7 @@ export default class GameMenu {
       return;
     }
     if (action === "daily-refresh") {
-      const context = this.getDailyContext();
-      const dailySystems = normalizeDailySystemsState(this.state.dailySystems, new Date(), context);
-      if (!canRefreshDailyQuests(dailySystems)) {
-        this.showNotice("Сегодняшняя замена уже использована или награда уже получена");
-        return;
-      }
-      this.commit(
-        {
-          ...this.state,
-          dailySystems: refreshDailyQuests(dailySystems, new Date(), context),
-        },
-        "Поручения на сегодня заменены",
-      );
+      void this.refreshDailyWithAd();
       return;
     }
     if (action === "daily-claim") {
@@ -942,11 +1032,10 @@ export default class GameMenu {
         {
           ...this.state,
           thread: this.state.thread + result.reward.thread,
-          cosmeticFragments: this.state.cosmeticFragments + result.reward.cosmeticFragments,
           dailySystems: result.state,
           seasonPass: recordSeasonPassEvent(this.state.seasonPass, "daily-task-completed"),
         },
-        `Награда: ✦ ${result.reward.thread} · осколки ${result.reward.cosmeticFragments}`,
+        `Награда: ✦ ${result.reward.thread}`,
       );
       return;
     }
@@ -967,10 +1056,9 @@ export default class GameMenu {
           ...this.state,
           thread: this.state.thread + result.reward.thread,
           premium: this.state.premium + (result.reward.buttonReward ?? 0),
-          cosmeticFragments: this.state.cosmeticFragments + result.reward.cosmeticFragments,
           dailySystems: result.state,
         },
-        `Сундук открыт: ✦ ${result.reward.thread} · ◆ ${result.reward.buttonReward ?? 0} · осколки ${result.reward.cosmeticFragments}`,
+        `Сундук открыт: ✦ ${result.reward.thread} нитей`,
       );
       return;
     }
@@ -1013,7 +1101,7 @@ export default class GameMenu {
         return;
       }
       if (this.state.premium < SEASON_PREMIUM_COST) {
-        this.showNotice(`Нужно ${SEASON_PREMIUM_COST} игровых пуговиц`);
+        this.showNotice(`Нужно ${SEASON_PREMIUM_COST} лунных пуговиц`);
         return;
       }
       this.commit(
@@ -1050,20 +1138,73 @@ export default class GameMenu {
         },
         `В альбоме: ${result.reward.name}`,
       );
+      this.revealRewards([result.reward.id]);
+      return;
+    }
+    if (action === "season-claim-all") {
+      const result = claimAllSeasonPassRewards(this.state.seasonPass);
+      if (!result.rewards.length) return;
+      let collection = this.getWorkshopCollection();
+      for (const reward of result.rewards) collection = grantWorkshopCollectible(collection, reward.id);
+      this.commit({
+        ...this.state,
+        seasonPass: result.state,
+        ownedSeasonCosmetics: [...new Set([...this.state.ownedSeasonCosmetics, ...result.rewards.map((reward) => reward.id)])],
+        workshopCollection: collection,
+      }, `Получено наград: ${result.rewards.length}. Они ждут в Книге мастерской.`);
+      this.revealRewards(result.rewards.map(reward => reward.id));
       return;
     }
   };
+
+  private async refreshDailyWithAd(): Promise<void> {
+    if (this.dailyRefreshPending || this.destroyed) return;
+    const before = normalizeDailySystemsState(this.state.dailySystems, new Date(), this.getDailyContext());
+    if (!canRefreshDailyQuests(before)) {
+      this.showNotice("Замена доступна раз в день, до получения первой награды");
+      return;
+    }
+    this.dailyRefreshPending = true;
+    this.notice = "Открываем видео… Поручения заменятся после полного просмотра.";
+    this.render();
+    let result: RewardedAdResult;
+    try {
+      result = await this.callbacks.onRefreshDailyAd?.() ?? "unsupported";
+    } catch {
+      result = "error";
+    }
+    this.dailyRefreshPending = false;
+    if (this.destroyed) return;
+    if (result !== "rewarded") {
+      this.showNotice(result === "cancelled"
+        ? "Видео не досмотрено. Поручения и попытка обновления сохранены."
+        : result === "unsupported"
+          ? "Обновление за видео доступно в версии VK. Поручения и попытка сохранены."
+          : "Видео сейчас недоступно. Попробуй позже — попытка обновления сохранена.");
+      return;
+    }
+    const now = new Date();
+    const context = this.getDailyContext();
+    const current = normalizeDailySystemsState(this.state.dailySystems, now, context);
+    // An ad may cross the daily reset. Never spend the new day's refresh on an old request.
+    if (current.daily.dayKey !== before.daily.dayKey || !canRefreshDailyQuests(current)) {
+      this.showNotice("Набор поручений уже изменился. Новая попытка обновления сохранена.");
+      return;
+    }
+    this.commit({ ...this.state, dailySystems: refreshDailyQuests(current, now, context) }, "Видео просмотрено. Три новых поручения готовы!");
+  }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
     if (
       this.guidePage === null &&
       !this.leaderboardOpen &&
       !this.profileOpen &&
-      !this.workshopOpen
+      !this.workshopOpen && !this.feedback
     ) return;
     if (event.key === "Escape") {
       event.preventDefault();
-      if (this.leaderboardOpen) this.closeLeaderboard();
+      if (this.feedback) { this.feedback = null; this.render(); this.root.querySelector<HTMLElement>("button:not([disabled])")?.focus({ preventScroll: true }); }
+      else if (this.leaderboardOpen) this.closeLeaderboard();
       else if (this.workshopOpen) this.closeWorkshop();
       else if (this.profileOpen) {
         if (this.wardrobeOpen) {
@@ -1078,7 +1219,7 @@ export default class GameMenu {
     if (event.key !== "Tab") return;
 
     const dialog = this.root.querySelector<HTMLElement>(
-      this.leaderboardOpen
+      this.feedback ? ".feedback-dialog" : this.leaderboardOpen
         ? ".leaderboard-dialog"
         : this.workshopOpen
           ? ".workshop-dialog"
@@ -1233,7 +1374,7 @@ export default class GameMenu {
   }
 
   private getPanelKey(): string {
-    return getMenuPanelKey(this.tab, this.upgradePage, this.questPage);
+    return getMenuPanelKey(this.tab, this.upgradePage, this.questPage, this.shopPage);
   }
 
   private revealNeedleSelection(): void {
@@ -1289,6 +1430,10 @@ export default class GameMenu {
         }
       : null;
     this.root.innerHTML = this.tab === "home" ? this.renderHome() : this.renderPanel();
+    if (this.feedback) {
+      for (const child of Array.from(this.root.children)) if (child instanceof HTMLElement) child.inert = true;
+      this.root.insertAdjacentHTML("beforeend", this.renderFeedback());
+    }
     if (previousScrollTop !== undefined) {
       const panelScroll = this.root.querySelector<HTMLElement>(".panel-scroll");
       if (panelScroll) panelScroll.scrollTop = previousScrollTop;
@@ -1314,6 +1459,9 @@ export default class GameMenu {
           button.dataset.kind === focusKey.kind,
       );
       matchingButton?.focus({ preventScroll: true });
+    }
+    if (this.feedback && !this.root.querySelector(".feedback-dialog")?.contains(document.activeElement)) {
+      this.focusFeedback();
     }
   }
 
@@ -1368,7 +1516,7 @@ export default class GameMenu {
         ${this.renderWorld()}
         <div class="menu-vignette" aria-hidden="true"></div>
         <header class="menu-topbar">
-          <button class="round-tool" data-action="fullscreen" aria-label="На весь экран">⛶</button>
+          <button class="round-tool desktop-fullscreen" data-action="fullscreen" aria-label="На весь экран">⛶</button>
           <div class="currency-chip"><img src="${asset("currency-thread-spool.webp")}" alt="" aria-hidden="true" /><strong>${this.state.thread}</strong><small>нити</small></div>
           <div class="currency-chip premium"><img src="${asset("currency-moon-button.webp")}" alt="" aria-hidden="true" /><strong>${this.state.premium}</strong><small>пуговицы</small></div>
           <button class="round-tool" data-action="sound" aria-label="${this.state.muted ? "Включить звук и музыку" : "Выключить звук и музыку"}">${this.state.muted ? "🔇" : "♪"}</button>
@@ -1389,7 +1537,7 @@ export default class GameMenu {
           <strong>Профиль</strong>
         </button>
         <button class="menu-story-trigger" data-action="story-open" aria-haspopup="dialog" aria-label="Посмотреть историю мира">
-          <span aria-hidden="true">✦</span><strong>История</strong>
+          <span aria-hidden="true">✦</span><strong>Пролог</strong>
         </button>
         <section class="menu-hero-copy">
           <span class="menu-kicker">ТКАНЕВЫЙ РЕЙД</span>
@@ -1397,10 +1545,13 @@ export default class GameMenu {
           <p>Зашивай кошмары и не дай иглам столкнуться.</p>
         </section>
         ${this.renderAnimatedHero()}
+        <div class="menu-bottom-stack">
         <div class="menu-record ${this.notice ? "has-notice" : ""}">
           ${this.notice ? `<span>${this.notice}</span><small>Лучший результат: <strong>${record || "—"}</strong></small>` : `Лучший результат: <strong>${record || "—"}</strong>`}
         </div>
+        ${this.renderNextGoal()}
         <button class="raid-button" data-action="start"><span>${campaignStage === 1 ? "В РЕЙД!" : "ПРОДОЛЖИТЬ ПУТЬ"}</span><small>${campaignStage === 1 ? "Новый поход · этап 1" : `Следующий этап: ${campaignStage}`}</small></button>
+        </div>
         ${this.renderNav()}
       </div>
       ${guideIsOpen ? this.renderGuide(this.guidePage!) : ""}
@@ -1478,6 +1629,7 @@ export default class GameMenu {
   }
 
   private getCollectibleAcquisition(collectible: WorkshopCollectible): string {
+    if (collectible.source === "fragment-shop") return `Лавка · ${getCosmeticShopOffer(collectible.id)?.cost ?? 0} нитей`;
     if (collectible.source === "season") {
       const [track, tier = "?"] = collectible.sourceId.split("-");
       return track === "premium"
@@ -1788,12 +1940,16 @@ export default class GameMenu {
       ${this.notice ? `<div class="panel-notice" role="status" aria-live="polite">${this.notice}</div>` : ""}
         ${this.renderPanelTabs(tab)}
         <div class="panel-scroll">${this.renderTabContent(tab)}</div>
+        ${tab === "shop" && this.shopPage === "album" ? this.renderShopFooter() : ""}
       </section>
       ${this.renderNav()}
     `;
   }
 
   private renderPanelTabs(tab: Exclude<MenuTab, "home">): string {
+    if (tab === "shop") {
+      return `<nav class="panel-tabs shop-tabs" aria-label="Разделы лавки">${(Object.keys(SHOP_PAGE_LABELS) as ShopPage[]).map((page) => `<button data-action="shop-page" data-page="${page}" class="${this.shopPage === page ? "is-active" : ""}" ${this.shopPage === page ? 'aria-current="page"' : ""}>${SHOP_PAGE_LABELS[page]}</button>`).join("")}</nav>`;
+    }
     if (tab === "upgrades") {
       return `<nav class="panel-tabs" role="tablist" aria-label="Виды усилений">${(
         Object.keys(UPGRADE_PAGE_LABELS) as UpgradePage[]
@@ -1920,7 +2076,7 @@ export default class GameMenu {
             <h3>${definition.name}</h3>
             <p>${definition.description}</p>
             <div class="quest-progress" role="progressbar" aria-label="Прогресс ежедневного поручения ${definition.name}" aria-valuemin="0" aria-valuemax="${target}" aria-valuenow="${progress}"><span style="width:${(progress / target) * 100}%"></span></div>
-            <div class="quest-reward"><span>Награда</span><strong>✦ ${definition.reward.thread} · ◈ ${definition.reward.cosmeticFragments}</strong></div>
+            <div class="quest-reward"><span>Награда</span><strong>✦ ${definition.reward.thread}</strong></div>
           </div>
           <button class="buy-button card-action" data-action="daily-claim" data-id="${quest.id}" ${!complete || quest.claimed ? "disabled" : ""} aria-label="${quest.claimed ? `${definition.name}: награда получена` : complete ? `Забрать награду за ${definition.name}` : `${definition.name}: выполнено ${progress} из ${target}`}">
             <span>${quest.claimed ? "ГОТОВО" : complete ? "ЗАБРАТЬ" : "В ПУТИ"}</span><small>${quest.claimed ? "ПОЛУЧЕНО" : complete ? "НАГРАДА" : `${progress}/${target}`}</small>
@@ -1934,7 +2090,7 @@ export default class GameMenu {
     const pendingChests = streak.pendingChests.map((chest) => `
       <button class="streak-claim-button ${chest.tier === "grand" ? "is-grand" : ""}" data-action="streak-claim" data-chest-id="${chest.id}" aria-label="Открыть сундук за серию ${chest.milestone}">
         <span>${chest.tier === "grand" ? "БОЛЬШОЙ СУНДУК" : `СУНДУК · ${chest.milestone}`}</span>
-        <small>✦ ${chest.reward.thread} · ◆ ${chest.reward.buttonReward ?? 0} · ◈ ${chest.reward.cosmeticFragments}</small>
+        <small>✦ ${chest.reward.thread}</small>
       </button>`).join("");
 
     const weeklyNow = new Date();
@@ -1986,8 +2142,9 @@ export default class GameMenu {
       <section class="daily-board" aria-labelledby="daily-board-title">
         <header class="meta-section-heading">
           <div><span>ОБНОВЛЯЕТСЯ ЕЖЕДНЕВНО</span><h3 id="daily-board-title">Сегодняшние поручения</h3></div>
-          <button class="reroll-button" data-action="daily-refresh" ${!canRefreshDaily ? "disabled" : ""} aria-label="${canRefreshDaily ? "Заменить все ежедневные поручения один раз за день" : "Замена ежедневных поручений сегодня недоступна"}"><span>${canRefreshDaily ? "↻" : "✓"}</span> ${canRefreshDaily ? "ЗАМЕНИТЬ" : "ИСПОЛЬЗОВАНО"}</button>
+          <button class="reroll-button" data-action="daily-refresh" ${!canRefreshDaily || this.dailyRefreshPending ? "disabled" : ""} aria-busy="${this.dailyRefreshPending}" aria-describedby="daily-refresh-note"><span aria-hidden="true">${this.dailyRefreshPending ? "◷" : canRefreshDaily ? "▶" : "✓"}</span><strong>${this.dailyRefreshPending ? "Открываем…" : canRefreshDaily ? "Обновить" : dailySystems.daily.refreshUsed ? "Использовано" : "Недоступно"}</strong><small>${canRefreshDaily ? "за просмотр видео" : "до завтра"}</small></button>
         </header>
+        <p class="daily-refresh-note" id="daily-refresh-note">${dailySystems.daily.refreshUsed ? "Сегодня набор уже обновлён. Новая замена будет доступна завтра." : !canRefreshDaily ? "Награда уже получена — этот набор остаётся до завтра." : "1 раз в день за видео · заменятся все 3 поручения, их прогресс сбросится. Доступно до получения первой награды."}</p>
         <div class="daily-summary"><span>${dailyClaimed}/3 получено</span><strong>${dailyReady ? `${dailyReady} ${dailyReady === 1 ? "награда ждёт" : "награды ждут"}` : "Продолжай рейд"}</strong></div>
         <div class="card-stack daily-stack">${dailyQuests}</div>
       </section>
@@ -1997,7 +2154,7 @@ export default class GameMenu {
         </div>
         <div class="streak-copy">
           <span>КАК РАБОТАЕТ СУНДУК</span><h3 id="streak-title">${streak.current} побед подряд · рекорд ${streak.best}</h3>
-          <p>${streak.pendingChests.length ? "Награда уже заработана и не пропадёт: нажми кнопку сундука ниже. В каждом сундуке есть 1 лунная пуговица." : `Побеждай без поражений. Каждая 5-я победа даёт сундук, каждая 10-я — большой. В каждом есть 1 лунная пуговица. До следующего осталось ${nextMilestone - streak.current}.`}</p>
+          <p>${streak.pendingChests.length ? "Награда уже заработана и не пропадёт: нажми кнопку сундука ниже. В сундуках лежат нити." : `Побеждай без поражений. Каждая 5-я победа даёт сундук, каждая 10-я — большой. В них лежат нити. До следующего осталось ${nextMilestone - streak.current}.`}</p>
           <ol class="streak-steps" aria-label="Пять шагов до сундука">${Array.from({ length: 5 }, (_, index) => `<li class="${index < streakStep ? "is-done" : index === streakStep ? "is-next" : ""}">${index + 1}</li>`).join("")}</ol>
           <div class="streak-rules"><span>✓ Уже заработанный сундук остаётся</span><span>× Поражение сбрасывает только текущую серию</span></div>
           ${pendingChests ? `<div class="streak-actions">${pendingChests}</div>` : `<small class="streak-next">Следующая награда на отметке ${nextMilestone}</small>`}
@@ -2034,7 +2191,7 @@ export default class GameMenu {
       <div class="panel-intro panel-intro-quests is-compact">
         <span class="panel-intro-emblem" aria-hidden="true">${this.questPage === "weekly" ? "⌁" : this.questPage === "chronicle" ? "♛" : "✓"}</span>
         <div><strong>${pageCopy[this.questPage][0]}</strong><p>${pageCopy[this.questPage][1]}</p></div>
-        <b>◈ ${this.state.cosmeticFragments}</b>
+        <b>✦ ${this.state.thread}</b>
       </div>
       ${pageContent[this.questPage]}`;
   }
@@ -2127,7 +2284,8 @@ export default class GameMenu {
   private renderBestiary(): string {
     return MONSTERS.map((monster) => {
       const firstStage = firstStageForMonster(monster.id);
-      const discovered = this.state.highestStageCleared >= firstStage;
+      const practiceStage = getBossPracticeStage(monster.id, this.state.highestStageCleared);
+      const discovered = this.state.highestStageCleared >= firstStage || practiceStage !== null;
       const imageKey = monster.textureKeys?.[0];
       const threatLabel = getBestiaryThreatLabel(monster);
       return `
@@ -2136,6 +2294,7 @@ export default class GameMenu {
           <div class="item-copy">
             <h3>${discovered ? monster.name : "Неизвестный кошмар"}${threatLabel && discovered ? ` · ${threatLabel}` : ""}</h3>
             <p>${discovered ? monster.epithet : `Встречается не раньше этапа ${firstStage}`}</p>
+            ${practiceStage !== null ? `<button class="practice-button" data-action="boss-practice" data-id="${monster.id}">Тренировка · этап ${practiceStage}</button><small class="practice-note">Без наград и потери прогресса похода</small>` : ""}
           </div>
         </article>`;
     }).join("");
@@ -2222,112 +2381,150 @@ export default class GameMenu {
     return `<button class="collectible-toggle ${equipped ? "is-equipped" : ""}" data-action="workshop-toggle" data-id="${collectible.id}" aria-pressed="${equipped}">${equipped ? "СНЯТЬ" : verb}</button>`;
   }
 
-  private renderShop(): string {
-    const workshopCollection = this.getWorkshopCollection();
-    const passStatus = getSeasonPassStatus(this.state.seasonPass);
-    const passProgress = passStatus.xpForNextTier === null
-      ? 100
-      : (passStatus.xpIntoTier / passStatus.xpForNextTier) * 100;
-    const seasonTasks = SEASON_TASKS.map((task) => {
-      const progress = Math.min(this.state.seasonPass.taskProgress[task.id] ?? 0, task.target);
-      const complete = this.state.seasonPass.completedTaskIds.includes(task.id);
-      return `
-        <li class="season-task ${complete ? "is-complete" : ""}">
-          <span>${complete ? "✓" : "✦"}</span>
-          <div><strong>${task.name}</strong><small>${task.description}</small></div>
-          <b>${progress}/${task.target}</b>
-        </li>`;
-    }).join("");
+  private renderNextGoal(): string {
+    const goal = getNextGoal(this.state);
+    const percent = Math.max(0, Math.min(100, goal.progress / Math.max(1, goal.target) * 100));
+    return `<button class="menu-next-goal ${goal.ready ? "is-ready" : ""}" data-action="next-goal" aria-label="${escapeHtml(`${goal.title}. ${goal.detail}. ${goal.buttonLabel}`)}">
+      <img src="${asset(goal.iconFileName)}" alt="" /><span class="next-goal-copy"><small>${goal.ready ? "НАГРАДА ЖДЁТ" : "ТВОЯ БЛИЖАЙШАЯ ЦЕЛЬ"}</small><strong>${escapeHtml(goal.title)}</strong><span>${escapeHtml(goal.detail)}</span><span class="next-goal-progress" aria-hidden="true"><i style="width:${percent}%"></i></span></span><b>${goal.buttonLabel} →</b>
+    </button>`;
+  }
 
-    const renderSeasonTrack = (
-      tier: (typeof SEASON_PASS_TIERS)[number],
-      track: SeasonPassTrack,
-      claimed: boolean,
-      unlocked: boolean,
-      premiumEnabled: boolean,
-    ): string => {
+  private renderFeedback(): string {
+    const feedback = this.feedback;
+    if (!feedback) return "";
+    const rewards = feedback.kind === "rewards";
+    const content = rewards ? `<div class="reward-reveal-grid">${feedback.ids.map(id => {
+      const item = getWorkshopCollectible(id);
+      if (!item) return "";
+      return `<article class="reward-reveal-card">${this.renderCollectiblePreview(item)}<small>${WORKSHOP_KIND_LABELS[item.kind]}</small><h3>${escapeHtml(collectibleDisplayName(item.name))}</h3><p>${escapeHtml(item.description)}</p><button class="collectible-toggle" data-action="workshop-toggle" data-id="${item.id}" aria-pressed="${this.getWorkshopCollection().equipped[item.kind] === item.id}">${this.getWorkshopCollection().equipped[item.kind] === item.id ? "✓ Применено · снять" : "Применить"}</button></article>`;
+    }).join("")}</div>` : `<div class="defeat-copy"><span class="defeat-stitch" aria-hidden="true">✂</span><h3>До победы оставалось стежков: ${feedback.remaining}</h3><p>${escapeHtml(feedback.advice)}</p><div class="defeat-kept"><strong>✦ ${this.state.thread} нитей · ◆ ${this.state.premium} пуговиц</strong><span>Валюты, усиления и коллекция сохранены.</span></div><p>${feedback.mode === "campaign" ? "Новый поход начнётся с этапа 1. Временные узоры сброшены." : feedback.mode === "weekly" ? "Повтори этот узел. Пройденные узлы сохранены." : "Тренировка не меняет награды, рекорд и текущий поход."}</p></div>`;
+    return `<div class="feedback-overlay"><section class="feedback-dialog ${rewards ? "is-rewards" : "is-defeat"}" role="dialog" aria-modal="true" aria-labelledby="feedback-title" tabindex="-1"><header><div><small>${rewards ? "НОВОЕ В ТВОЕЙ КОЛЛЕКЦИИ" : feedback.mode === "practice" ? "ТРЕНИРОВКА" : `ЭТАП ${feedback.stage}`}</small><h2 id="feedback-title">${rewards ? feedback.ids.length > 1 ? `Украшения получены · ${feedback.ids.length}` : "Твоё новое украшение" : "Нить оборвалась"}</h2></div><button data-action="feedback-close" aria-label="Закрыть">×</button></header><div class="feedback-scroll">${content}</div><footer>${rewards ? `<span>Примерь сейчас или выбери позже в профиле.</span><button data-action="feedback-close">Готово</button>` : `<button class="feedback-secondary" data-action="feedback-close">В меню</button><button data-action="feedback-retry">${feedback.mode === "campaign" ? "Новый поход" : "Попробовать ещё"}</button>`}</footer></section></div>`;
+  }
+
+  private renderCosmeticShop(): string {
+    const collection = this.getWorkshopCollection();
+    return `<section class="fragment-shop" aria-labelledby="fragment-shop-title">
+      <div class="shop-page-heading"><span>УКРАШЕНИЯ ЗА НИТИ</span><h3 id="fragment-shop-title">Собери свой образ</h3><p>Зарабатывай нити в походах и поручениях. Выбери украшение, купи и сразу примерь.</p><div class="fragment-balance"><span aria-hidden="true">✦</span><strong>${this.state.thread}</strong><span>нитей у тебя</span></div></div>
+      <div class="fragment-shop-grid">${COSMETIC_SHOP_OFFERS.map((offer) => {
+        const item = offer.collectible;
+        const owned = collection.ownedCollectibleIds.includes(item.id);
+        const equipped = collection.equipped[item.kind] === item.id;
+        const missing = Math.max(0, offer.cost - this.state.thread);
+        return `<article class="fragment-offer ${owned ? "is-owned" : ""} ${equipped ? "is-equipped" : ""}" data-offer="${item.id}">
+          <div class="fragment-preview">${this.renderCollectiblePreview(item)}</div><small>${WORKSHOP_KIND_LABELS[item.kind]}</small><h4>${escapeHtml(collectibleDisplayName(item.name))}</h4><p>${item.description}</p>
+          <span class="fragment-offer-status">${equipped ? "✓ Уже украшает твой образ" : owned ? "✓ В твоей коллекции" : missing ? `Осталось накопить ${missing} нитей` : "Можно купить прямо сейчас"}</span>
+          ${owned ? `<button data-action="workshop-toggle" data-id="${item.id}" aria-pressed="${equipped}">${equipped ? "Снять украшение" : "Применить"}</button>` : `<button data-action="cosmetic-purchase" data-id="${item.id}" ${missing ? "disabled" : ""} aria-label="Потратить ${offer.cost} нитей на ${escapeHtml(item.name)}">Купить · ✦ ${offer.cost}</button>`}
+        </article>`;
+      }).join("")}</div>
+      <p class="fragment-shop-note">Каждое украшение покупается один раз и остаётся навсегда. Его можно включать и снимать в лавке или Книге мастерской.</p>
+      <button class="pass-back-to-album" data-tab="quests">За нитями — к поручениям →</button>
+    </section>`;
+  }
+
+  private renderShopFooter(): string {
+    const enabled = this.state.seasonPass.prototypePremiumEnabled;
+    const count = getClaimableSeasonPassRewards(this.state.seasonPass).length;
+    const missing = Math.max(0, SEASON_PREMIUM_COST - this.state.premium);
+    return `<footer class="pass-footer">
+      <div><span>${count ? `Ждут наград: ${count}` : "Награды за опыт в игре"}</span>
+        <button class="pass-claim-all" data-action="season-claim-all" ${count ? "" : "disabled"}>${count ? `Забрать всё · ${count}` : getSeasonPassStatus(this.state.seasonPass).unlockedTier ? "Всё собрано" : "Пока закрыто"}</button></div>
+      <div><span>${enabled ? "Все 20 золотых наград открываются за опыт" : missing ? `Не хватает ${missing} пуговиц` : "20 украшений для твоей коллекции"}</span>
+        <button class="pass-activate" data-action="season-premium" ${enabled || missing ? "disabled" : ""}>${enabled ? "✓ Активировано" : `Открыть · ${SEASON_PREMIUM_COST} <img src="${asset("currency-moon-button.webp")}" alt="пуговиц" />`}</button></div>
+    </footer>`;
+  }
+
+  private renderShop(): string {
+    if (this.shopPage === "cosmetics") return this.renderCosmeticShop();
+    const pass = this.state.seasonPass;
+    const status = getSeasonPassStatus(pass);
+    const enabled = pass.prototypePremiumEnabled;
+    const ready = getClaimableSeasonPassRewards(pass).length;
+    const collection = this.getWorkshopCollection();
+    const percent = status.xpForNextTier === null ? 100 : (status.xpIntoTier / status.xpForNextTier) * 100;
+
+    if (this.shopPage === "backgrounds") {
+      return `<section class="shop-backgrounds" aria-labelledby="backgrounds-title">
+        <div class="shop-page-heading"><span>НОВОЕ НАСТРОЕНИЕ ПОХОДА</span><h3 id="backgrounds-title">Мир за окном</h3><p>Выбирай фон для рейда. Новые декорации открываются за рекорд или лунные пуговицы.</p></div>
+        <div class="background-stack">${BACKGROUNDS.map((background) => {
+          const owned = this.state.ownedBackgrounds.includes(background.id);
+          const equipped = this.state.equippedBackground === background.id;
+          const earned = this.state.highestStageCleared >= background.unlockStage;
+          const affordable = this.state.premium >= background.premiumCost;
+          return `<article class="background-card ${equipped ? "is-equipped" : ""}">
+            <div class="shop-background-art"><img src="${asset(background.fileName ?? "attic-workshop.webp")}" alt="${escapeHtml(background.name)}" loading="lazy" /><span>${equipped ? "✓ Выбран" : owned ? "В коллекции" : earned ? "Награда за рекорд" : "Можно открыть"}</span></div>
+            <div class="shop-background-copy"><h3>${background.name}</h3><p>${background.description}</p>
+              ${!owned && !earned ? `<small>Победи на этапе ${background.unlockStage} или потрать ${background.premiumCost} пуговиц.</small>` : ""}</div>
+            <button class="select-button" data-action="background" data-id="${background.id}" ${equipped || (!owned && !earned && !affordable) ? "disabled" : ""}>${equipped ? "✓ Выбран" : owned ? "Выбрать фон" : earned ? "Забрать бесплатно" : `Открыть · ${background.premiumCost} пуговиц`}</button>
+          </article>`;
+        }).join("")}</div>
+        <p class="shop-currency-note"><img src="${asset("currency-moon-button.webp")}" alt="" /> Пуговицы — премиальная валюта. Бесплатно: 2 за недельный финал и разовые награды за этапы 20 и 40.</p>
+      </section>`;
+    }
+
+    if (this.shopPage === "tasks") {
+      return `<section class="shop-season-tasks" aria-labelledby="season-tasks-title">
+        <div class="shop-page-heading"><span>СЕЗОН 1 · ЖИВАЯ НИТЬ</span><h3 id="season-tasks-title">Вышивай свою историю</h3><p>Играй и выполняй задания: опыт автоматически открывает новые уровни альбома.</p></div>
+        <div class="pass-xp-sources"><span>Этап <strong>+8 XP</strong></span><span>Главный босс <strong>ещё +12 XP</strong></span><span>Поручение <strong>+30 XP</strong></span></div>
+        <div class="pass-task-summary"><strong>Долгие задания</strong><span>${status.completedTasks} / ${SEASON_TASKS.length} выполнено</span></div>
+        <div class="pass-tasks">${SEASON_TASKS.map((task) => {
+          const progress = Math.min(pass.taskProgress[task.id] ?? 0, task.target);
+          const complete = pass.completedTaskIds.includes(task.id);
+          return `<article class="pass-task ${complete ? "is-complete" : ""}">
+            <div class="pass-task-top"><h4>${task.name}</h4><strong>${complete ? "✓" : "+"}${task.xpReward} XP</strong></div><p>${task.description}</p>
+            <div class="pass-task-progress" role="progressbar" aria-label="${task.name}" aria-valuemin="0" aria-valuemax="${task.target}" aria-valuenow="${progress}"><span style="width:${progress / task.target * 100}%"></span></div>
+            <div class="pass-task-bottom"><span>${progress} / ${task.target}</span><span>${complete ? "Опыт получен" : "Выполняется в игре"}</span></div>
+          </article>`;
+        }).join("")}</div>
+        <button class="pass-back-to-album" data-action="shop-page" data-page="album">К наградам альбома →</button>
+      </section>`;
+    }
+
+    const renderReward = (tier: (typeof SEASON_PASS_TIERS)[number], track: SeasonPassTrack): string => {
       const reward = track === "free" ? tier.freeReward : tier.premiumReward;
       const collectible = getWorkshopCollectible(reward.id);
       if (!collectible) return "";
-      const available = unlocked && (track === "free" || premiumEnabled);
-      const revealed =
-        claimed ||
-        workshopCollection.ownedCollectibleIds.includes(collectible.id);
-      const presentation = getCollectibleRewardPresentation(
-        collectible,
-        revealed,
-      );
-      const equipped = workshopCollection.equipped[collectible.kind] === collectible.id;
-      const action = claimed
-        ? `<button class="${equipped ? "is-equipped" : ""}" data-action="workshop-toggle" data-id="${collectible.id}" aria-pressed="${equipped}">${equipped ? "СНЯТЬ" : collectible.kind === "workshop-ornament" ? "ПОСТАВИТЬ" : collectible.kind.startsWith("needle-") ? "ВКЛЮЧИТЬ" : "НАДЕТЬ"}</button>`
-        : `<button data-action="season-claim" data-tier="${tier.tier}" data-track="${track}" ${available ? "" : "disabled"} aria-label="${revealed ? `Забрать награду ${reward.name}` : `Забрать таинственную награду уровня ${tier.tier}`}">${available ? "ЗАБРАТЬ" : track === "premium" && !premiumEnabled ? "ЗАКРЫТО" : `НУЖЕН ${tier.tier} УР.`}</button>`;
-      return `
-        <div class="season-track ${track === "free" ? "free-track" : "premium-track"} ${premiumEnabled ? "is-enabled" : ""}">
-          <span>${track === "free" ? "БЕСПЛАТНО" : "ЗОЛОТАЯ ДОРОЖКА"}</span>
-          <div class="season-reward-copy">
-            ${this.renderCollectiblePreview(collectible, !revealed)}
-            <div><small>${revealed ? WORKSHOP_KIND_LABELS[collectible.kind] : "ТАЙНА"}</small><strong>${escapeHtml(presentation.name)}</strong></div>
-          </div>
-          <small class="season-reward-description">${escapeHtml(presentation.description)}</small>
-          ${action}
-        </div>`;
+      const claimed = (track === "free" ? pass.claimedFreeTiers : pass.claimedPremiumTiers).includes(tier.tier);
+      const unlocked = tier.tier <= status.unlockedTier;
+      const available = !claimed && unlocked && (track === "free" || enabled);
+      const equipped = collection.equipped[collectible.kind] === collectible.id;
+      const label = claimed ? "✓ Получено" : available ? "Можно забрать" : track === "premium" && !enabled ? "Золотая дорожка" : `Уровень ${tier.tier}`;
+      const displayName = collectibleDisplayName(collectible.name).replace(/^(Нашивка|Рамка)\s*/, "").replace(/^«|»$/g, "");
+      return `<div class="pass-reward ${track === "free" ? "is-free" : "is-gold"} ${claimed ? "is-claimed" : available ? "is-ready" : "is-locked"}">
+        <div class="pass-reward-art">${collectible.kind === "title" ? '<span class="pass-title-art" aria-hidden="true"><span>♛</span><b>Эля</b><i>✦ ✦ ✦</i></span>' : this.renderCollectiblePreview(collectible)}<span class="pass-reward-seal" aria-hidden="true">${claimed ? "✓" : available ? "✦" : '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="10" width="14" height="11" rx="3" fill="currentColor" stroke="none"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v3" stroke="#766353"/></svg>'}</span></div>
+        <small class="pass-reward-kind">${WORKSHOP_KIND_LABELS[collectible.kind]}</small><h4>${escapeHtml(displayName)}</h4>
+        <span class="pass-reward-status">${label}</span>
+        ${claimed
+          ? `<button data-action="workshop-toggle" data-id="${collectible.id}" aria-pressed="${equipped}">${equipped ? "✓ Выбрано · снять" : collectible.kind === "workshop-ornament" ? "Поставить" : collectible.kind.startsWith("needle-") ? "Включить" : "Надеть"}</button>`
+          : `<button data-action="season-claim" data-tier="${tier.tier}" data-track="${track}" ${available ? "" : "disabled"} aria-label="${available ? "Забрать" : "Закрыто:"} ${escapeHtml(reward.name)}${available ? "" : `, нужен уровень ${tier.tier}${track === "premium" && !enabled ? " и золотая дорожка" : ""}`}">${available ? "Забрать" : track === "premium" && !enabled ? "Нужна золотая" : `Нужно ${tier.requiredXp} XP`}</button>`}
+      </div>`;
     };
 
-    const seasonTiers = SEASON_PASS_TIERS.map((tier) => {
-      const unlocked = tier.tier <= passStatus.unlockedTier;
-      const freeClaimed = this.state.seasonPass.claimedFreeTiers.includes(tier.tier);
-      const premiumClaimed = this.state.seasonPass.claimedPremiumTiers.includes(tier.tier);
-      const premiumEnabled = this.state.seasonPass.prototypePremiumEnabled;
-      return `
-        <article class="season-tier ${unlocked ? "is-unlocked" : "is-locked"} ${freeClaimed && (premiumClaimed || !premiumEnabled) ? "is-complete" : ""}">
-          <div class="season-tier-number"><span>${tier.tier}</span><small>${tier.requiredXp} XP</small></div>
-          ${renderSeasonTrack(tier, "free", freeClaimed, unlocked, premiumEnabled)}
-          ${renderSeasonTrack(tier, "premium", premiumClaimed, unlocked, premiumEnabled)}
-        </article>`;
-    }).join("");
-
-    const backgrounds = BACKGROUNDS.map((background) => {
-      const owned = this.state.ownedBackgrounds.includes(background.id);
-      const equipped = this.state.equippedBackground === background.id;
-      const canEarn = this.state.highestStageCleared >= background.unlockStage;
-      const canBuy = this.state.premium >= background.premiumCost;
-      const image = background.fileName ?? "attic-workshop.webp";
-      return `
-        <article class="background-card ${equipped ? "is-equipped" : ""}">
-          <img src="${asset(image)}" alt="" />
-          <div><h3>${background.name}</h3><p>${background.description}</p></div>
-          <button class="select-button" data-action="background" data-id="${background.id}" ${equipped || (!owned && !canEarn && !canBuy) ? "disabled" : ""}>
-            ${equipped ? "ВЫБРАН" : owned ? "ВЫБРАТЬ" : canEarn ? "ОТКРЫТЬ" : `◆ ${background.premiumCost} · ЭТАП ${background.unlockStage}`}
-          </button>
-        </article>`;
-    }).join("");
-
-    return `
-      <div class="section-divider shop-divider"><span>Сезонный путь</span><small>долгая коллекция</small></div>
-      <section class="season-album" aria-labelledby="season-album-title">
-        <header class="season-hero">
-          <img src="${asset("ui-season-album.webp")}" alt="" aria-hidden="true" draggable="false" />
-          <div><span>СЕЗОН 1 · ЖИВАЯ НИТЬ</span><h3 id="season-album-title">Сезонный альбом</h3><p>20 долгих уровней. Запечатанные свёртки раскрываются только после получения.</p></div>
-          <b>${passStatus.unlockedTier}/20</b>
-        </header>
-        <div class="season-xp-copy"><span>Опыт альбома · ${passStatus.xp} XP</span><strong>${passStatus.xpForNextTier === null ? "Альбом завершён" : `До уровня ${passStatus.unlockedTier + 1}: ${passStatus.xpForNextTier - passStatus.xpIntoTier} XP`}</strong></div>
-        <div class="season-xp-bar" role="progressbar" aria-label="Опыт сезонного альбома" aria-valuemin="0" aria-valuemax="${passStatus.xpForNextTier ?? 100}" aria-valuenow="${passStatus.xpForNextTier === null ? 100 : passStatus.xpIntoTier}"><span style="width:${passProgress}%"></span></div>
-        <div class="season-premium-box ${this.state.seasonPass.prototypePremiumEnabled ? "is-enabled" : ""}">
-          <div><span>${this.state.seasonPass.prototypePremiumEnabled ? "ЗОЛОТАЯ ДОРОЖКА ОТКРЫТА" : "ЗОЛОТАЯ ДОРОЖКА"}</span><p>${this.state.seasonPass.prototypePremiumEnabled ? "Все достигнутые премиальные награды можно забирать." : "Редкая долгосрочная цель: 60 игровых пуговиц. Реальных покупок здесь нет."}</p></div>
-          <button data-action="season-premium" ${this.state.seasonPass.prototypePremiumEnabled ? "disabled" : ""}><span>${this.state.seasonPass.prototypePremiumEnabled ? "ОТКРЫТО" : `◆ ${SEASON_PREMIUM_COST}`}</span><small>${this.state.seasonPass.prototypePremiumEnabled ? "АКТИВНО" : "ИГРОВЫЕ ПУГОВИЦЫ"}</small></button>
+    return `<section class="pass-album" aria-labelledby="season-album-title">
+      <header class="pass-hero" style="--pass-backdrop:url('${asset("attic-workshop.webp")}')">
+        <div><span>СЕЗОН 1 · ЖИВАЯ НИТЬ</span><h3 id="season-album-title">Альбом<br />храбрости</h3><p>Играй. Собирай. Украшай.</p></div>
+        <img src="${asset("ui-season-album.webp")}" alt="Вышитый альбом с золотыми украшениями" draggable="false" />
+        <span class="pass-hero-tag">20 уровней · 40 украшений</span>
+      </header>
+      <div class="pass-progress-section">
+        <div class="pass-level-medal"><strong>${status.unlockedTier}</strong><small>уровень</small></div>
+        <div class="pass-progress-copy"><div><strong>${status.xpForNextTier === null ? "Альбом завершён!" : `До уровня ${status.unlockedTier + 1}`}</strong><span>${status.xpForNextTier === null ? "20 / 20" : `${status.xpIntoTier} / ${status.xpForNextTier} XP`}</span></div>
+          <div class="pass-progress-bar" role="progressbar" aria-label="Опыт до следующего уровня альбома" aria-valuemin="0" aria-valuemax="${status.xpForNextTier ?? 100}" aria-valuenow="${status.xpForNextTier === null ? 100 : status.xpIntoTier}"><span style="width:${percent}%"></span></div>
+          <button data-action="shop-page" data-page="tasks">Как получить опыт? →</button>
         </div>
-        <details class="season-tasks" open>
-          <summary><span>Задания сезона</span><small>${passStatus.completedTasks}/${SEASON_TASKS.length} завершено</small></summary>
-          <ul>${seasonTasks}</ul>
-        </details>
-        <div class="season-tier-heading"><span>Бесплатно</span><strong>20 ступеней</strong><span>Золотая дорожка</span></div>
-        <div class="season-tier-list">${seasonTiers}</div>
-      </section>
-
-      <div class="section-divider shop-divider"><span>Редкие декорации</span><small>Фоны мастерской</small></div>
-      <p class="section-lead">Редкие фоны можно открыть выдающимся результатом или лунными пуговицами.</p>
-      <div class="background-stack">${backgrounds}</div>
-    `;
+      </div>
+      <div class="pass-route-note"><span>${ready ? `✦ Ждут наград: ${ready}` : "Украшения за игру"}</span><button data-action="season-jump">${ready ? "К награде ↓" : "К своему уровню ↓"}</button></div>
+      <div class="pass-track-headings"><div><strong>Бесплатно</strong><small>Играй и забирай</small></div><span aria-hidden="true">✦</span><div><strong>Золотая нить</strong><small>${enabled ? "✓ Дорожка открыта" : `Вся дорожка · ${SEASON_PREMIUM_COST} пуговиц`}</small></div></div>
+      <div class="pass-tier-list">${SEASON_PASS_TIERS.map((tier) => {
+        const unlocked = tier.tier <= status.unlockedTier;
+        return `<article class="pass-tier ${unlocked ? "is-unlocked" : ""}" data-season-tier="${tier.tier}" aria-label="Уровень ${tier.tier}, ${tier.requiredXp} опыта">
+          ${renderReward(tier, "free")}
+          <div class="pass-tier-marker"><span>${tier.tier}</span><small>${tier.requiredXp}<br />XP</small></div>
+          ${renderReward(tier, "premium")}
+        </article>`;
+      }).join("")}</div>
+      <p class="pass-end-note">✦ Здесь заканчивается узор, но приключение продолжается.<br />Украшения меняют образ. Сила зависит от твоей игры.</p>
+      <p class="shop-currency-note"><img src="${asset("currency-moon-button.webp")}" alt="" /> Пуговицы — премиальная валюта. Редкая бесплатная добыча: 2 за недельный финал, 3 за этап 20 и 5 за этап 40 однократно. Золотая дорожка сохраняет все награды уже пройденных уровней.</p>
+    </section>`;
   }
 
   private renderNav(): string {

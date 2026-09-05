@@ -12,6 +12,7 @@ import {
   WEEKLY_ROUTE_REWARD_VARIANTS,
   resolveWeeklyRouteCollectibleId,
 } from "./WeeklyRoute";
+import { COSMETIC_SHOP_OFFERS } from "./CosmeticShop";
 
 export const WORKSHOP_COLLECTION_VERSION = 1 as const;
 export const WORKSHOP_COLLECTION_SAVE_KEY = "thread-of-courage-workshop-v1";
@@ -34,6 +35,7 @@ export type WorkshopCollectibleSource =
   | "season"
   | "needle-mastery"
   | "weekly-route"
+  | "fragment-shop"
   | "workshop-milestone";
 export type WorkshopCollectibleRarity =
   | "common"
@@ -245,6 +247,7 @@ export const WORKSHOP_COLLECTIBLES: readonly WorkshopCollectible[] = [
   ...MASTERY_COLLECTIBLES,
   ...WEEKLY_ROUTE_COLLECTIBLES,
   ...MILESTONE_COLLECTIBLES,
+  ...COSMETIC_SHOP_OFFERS.map((offer) => offer.collectible),
 ];
 
 export const WORKSHOP_LEVELS: readonly WorkshopLevelDefinition[] = [

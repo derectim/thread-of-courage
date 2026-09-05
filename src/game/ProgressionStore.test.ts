@@ -669,11 +669,12 @@ describe("quests", () => {
     expect(claimQuest(claimed, getQuest("first-fifty"))).toBe(claimed);
   });
 
-  it("can award premium currency for a collection quest", () => {
+  it("awards thread instead of premium currency for the early collection quest", () => {
     const state = createState({ ownedNeedles: ["silver", "bone"] });
     const claimed = claimQuest(state, getQuest("needle-collector"));
 
-    expect(claimed.premium).toBe(2);
+    expect(claimed.premium).toBe(0);
+    expect(claimed.thread).toBe(40);
     expect(claimed.claimedQuestIds).toEqual(["needle-collector"]);
   });
 });

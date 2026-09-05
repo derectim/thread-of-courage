@@ -267,6 +267,8 @@ export const QUEST_IDS = [
   "boss-breaker",
   "tenth-stitch",
   "needle-collector",
+  "deep-path",
+  "master-path",
 ] as const;
 export type QuestId = (typeof QUEST_IDS)[number];
 export type StatId = "needlesThrown" | "monstersDefeated" | "bossesDefeated";
@@ -306,8 +308,8 @@ export const QUESTS: readonly QuestDefinition[] = [
     description: "Победить 4 боссов",
     metric: "bossesDefeated",
     target: 4,
-    rewardThread: 0,
-    rewardPremium: 3,
+    rewardThread: 30,
+    rewardPremium: 0,
   },
   {
     id: "tenth-stitch",
@@ -324,9 +326,11 @@ export const QUESTS: readonly QuestDefinition[] = [
     description: "Открыть 2 вида игл",
     metric: "ownedNeedles",
     target: 2,
-    rewardThread: 0,
-    rewardPremium: 2,
+    rewardThread: 40,
+    rewardPremium: 0,
   },
+  { id: "deep-path", name: "Сквозь первую тьму", description: "Очистить этап 20", metric: "highestStageCleared", target: 20, rewardThread: 0, rewardPremium: 3 },
+  { id: "master-path", name: "Мастерица глубокого пути", description: "Очистить этап 40", metric: "highestStageCleared", target: 40, rewardThread: 0, rewardPremium: 5 },
 ] as const;
 
 export function getNeedleSkin(id: NeedleSkinId): NeedleSkinDefinition {

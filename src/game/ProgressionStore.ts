@@ -49,8 +49,11 @@ import {
 import {
   createWorkshopCollectionState,
   normalizeWorkshopCollectionState,
+  grantWorkshopCollectible,
   type WorkshopCollectionState,
 } from "./WorkshopCollection";
+import { getCosmeticShopOffer } from "./CosmeticShop";
+import { createCampaignBoonsState, normalizeCampaignBoons, offerCampaignBoon, type CampaignBoonsState } from "./CampaignBoons";
 import { MONSTERS, ROOMS, getMonsterForStage } from "./content";
 
 export const PROGRESSION_SAVE_KEY = "thread-of-courage-save-v3";
@@ -92,13 +95,13 @@ export interface ProgressionState {
   readonly claimedQuestIds: readonly QuestId[];
   readonly equippedActiveAbility: ActiveAbilityId;
   readonly dailySystems: DailySystemsState;
-  readonly cosmeticFragments: number;
   readonly needleMastery: NeedleMasteryState;
   readonly weeklyRoute: WeeklyRouteProgress;
   readonly seasonPass: SeasonPassState;
   readonly ownedSeasonCosmetics: readonly string[];
   readonly workshopCollection: WorkshopCollectionState;
   readonly adCadence: AdCadenceState;
+  readonly campaignBoons: CampaignBoonsState;
 }
 
 export interface ProgressionStorage {
@@ -168,13 +171,13 @@ export function createDefaultState(): ProgressionState {
       includeMainBossQuests: false,
       includeMiniBossQuests: false,
     }),
-    cosmeticFragments: 0,
     needleMastery: createNeedleMasteryState(),
     weeklyRoute: createWeeklyRouteProgress(weeklyRoute),
     seasonPass: createSeasonPassState(),
     ownedSeasonCosmetics: [],
     workshopCollection: createWorkshopCollectionState(),
     adCadence: createAdCadenceState(),
+    campaignBoons: createCampaignBoonsState(),
   };
 }
 
@@ -299,7 +302,7 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
     version: PROGRESSION_SAVE_VERSION,
     highestStageCleared,
     campaignResumeStage,
-    thread: normalizeInteger(value.thread, 0),
+    thread: normalizeInteger(value.thread, 0) + normalizeInteger(value.cosmeticFragments, 0) * 5,
     premium: normalizeInteger(value.premium, 0),
     muted: value.muted === true,
     introSeen: value.introSeen === true,
@@ -326,7 +329,6 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
     claimedQuestIds: normalizeIdList(value.claimedQuestIds, QUEST_IDS),
     equippedActiveAbility,
     dailySystems: normalizeDailySystemsState(value.dailySystems, new Date(), dailyContext),
-    cosmeticFragments: normalizeInteger(value.cosmeticFragments, 0),
     needleMastery,
     weeklyRoute: syncWeeklyRouteProgress(value.weeklyRoute, weeklyRouteDefinition),
     seasonPass: syncSeasonPassState(value.seasonPass),
@@ -336,6 +338,7 @@ function normalizeState(value: Record<string, unknown>): ProgressionState {
       needleMastery,
     }),
     adCadence: normalizeAdCadenceState(value.adCadence),
+    campaignBoons: normalizeCampaignBoons(value.campaignBoons, campaignResumeStage),
   };
 }
 
@@ -414,6 +417,18 @@ export function getUpgradeCost(upgrade: UpgradeId, currentLevel: UpgradeLevel): 
   if (currentLevel >= MAX_UPGRADE_LEVEL) return null;
   const purchasableLevel = currentLevel as Exclude<UpgradeLevel, typeof MAX_UPGRADE_LEVEL>;
   return UPGRADE_DEFINITIONS[upgrade].costs[purchasableLevel];
+}
+
+/** Spend and grant together so retries cannot charge twice or create duplicate rewards. */
+export function purchaseThreadCosmetic(state: ProgressionState, id: string): ProgressionState {
+  const offer = getCosmeticShopOffer(id);
+  if (!offer || state.thread < offer.cost) return state;
+  const collection = normalizeWorkshopCollectionState(state.workshopCollection, {
+    ownedSeasonCosmeticIds: state.ownedSeasonCosmetics, needleMastery: state.needleMastery,
+  });
+  if (collection.ownedCollectibleIds.includes(id)) return state;
+  return { ...state, thread: state.thread - offer.cost,
+    workshopCollection: grantWorkshopCollectible(collection, id) };
 }
 
 export function purchaseUpgrade(state: ProgressionState, upgrade: UpgradeId): ProgressionState {
@@ -545,6 +560,7 @@ export function recordVictory(
     ...state,
     highestStageCleared,
     campaignResumeStage: Math.max(1, Math.floor(stage) + 1),
+    campaignBoons: isBoss ? offerCampaignBoon(state.campaignBoons, stage) : state.campaignBoons,
     thread: state.thread + reward,
     ownedNeedles,
     unlockedSkills,
@@ -556,13 +572,13 @@ export function recordVictory(
   };
 }
 
-/** Clears only the active campaign checkpoint after a defeat. */
+/** Clears the active campaign checkpoint and temporary boons after a defeat. */
 export function resetCampaignAfterDefeat(
   state: ProgressionState,
 ): ProgressionState {
-  return state.campaignResumeStage === 1
+  return state.campaignResumeStage === 1 && !state.campaignBoons.choices.length && state.campaignBoons.pendingBossStage === null
     ? state
-    : { ...state, campaignResumeStage: 1 };
+    : { ...state, campaignResumeStage: 1, campaignBoons: createCampaignBoonsState() };
 }
 
 /** Awards a side-route victory without moving the player's main campaign checkpoint. */
@@ -592,6 +608,8 @@ export function getQuestProgress(state: ProgressionState, id: QuestId): number {
     case "boss-breaker":
       return state.stats.bossesDefeated;
     case "tenth-stitch":
+    case "deep-path":
+    case "master-path":
       return state.highestStageCleared;
     case "needle-collector":
       return state.ownedNeedles.length;

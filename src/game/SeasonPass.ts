@@ -423,3 +423,30 @@ export function claimSeasonPassReward(
     reward: track === "free" ? definition.freeReward : definition.premiumReward,
   };
 }
+
+/** Available rewards on both tracks, in album order. Does not grant premium access. */
+export function getClaimableSeasonPassRewards(state: SeasonPassState): {
+  tier: number;
+  track: SeasonPassTrack;
+}[] {
+  const unlockedTier = getUnlockedSeasonPassTier(state.xp);
+  return SEASON_PASS_TIERS.filter(({ tier }) => tier <= unlockedTier).flatMap(({ tier }) => {
+    const tracks: SeasonPassTrack[] = state.prototypePremiumEnabled ? ["free", "premium"] : ["free"];
+    return tracks.filter((track) => !(track === "free" ? state.claimedFreeTiers : state.claimedPremiumTiers).includes(tier))
+      .map((track) => ({ tier, track }));
+  });
+}
+
+export function claimAllSeasonPassRewards(state: SeasonPassState): {
+  state: SeasonPassState;
+  rewards: SeasonCosmeticReward[];
+} {
+  let next = state;
+  const rewards: SeasonCosmeticReward[] = [];
+  for (const { tier, track } of getClaimableSeasonPassRewards(state)) {
+    const result = claimSeasonPassReward(next, tier, track);
+    next = result.state;
+    if (result.reward) rewards.push(result.reward);
+  }
+  return { state: next, rewards };
+}

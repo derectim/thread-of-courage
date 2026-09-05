@@ -6,8 +6,7 @@ export const DAILY_QUEST_COUNT = 3 as const;
 
 export interface RewardBundle {
   readonly thread: number;
-  readonly cosmeticFragments: number;
-  /** Premium moon buttons are only present in victory-streak chests. */
+  /** Kept for compatibility; repeatable rewards never grant premium currency. */
   readonly buttonReward?: number;
 }
 
@@ -70,7 +69,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Размять пальцы",
     description: "Победи 2 противников.",
     criteria: { kind: "victories", target: 2 },
-    reward: { thread: 5, cosmeticFragments: 1 },
+    reward: { thread: 10 },
   },
   {
     id: "victories-4",
@@ -78,7 +77,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Длинная дорожка",
     description: "Победи 4 противников.",
     criteria: { kind: "victories", target: 4 },
-    reward: { thread: 9, cosmeticFragments: 1 },
+    reward: { thread: 14 },
   },
   {
     id: "perfect-victory",
@@ -86,7 +85,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Без единой затяжки",
     description: "Заверши комнату без промаха.",
     criteria: { kind: "victories", target: 1, perfectOnly: true },
-    reward: { thread: 8, cosmeticFragments: 2 },
+    reward: { thread: 18 },
   },
   {
     id: "accurate-streak-6",
@@ -94,7 +93,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Ровная строчка",
     description: "Собери серию из 6 точных попаданий.",
     criteria: { kind: "accurate-streak", target: 6 },
-    reward: { thread: 5, cosmeticFragments: 1 },
+    reward: { thread: 10 },
   },
   {
     id: "accurate-streak-10",
@@ -102,7 +101,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Рука мастерицы",
     description: "Собери серию из 10 точных попаданий.",
     criteria: { kind: "accurate-streak", target: 10 },
-    reward: { thread: 9, cosmeticFragments: 2 },
+    reward: { thread: 19 },
   },
   {
     id: "accurate-streak-14",
@@ -110,7 +109,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Идеальный шов",
     description: "Собери серию из 14 точных попаданий.",
     criteria: { kind: "accurate-streak", target: 14 },
-    reward: { thread: 13, cosmeticFragments: 3 },
+    reward: { thread: 28 },
   },
   {
     id: "needle-silver",
@@ -118,7 +117,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Серебряная работа",
     description: "Одержи 2 победы Серебряной иглой.",
     criteria: { kind: "victories", target: 2, needleId: "silver" },
-    reward: { thread: 6, cosmeticFragments: 1 },
+    reward: { thread: 11 },
   },
   {
     id: "needle-bone",
@@ -126,7 +125,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Костяная вязь",
     description: "Одержи 2 победы Костяным шипом.",
     criteria: { kind: "victories", target: 2, needleId: "bone" },
-    reward: { thread: 7, cosmeticFragments: 1 },
+    reward: { thread: 12 },
   },
   {
     id: "needle-storm",
@@ -134,7 +133,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Грозовой узор",
     description: "Одержи 2 победы Грозовым челноком.",
     criteria: { kind: "victories", target: 2, needleId: "storm" },
-    reward: { thread: 8, cosmeticFragments: 2 },
+    reward: { thread: 18 },
   },
   {
     id: "needle-sunrise",
@@ -142,7 +141,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Строчка рассвета",
     description: "Одержи 2 победы Иглой рассвета.",
     criteria: { kind: "victories", target: 2, needleId: "sunrise" },
-    reward: { thread: 10, cosmeticFragments: 2 },
+    reward: { thread: 20 },
   },
   {
     id: "room-attic",
@@ -150,7 +149,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Порядок на чердаке",
     description: "Очисти 2 комнаты Чердачной мастерской.",
     criteria: { kind: "victories", target: 2, roomId: "attic" },
-    reward: { thread: 6, cosmeticFragments: 1 },
+    reward: { thread: 11 },
   },
   {
     id: "room-theatre",
@@ -158,7 +157,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Тихая сцена",
     description: "Очисти 2 комнаты Театра забытых кукол.",
     criteria: { kind: "victories", target: 2, roomId: "theatre" },
-    reward: { thread: 7, cosmeticFragments: 1 },
+    reward: { thread: 12 },
   },
   {
     id: "room-machine",
@@ -166,7 +165,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Сердце механизма",
     description: "Очисти 2 комнаты Сердца швейной машины.",
     criteria: { kind: "victories", target: 2, roomId: "machine" },
-    reward: { thread: 8, cosmeticFragments: 1 },
+    reward: { thread: 13 },
   },
   {
     id: "boss-any",
@@ -174,7 +173,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Большая штопка",
     description: "Победи любого босса или мини-босса.",
     criteria: { kind: "victories", target: 1, bossKind: "any" },
-    reward: { thread: 10, cosmeticFragments: 2 },
+    reward: { thread: 20 },
   },
   {
     id: "boss-main",
@@ -182,7 +181,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Главная угроза",
     description: "Победи главного босса.",
     criteria: { kind: "victories", target: 1, bossKind: "main" },
-    reward: { thread: 13, cosmeticFragments: 3 },
+    reward: { thread: 28 },
   },
   {
     id: "boss-mini",
@@ -190,7 +189,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Мал да колюч",
     description: "Победи мини-босса.",
     criteria: { kind: "victories", target: 1, bossKind: "mini" },
-    reward: { thread: 9, cosmeticFragments: 2 },
+    reward: { thread: 19 },
   },
   {
     id: "boss-sewing-storm",
@@ -198,7 +197,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Укротить бурю",
     description: "Победи Великую Швейную Бурю.",
     criteria: { kind: "victories", target: 1, monsterId: "sewing-storm" },
-    reward: { thread: 15, cosmeticFragments: 3 },
+    reward: { thread: 30 },
   },
   {
     id: "boss-moth-mask",
@@ -206,7 +205,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Сорвать маску",
     description: "Победи Моль-Маску.",
     criteria: { kind: "victories", target: 1, monsterId: "moth-mask" },
-    reward: { thread: 16, cosmeticFragments: 3 },
+    reward: { thread: 31 },
   },
   {
     id: "boss-madam-marionette",
@@ -214,7 +213,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Обрезать нити",
     description: "Победи Мадам Марионетку.",
     criteria: { kind: "victories", target: 1, monsterId: "madam-marionette" },
-    reward: { thread: 17, cosmeticFragments: 3 },
+    reward: { thread: 32 },
   },
   {
     id: "boss-ripper",
@@ -222,7 +221,7 @@ export const DAILY_QUESTS: readonly DailyQuestDefinition[] = [
     name: "Последний разрез",
     description: "Победи Распарывателя.",
     criteria: { kind: "victories", target: 1, monsterId: "ripper" },
-    reward: { thread: 18, cosmeticFragments: 4 },
+    reward: { thread: 38 },
   },
 ] as const;
 
@@ -620,15 +619,11 @@ export function getStreakChestReward(milestone: number): RewardBundle {
   if (normalizedMilestone % 10 === 0) {
     const grandNumber = normalizedMilestone / 10;
     return {
-      thread: 6 + grandNumber * 2,
-      cosmeticFragments: 2 + Math.floor(grandNumber / 3),
-      buttonReward: 1,
+      thread: 6 + grandNumber * 2 + 5 * (2 + Math.floor(grandNumber / 3)),
     };
   }
   return {
-    thread: 3 + Math.floor(normalizedMilestone / 15),
-    cosmeticFragments: 1 + Math.floor(normalizedMilestone / 25),
-    buttonReward: 1,
+    thread: 3 + Math.floor(normalizedMilestone / 15) + 5 * (1 + Math.floor(normalizedMilestone / 25)),
   };
 }
 
