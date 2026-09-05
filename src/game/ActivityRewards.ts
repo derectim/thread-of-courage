@@ -1,14 +1,14 @@
 import type { WorkshopCollectible } from "./WorkshopCollection";
-import { activityCount, type ActivityProgress } from "./WorkshopActivities";
+import { ACTIVITY_LEVELS, activityCount, type ActivityProgress } from "./WorkshopActivities";
 
 export const ACTIVITY_COLLECTIBLES: readonly WorkshopCollectible[] = [
   { id: "activity-patch-golden-weave", kind: "patch", source: "workshop-activity", sourceId: "patterns", name: "Нашивка «Золотое плетение»", description: "Двенадцать восстановленных узоров соединились в один цветок. Награда за все узоры мастерской.", artKey: "activity-patch-golden-weave", rarity: "epic", cosmeticOnly: true },
-  { id: "activity-ornament-keepsake", kind: "workshop-ornament", source: "workshop-activity", sourceId: "drawers", name: "Шкатулка воспоминаний", description: "Бабушкина шкатулка снова хранит маленькие сокровища. Награда за шесть уровней комода.", artKey: "activity-ornament-keepsake", rarity: "rare", cosmeticOnly: true },
+  { id: "activity-ornament-keepsake", kind: "workshop-ornament", source: "workshop-activity", sourceId: "drawers", name: "Шкатулка воспоминаний", description: "Бабушкина шкатулка снова хранит маленькие сокровища. Награда за двенадцать уровней комода.", artKey: "activity-ornament-keepsake", rarity: "rare", cosmeticOnly: true },
   { id: "activity-ornament-quilt", kind: "workshop-ornament", source: "workshop-activity", sourceId: "orders", name: "Лоскутное знамя Эли", description: "Каждый заказ оставил здесь цветной лоскут. Награда за шесть заказов Эли.", artKey: "activity-ornament-quilt", rarity: "epic", cosmeticOnly: true },
   { id: "activity-title-restorer", kind: "title", source: "workshop-activity", sourceId: "all", name: "Титул «Хранительница мастерской»", description: "Узоры, воспоминания и вещи обрели новый дом. Награда за завершение всех трёх серий мини-игр.", artKey: "activity-title-restorer", rarity: "legendary", cosmeticOnly: true },
 ];
 export function earnedActivityCollectibles(progress: ActivityProgress): string[] {
-  const patterns = activityCount(progress, "patterns") === 12, drawers = activityCount(progress, "drawers") === 6, orders = activityCount(progress, "orders") === 6;
+  const patterns = activityCount(progress, "patterns") === ACTIVITY_LEVELS.patterns, drawers = activityCount(progress, "drawers") === ACTIVITY_LEVELS.drawers, orders = activityCount(progress, "orders") === ACTIVITY_LEVELS.orders;
   return ACTIVITY_COLLECTIBLES.filter(item => item.sourceId === "patterns" ? patterns : item.sourceId === "drawers" ? drawers : item.sourceId === "orders" ? orders : patterns && drawers && orders).map(item => item.id);
 }
 

@@ -1,0 +1,102 @@
+{
+  "mode": "built-in image_gen",
+  "note": "Four shared-material rotating puzzle bases; directional studies are not shipped.",
+  "assets": [
+    {
+      "name": "tile-horizontal",
+      "prompt": "Use case: stylized-concept. Asset type: production game tile, single square raster image, 1024x1024.\nCreate one top-down textile pipe-puzzle tile for a beautiful handcrafted fantasy sewing game. Edge-to-edge deep teal woven felt square, subtle square quilting, very fine visible textile weave, soft plush depth, restrained warm highlights, luxurious illustrated casual game art. No perspective tilt. No text, letters, symbols, labels, UI, extra objects, or border margins.\nThe functional connection is ONE thick rounded golden braided yarn cord traveling perfectly HORIZONTALLY from the exact LEFT midpoint (0%,50%) through the center (50%,50%) to the exact RIGHT midpoint (100%,50%). Width of cord exactly about 13% of the image. The gold cord must continue fully to both image edges, seamlessly meeting adjacent tiles. No other gold lines or decorative routes. No ports on top or bottom. Uniform dark teal background, gently rounded fabric corners but no external empty margin. Crisp, very legible at 64 pixels. Whole frame filled by the square textile tile. This is tile 01 of a matching set.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-4061ede5-2f12-4a63-9440-e042da57c38c.png",
+      "used": true
+    },
+    {
+      "name": "tile-vertical",
+      "prompt": "Use case: precise-object-edit. Production square textile puzzle tile. Reference is the approved horizontal tile. Preserve exactly the dark teal padded woven felt, golden braided wool material, top-down view, filled square, lighting and quality. Change ONLY the path of the gold braided cord. Required geometry: ONE perfectly VERTICAL cord from TOP edge midpoint (50%,0%) through the center to BOTTOM edge midpoint (50%,100%). NO cord toward left or right. The cord thickness should match the reference, about 15% image width. It reaches the exact image edge at both specified midpoints. No text, no extra decorations, no extra gold lines, no perspective. Match the reference so all tiles form one seamless pipe puzzle.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-4791817c-3d2c-4fff-90f2-9826b8fcf7ae.png",
+      "used": false
+    },
+    {
+      "name": "tile-ne",
+      "prompt": "Use case: precise-object-edit. Production square textile puzzle tile. Reference is the approved horizontal tile. Preserve exactly the dark teal padded woven felt, golden braided wool material, top-down view, filled square, lighting and quality. Change ONLY the path of the gold braided cord. Required geometry: ONE smoothly curved right-angle cord connecting only TOP midpoint (50%,0%) and RIGHT midpoint (100%,50%). The bend passes near the CENTER. All other edges have NO cord. This is an L bend, NOT a T junction and NOT a U shape. The cord thickness should match the reference, about 15% image width. It reaches the exact image edge at both specified midpoints. No text, no extra decorations, no extra gold lines, no perspective. Match the reference so all tiles form one seamless pipe puzzle.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-d0e7e73b-2fc2-4a5f-9b94-de3ec31111ea.png",
+      "used": false
+    },
+    {
+      "name": "tile-es",
+      "prompt": "Use case: precise-object-edit. Production square textile puzzle tile. Reference is the approved horizontal tile. Preserve exactly the dark teal padded woven felt, golden braided wool material, top-down view, filled square, lighting and quality. Change ONLY the path of the gold braided cord. Required geometry: ONE smoothly curved right-angle cord connecting only RIGHT midpoint (100%,50%) and BOTTOM midpoint (50%,100%). The bend passes near the CENTER. All other edges have NO cord. This is an L bend, NOT a T junction and NOT a U shape. The cord thickness should match the reference, about 15% image width. It reaches the exact image edge at both specified midpoints. No text, no extra decorations, no extra gold lines, no perspective. Match the reference so all tiles form one seamless pipe puzzle.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-3af78d79-d1ba-493b-b667-c2b3d60e8d4d.png",
+      "used": false
+    },
+    {
+      "name": "tile-sw",
+      "prompt": "Use case: precise-object-edit. Production square textile puzzle tile. Preserve the reference dark teal padded woven felt background, top-down view, golden yarn material, lighting and filled square framing. Replace the existing cord with this exact functional geometry: ONE smoothly curved right-angle golden cord connecting only BOTTOM midpoint (50%,100%) and LEFT midpoint (0%,50%). The bend passes near CENTER. Other edges have NO cord. L bend, no T junction. Cord thickness 15% image width, extends to the exact image edge at each specified midpoint. All other areas dark teal fabric. No extra gold lines, letters, labels, UI, perspective or extra objects.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-a877084d-3e88-4cc4-ae3f-21d9820aaa05.png",
+      "used": false
+    },
+    {
+      "name": "tile-wn",
+      "prompt": "Use case: precise-object-edit. Production square textile puzzle tile. Preserve the reference dark teal padded woven felt background, top-down view, golden yarn material, lighting and filled square framing. Replace the existing cord with this exact functional geometry: ONE smoothly curved right-angle golden cord connecting only LEFT midpoint (0%,50%) and TOP midpoint (50%,0%). The bend passes near CENTER. Other edges have NO cord. L bend, no T junction. Cord thickness 15% image width, extends to the exact image edge at each specified midpoint. All other areas dark teal fabric. No extra gold lines, letters, labels, UI, perspective or extra objects.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-4dc5a1f9-d5e1-4b7a-8588-68105993082a.png",
+      "used": false
+    },
+    {
+      "name": "tile-source-n",
+      "prompt": "Use case: precise-object-edit. Production square textile puzzle tile. Preserve the reference dark teal padded woven felt background, top-down view, golden yarn material, lighting and filled square framing. Replace the existing cord with this exact functional geometry: A small ornate brass and golden-yarn SPOOL centered in the tile (occupying about 38% width). A SINGLE thick golden braided yarn connection leads from its CENTER straight to the TOP midpoint (50%,0%). No cord to any other edge. This is the START tile; the spool is clearly recognizable, viewed from above, a warm glowing core. No text. Cord thickness 15% image width, extends to the exact image edge at each specified midpoint. All other areas dark teal fabric. No extra gold lines, letters, labels, UI, perspective or extra objects.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-01f19d2f-be5b-4621-83d7-6261c87f47c5.png",
+      "used": false
+    },
+    {
+      "name": "tile-source-e",
+      "prompt": "Use case: precise-object-edit. Production square textile pipe puzzle tile, matching the reference. Preserve the reference dark teal padded woven felt, texture, framing and lighting. Replace the existing cord with this exact geometry and object: A small ornate brass spool filled with gold yarn at the exact CENTER of the tile, 38% image width, viewed mostly from above. ONE thick golden braided cord connects this spool to ONLY the RIGHT EDGE MIDPOINT (100%,50%). The cord extends all the way to the right image edge. No cord toward other edges. This is a starting spool tile. Cord thickness 15% image width. Top-down game view, fills the whole square canvas. No text, letters, numbers, UI, margins or extra decorations.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-06c37540-4c04-4ee9-827d-c74fea1097a7.png",
+      "used": false
+    },
+    {
+      "name": "tile-end-n",
+      "prompt": "Use case: precise-object-edit. Production square textile pipe puzzle tile, matching the reference. Preserve the reference dark teal padded woven felt, texture, framing and lighting. Replace the existing cord with this exact geometry and object: One large recognizable silver sewing NEEDLE, diagonal from lower left to upper right, within the central 40% of the tile, its eye near the tile CENTER. A SINGLE thick golden braided cord travels from ONLY TOP EDGE MIDPOINT (50%,0%) vertically into the eye near CENTER. No cord to other edges. The needle is the destination. Small golden highlight, no extra lines. Cord thickness 15% image width. Top-down game view, fills the whole square canvas. No text, letters, numbers, UI, margins or extra decorations.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-61459936-bc9f-4223-94a6-09c966940be7.png",
+      "used": false
+    },
+    {
+      "name": "tile-end-e",
+      "prompt": "Use case: precise-object-edit. Production square textile pipe puzzle tile, matching the reference. Preserve the reference dark teal padded woven felt, texture, framing and lighting. Replace the existing cord with this exact geometry and object: One large recognizable silver sewing NEEDLE, diagonal from lower left to upper right, within the central 40% of the tile, its eye near the tile CENTER. A SINGLE thick golden braided cord travels from ONLY RIGHT EDGE MIDPOINT (100%,50%) horizontally into the eye near CENTER. No cord to other edges. The needle is the destination. Small golden highlight, no extra lines. Cord thickness 15% image width. Top-down game view, fills the whole square canvas. No text, letters, numbers, UI, margins or extra decorations.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-e37ac5c0-e5cd-4ccd-83bf-258496a8aa2b.png",
+      "used": false
+    },
+    {
+      "name": "order-1",
+      "prompt": "Use case: stylized-concept. Asset type: high-quality game inventory illustration, square 1024x1024 transparent PNG. Primary subject: A small luxurious raspberry-magenta velvet drawstring pouch for a spool of thread, warm gold silk braided drawstring at the top, ONE big cream-and-gold embroidered FLOWER on the front. Clear decorative ZIGZAG stitch around the edge. Rounded friendly silhouette, visible plush fabric, handcrafted fantasy sewing treasure. Front view with very slight three-dimensional depth, object centered, occupies 75% canvas, 12% clear margin around all edges. Beautiful polished hand-painted 3D textile illustration, detailed visible thread and velvet fibers, soft warm studio lighting, saturated but tasteful teal/raspberry/honey palette matching a magical sewing workshop. Genuine transparent background with alpha, no backdrop, no floor, no cast shadow outside object, no extra props. No text, letters, numbers, labels, badge frame, watermark, or hands. Distinct readable silhouette, beautiful even at 180 pixels.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-bc4e2df0-3837-4041-8e0c-2f310d2af41b.png",
+      "used": true
+    },
+    {
+      "name": "order-2",
+      "prompt": "Use case: stylized-concept. Asset type: high-quality game inventory illustration, square 1024x1024 transparent PNG. Primary subject: A soft plump MINT GREEN square cushion for a little owl, ONE big warm gold embroidered FIVE-POINTED STAR centered on the cushion. Clear golden ZIGZAG stitch around the cushion edge, small tassels on corners, rich woven fabric, friendly cozy fantasy sewing treasure. Front view with very slight three-dimensional depth, object centered, occupies 75% canvas, 12% clear margin around all edges. Beautiful polished hand-painted 3D textile illustration, detailed visible thread and velvet fibers, soft warm studio lighting, saturated but tasteful teal/raspberry/honey palette matching a magical sewing workshop. Genuine transparent background with alpha, no backdrop, no floor, no cast shadow outside object, no extra props. No text, letters, numbers, labels, badge frame, watermark, or hands. Distinct readable silhouette, beautiful even at 180 pixels.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-8d72491b-3f71-447c-a385-e4645b97eb96.png",
+      "used": true
+    },
+    {
+      "name": "order-3",
+      "prompt": "Use case: stylized-concept. Asset type: high-quality game inventory illustration, square 1024x1024 transparent PNG. Primary subject: A beautiful HONEY GOLD hanging pennant, a short wooden dowel with two gold loops across the top, pointed lower end, ONE large raspberry pink embroidered HEART in the center. Clearly visible small CROSS-STITCH X marks around the edge. Plush golden woven fabric, storybook fantasy sewing treasure. Front view with very slight three-dimensional depth, object centered, occupies 75% canvas, 12% clear margin around all edges. Beautiful polished hand-painted 3D textile illustration, detailed visible thread and velvet fibers, soft warm studio lighting, saturated but tasteful teal/raspberry/honey palette matching a magical sewing workshop. Genuine transparent background with alpha, no backdrop, no floor, no cast shadow outside object, no extra props. No text, letters, numbers, labels, badge frame, watermark, or hands. Distinct readable silhouette, beautiful even at 180 pixels.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-f8055605-dddb-4f5b-8f94-8bbe20521183.png",
+      "used": true
+    },
+    {
+      "name": "order-4",
+      "prompt": "Use case: precise-object-edit. Matching inventory illustration for a fantasy textile game. Change ONLY the decorative ZIGZAG border stitching into neat separated CROSS-STITCH X marks of warm golden silk around the pouch edge. Keep the raspberry pouch, flower, all other embroidery, tassels, framing, transparent background and lighting exactly the same. No text, no labels, no extra objects. Preserve genuine alpha transparency.\n\nBackground extraction: Use case: background-extraction. Extract the single textile object from this image onto a genuinely TRANSPARENT ALPHA background. The gray-and-white checkerboard currently in the image is unwanted real background: REMOVE ALL OF IT, including gaps around tassels and cords. Do NOT draw a checkerboard to represent transparency. Output transparent PNG with alpha=0 outside the object. Preserve the object, its embroidery, colors, shape and border stitch style exactly. No shadows outside the object, no floor, no text. Keep full object within frame.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-1df76254-5d0e-41cd-bd21-44070e3244b6.png",
+      "used": true
+    },
+    {
+      "name": "order-5",
+      "prompt": "Create a transparent PNG game inventory cutout: one plump mint green velvet square cushion with one large gold embroidered five-pointed star on its front, gold tassels at its corners, and a simple running stitch made of short separated gold dashes around its edges. Beautiful richly detailed hand-painted 3D textile fairy-tale game art, visible embroidery fibers. Front view, centered, entire cushion and tassels visible, 10% transparent margin. Genuine alpha transparency everywhere outside the cushion. No background scene, no light rays, no glow outside, no floor, no checkerboard, no text. Square canvas.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-2cc06f6e-12f7-4ab7-946e-b25e75a053f1.png",
+      "used": true
+    },
+    {
+      "name": "order-6",
+      "prompt": "Use case: precise-object-edit. Matching inventory illustration for a fantasy textile game. Change ONLY the raspberry CROSS-STITCH X marks along the pennant border into a neat SIMPLE RUNNING STITCH, short separated straight gold silk dashes around the border. Keep the honey-gold pennant, pink heart, wood rod, tassel, framing, transparent background and lighting exactly the same. No text, no labels, no extra objects. Preserve genuine alpha transparency.\n\nBackground extraction: Use case: background-extraction. Extract the single textile object from this image onto a genuinely TRANSPARENT ALPHA background. The gray-and-white checkerboard currently in the image is unwanted real background: REMOVE ALL OF IT, including gaps around tassels and cords. Do NOT draw a checkerboard to represent transparency. Output transparent PNG with alpha=0 outside the object. Preserve the object, its embroidery, colors, shape and border stitch style exactly. No shadows outside the object, no floor, no text. Keep full object within frame.",
+      "source": "C:\\Users\\david\\.codex\\generated_images\\01a07093-61a0-74d2-99cc-a81f068ecdd6\\exec-07f382dd-bf08-4a18-804f-4ccdf8d34ea1.png",
+      "used": true
+    }
+  ]
+}

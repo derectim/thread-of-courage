@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@vkontakte/vk-bridge": "^3.0.2",
+    "lottie-web": "^5.13.0",
     "phaser": "^4.2.1"
   },
   "devDependencies": {

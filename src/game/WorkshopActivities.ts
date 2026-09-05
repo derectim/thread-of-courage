@@ -1,6 +1,6 @@
 export type ActivityKind = "patterns" | "drawers" | "orders";
 export const ACTIVITY_NAMES: Record<ActivityKind, string> = { patterns: "Почини узор", drawers: "Бабушкин комод", orders: "Заказы Эли" };
-export const ACTIVITY_LEVELS: Record<ActivityKind, number> = { patterns: 12, drawers: 6, orders: 6 };
+export const ACTIVITY_LEVELS: Record<ActivityKind, number> = { patterns: 12, drawers: 12, orders: 6 };
 export const FABRICS = ["Малина", "Мята", "Мёд"] as const;
 export const STITCHES = ["Прямая строчка", "Зигзаг", "Крестики"] as const;
 export const CHARMS = ["Звезда", "Сердце", "Цветок"] as const;
@@ -9,7 +9,7 @@ export const MEMORY_ART = ["currency-thread-spool.webp", "currency-moon-button.w
 
 interface BaseRun { readonly kind: ActivityKind; readonly level: number; readonly seed: number; readonly moves: number; readonly status: "playing" | "won" | "lost"; readonly awarded: number; }
 export interface PatternRun extends BaseRun { readonly kind: "patterns"; readonly turns: readonly number[]; readonly day: string | null; }
-export interface DrawerRun extends BaseRun { readonly kind: "drawers"; readonly open: readonly number[]; readonly matched: readonly number[]; }
+export interface DrawerRun extends BaseRun { readonly kind: "drawers"; readonly layoutVersion?: 1 | 2; readonly open: readonly number[]; readonly matched: readonly number[]; }
 export interface OrderRun extends BaseRun { readonly kind: "orders"; readonly fabric: number | null; readonly stitch: number | null; readonly charm: number | null; readonly sewn: number; readonly mistakes: number; }
 export type ActivityRun = PatternRun | DrawerRun | OrderRun;
 export type ActivitySlot = ActivityKind | "daily";
@@ -96,9 +96,15 @@ export function patternConnections(run: PatternRun): { masks: number[]; connecte
   }
   return { masks, connected, solved: !leaks && connected.size === masks.length && connected.has(definition.end) };
 }
-export const memoryPairs = (level: number): number => level <= 2 ? 4 : level <= 4 ? 6 : 8;
-export const memoryLimit = (level: number): number => memoryPairs(level) * 3 + (level % 2 ? 2 : 0);
-export const memoryDeck = (run: Pick<DrawerRun, "level" | "seed">): number[] => shuffle(Array.from({ length: memoryPairs(run.level) * 2 }, (_, i) => Math.floor(i / 2)), run.seed);
+export const MEMORY_VARIETY_ART = [...MEMORY_ART, "ornament-small-spool.webp", "ornament-apprentice-scissors.webp", "patch-weekly-pattern-heart.webp", "patch-weekly-owl-eye.webp", "patch-weekly-moon-thimble.webp", "patch-copper-button.webp", "activity-order-1-v2.webp", "activity-order-2-v2.webp", "activity-order-3-v2.webp", "patch-first-ray.webp", "patch-night-workshop.webp", "ornament-moon-pattern.webp"] as const;
+export const MEMORY_NAMES = ["Катушка", "Лунная пуговица", "Сила стежка", "Напёрсток", "Серебряная игла", "Сумочка", "Первая строчка", "Совёнок", "Подвеска-катушка", "Ножницы", "Сердце узора", "Глаз совы", "Лунный напёрсток", "Медная пуговица", "Малиновый мешочек", "Мятная подушка", "Золотой флажок", "Первый луч", "Ночная мастерская", "Лунный узор"] as const;
+export const memoryPairs = (level: number, version: 1 | 2 = 2): number => version === 1 ? level <= 2 ? 4 : level <= 4 ? 6 : 8 : [3, 4, 5, 6, 7, 8, 9, 10, 10, 12, 12, 12][level - 1] ?? 12;
+export const memoryLimit = (level: number, version: 1 | 2 = 2): number => memoryPairs(level, version) * 3 + (level % 2 ? 2 : 0);
+export function memoryDeck(run: Pick<DrawerRun, "level" | "seed" | "layoutVersion">): number[] {
+  const version = run.layoutVersion ?? 1, pairs = memoryPairs(run.level, version);
+  const items = version === 1 ? Array.from({ length: pairs }, (_, i) => i) : shuffle(Array.from({ length: MEMORY_VARIETY_ART.length }, (_, i) => i), run.seed ^ 0x71ba96).slice(0, pairs);
+  return shuffle(items.flatMap(item => [item, item]), run.seed);
+}
 export function orderRecipe(level: number): { fabric: number; stitch: number; charm: number; stitches: number; shape: number } {
   return { fabric: (level - 1) % 3, stitch: Math.floor((level + 1) / 2) % 3, charm: (level + 1) % 3, stitches: level <= 3 ? 6 : 8, shape: (level - 1) % 3 };
 }
@@ -115,7 +121,7 @@ export function startActivity(progress: ActivityProgress, kind: ActivityKind, le
     const turns = Array.from({ length: patternSize(level) ** 2 }, () => Math.floor(next() * 4));
     run = { ...base, kind, turns, day };
     if (patternConnections(run).solved) { turns[patternDefinition(level, seed).start] = (turns[patternDefinition(level, seed).start] + 1) % 4; }
-  } else if (kind === "drawers") run = { ...base, kind, open: [], matched: [] };
+  } else if (kind === "drawers") run = { ...base, kind, layoutVersion: 2, open: [], matched: [] };
   else run = { ...base, kind, fabric: null, stitch: null, charm: null, sewn: 0, mistakes: 0 };
   return withRun(progress, run);
 }
@@ -130,12 +136,12 @@ export function moveActivity(progress: ActivityProgress, action: ActivityMove, d
     run = { ...before, turns, moves: before.moves + 1 }; won = patternConnections(run).solved;
   } else if (before.kind === "drawers") {
     if (action.type === "hide-cards" && before.open.length === 2) run = { ...before, open: [] };
-    else if (action.type === "flip" && integer(action.index, 0, memoryPairs(before.level) * 2 - 1) && before.open.length < 2 && !before.open.includes(action.index) && !before.matched.includes(action.index)) {
+    else if (action.type === "flip" && integer(action.index, 0, memoryPairs(before.level, before.layoutVersion ?? 1) * 2 - 1) && before.open.length < 2 && !before.open.includes(action.index) && !before.matched.includes(action.index)) {
       const open = [...before.open, action.index], moves = before.moves + (open.length === 2 ? 1 : 0);
       const deck = memoryDeck(before), match = open.length === 2 && deck[open[0]] === deck[open[1]];
       const matched = match ? [...before.matched, ...open] : before.matched;
       won = matched.length === deck.length;
-      run = { ...before, moves, matched, open: match ? [] : open, status: !won && moves >= memoryLimit(before.level) ? "lost" : "playing" };
+      run = { ...before, moves, matched, open: match ? [] : open, status: !won && moves >= memoryLimit(before.level, before.layoutVersion ?? 1) ? "lost" : "playing" };
     }
   } else if (before.kind === "orders") {
     if (action.type === "choose" && ["fabric", "stitch", "charm"].includes(action.field) && integer(action.value, 0, 2)) run = { ...before, [action.field]: action.value, sewn: 0 };
@@ -174,12 +180,14 @@ function normalizeActivityBase(value: unknown): ActivityProgress {
     normalized = { ...base, kind: run.kind, day: run.day, turns: [...run.turns] };
     if (run.status === "lost" || (run.status === "won") !== patternConnections(normalized).solved) return progress;
   } else if (run.kind === "drawers") {
-    const validIndices = (value: unknown): value is number[] => Array.isArray(value) && new Set(value).size === value.length && value.every(index => integer(index, 0, memoryPairs(run.level) * 2 - 1));
-    if (!validIndices(run.open) || run.open.length > 2 || !validIndices(run.matched) || run.open.some(index => run.matched.includes(index)) || run.moves > memoryLimit(run.level)) return progress;
+    if (run.layoutVersion !== undefined && run.layoutVersion !== 1 && run.layoutVersion !== 2) return progress;
+    const version = run.layoutVersion ?? 1;
+    const validIndices = (value: unknown): value is number[] => Array.isArray(value) && new Set(value).size === value.length && value.every(index => integer(index, 0, memoryPairs(run.level, version) * 2 - 1));
+    if (!validIndices(run.open) || run.open.length > 2 || !validIndices(run.matched) || run.open.some(index => run.matched.includes(index)) || run.moves > memoryLimit(run.level, version)) return progress;
     const deck = memoryDeck(run), counts = new Map<number, number>();
     for (const index of run.matched) counts.set(deck[index], (counts.get(deck[index]) ?? 0) + 1);
     if ([...counts.values()].some(count => count !== 2) || (run.status === "won") !== (run.matched.length === deck.length)) return progress;
-    normalized = { ...base, kind: run.kind, open: [...run.open], matched: [...run.matched] };
+    normalized = { ...base, kind: run.kind, ...(run.layoutVersion ? { layoutVersion: run.layoutVersion } : {}), open: [...run.open], matched: [...run.matched] };
   } else {
     if ([run.fabric, run.stitch, run.charm].some(value => value !== null && !integer(value, 0, 2)) || !integer(run.sewn, 0, orderRecipe(run.level).stitches) || !integer(run.mistakes, 0, 3)) return progress;
     const recipe = orderRecipe(run.level);

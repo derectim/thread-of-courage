@@ -1660,7 +1660,7 @@ export default class GameMenu {
   }
 
   private getCollectibleAcquisition(collectible: WorkshopCollectible): string {
-    if (collectible.source === "workshop-activity") return collectible.sourceId === "patterns" ? "Уголок мастерской · все 12 узоров" : collectible.sourceId === "drawers" ? "Уголок мастерской · 6 уровней комода" : collectible.sourceId === "orders" ? "Уголок мастерской · 6 заказов Эли" : "Уголок мастерской · все три серии мини-игр";
+    if (collectible.source === "workshop-activity") return collectible.sourceId === "patterns" ? "Уголок мастерской · все 12 узоров" : collectible.sourceId === "drawers" ? "Уголок мастерской · 12 уровней комода" : collectible.sourceId === "orders" ? "Уголок мастерской · 6 заказов Эли" : "Уголок мастерской · все три серии мини-игр";
     if (collectible.source === "fragment-shop") return `Лавка · ${getCosmeticShopOffer(collectible.id)?.cost ?? 0} нитей`;
     if (collectible.source === "season") {
       const [track, tier = "?"] = collectible.sourceId.split("-");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACTIVITY_LEVELS, activityCount, activityKey, createActivityProgress, memoryDeck, memoryLimit, moveActivity, normalizeActivityProgress, orderRecipe, patternConnections, patternDefinition, resumeActivity, startActivity, type ActivityProgress, type PatternRun, type ActivityKind } from "./WorkshopActivities";
+import { ACTIVITY_LEVELS, activityCount, activityKey, createActivityProgress, memoryDeck, memoryLimit, memoryPairs, moveActivity, normalizeActivityProgress, orderRecipe, patternConnections, patternDefinition, resumeActivity, startActivity, type ActivityProgress, type PatternRun, type ActivityKind } from "./WorkshopActivities";
 import { createDefaultState, startWorkshopActivity, makeWorkshopMove, save, load } from "./ProgressionStore";
 import { earnedActivityCollectibles } from "./ActivityRewards";
 
@@ -47,16 +47,35 @@ describe("workshop activity puzzles", () => {
     expect(moveActivity(started, { type: "flip", index: 0 }).progress).toBe(started);
   });
 
-  it.each(["drawers", "orders"] as const)("allows all six %s levels to be completed and repeated without duplicate rewards", kind => {
+  it.each(["drawers", "orders"] as const)("allows all %s levels to be completed and repeated without duplicate rewards", kind => {
     let progress = createActivityProgress();
-    for (let level = 1; level <= 6; level++) {
+    for (let level = 1; level <= ACTIVITY_LEVELS[kind]; level++) {
       const won = solve(startActivity(progress, kind, level));
       expect(won.progress.run?.status).toBe("won"); expect(won.reward).toBe(8);
       expect(normalizeActivityProgress(won.progress)).toEqual(won.progress);
       expect(solve(startActivity(won.progress, kind, level)).reward).toBe(0);
       progress = won.progress;
     }
-    expect(activityCount(progress, kind)).toBe(6);
+    expect(activityCount(progress, kind)).toBe(ACTIVITY_LEVELS[kind]);
+  });
+
+  it("grows the new memory boards from 3 to 12 pairs and varies the actual objects", () => {
+    const counts = Array.from({ length: 12 }, (_, i) => memoryPairs(i + 1));
+    expect(counts[0]).toBe(3); expect(counts[11]).toBe(12);
+    expect(counts.every((count, i) => i === 0 || count >= counts[i - 1])).toBe(true);
+    const sets = new Set(Array.from({ length: 12 }, (_, seed) => [...new Set(memoryDeck({ level: 1, seed, layoutVersion: 2 }))].sort().join(",")));
+    expect(sets.size).toBeGreaterThan(6);
+  });
+
+  it("preserves old memory layouts, open cards, and previously earned keepsakes", () => {
+    const legacy = { kind: "drawers" as const, level: 1, seed: 77, moves: 0, status: "playing" as const, awarded: 0, open: [0], matched: [] };
+    const progress = normalizeActivityProgress({ ...createActivityProgress(), run: legacy });
+    expect(progress.run).toEqual(legacy); expect(memoryDeck(legacy)).toHaveLength(8);
+    expect([...new Set(memoryDeck(legacy))].sort()).toEqual([0, 1, 2, 3]);
+    const entries = new Map<string, string>(), storage = { getItem: (key: string) => entries.get(key) ?? null, setItem: (key: string, value: string) => { entries.set(key, value); } };
+    const base = createDefaultState();
+    save({ ...base, activityProgress: progress, workshopCollection: { ...base.workshopCollection, ownedCollectibleIds: [...base.workshopCollection.ownedCollectibleIds, "activity-ornament-keepsake", "activity-title-restorer"] } }, storage);
+    expect(load(storage).workshopCollection.ownedCollectibleIds).toEqual(expect.arrayContaining(["activity-ornament-keepsake", "activity-title-restorer"]));
   });
 
   it("limits unmatched memory attempts and blocks peeking at a third drawer", () => {
